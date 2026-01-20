@@ -2,7 +2,7 @@
 # This script sets up your PowerShell profile from the dotfiles repository
 
 param(
-    [string]$RepoUrl = "https://github.com/YOUR_USERNAME/dotfiles.git",
+    [string]$RepoUrl = "https://github.com/hugoforte/dotfiles.git",
     [switch]$Force
 )
 
@@ -18,7 +18,13 @@ if (-not $isAdmin) {
     
     # Relaunch script as Administrator
     $scriptPath = $PSCommandPath
-    $args = $PSBoundParameters.GetEnumerator() | ForEach-Object { "-$($_.Key)", "$($_.Value)" }
+    $args = @()
+    if ($RepoUrl -ne "https://github.com/hugoforte/dotfiles.git") {
+        $args += "-RepoUrl", $RepoUrl
+    }
+    if ($Force) {
+        $args += "-Force"
+    }
     Start-Process -FilePath "powershell.exe" -ArgumentList "-NoExit -Command & { cd '$($PWD.Path)'; & '$scriptPath' $($args -join ' ') }" -Verb RunAs
     exit
 }
@@ -67,7 +73,7 @@ if (Test-Path $PROFILE) {
 
 # Create symbolic link
 Write-Host "Creating symbolic link..." -ForegroundColor Green
-New-Item -ItemType SymbolicLink -Path $PROFILE -Target "$dotfilesPath\profile.ps1" -Force | Out-Null
+New-Item -ItemType SymbolicLink -Path $PROFILE -Target "$dotfilesPath\powershell\profile.ps1" -Force | Out-Null
 Write-Host "[OK] Symbolic link created successfully" -ForegroundColor Green
 
 Write-Host ""
