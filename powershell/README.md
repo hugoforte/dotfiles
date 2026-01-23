@@ -5,8 +5,9 @@ My personal PowerShell profile with AWS helper functions and utilities for manag
 ## Contents
 
 - `profile.ps1` - PowerShell profile with AWS helper functions
-- `setup.ps1` - Automated setup script for new machines
+- `setup.ps1` - Automated setup script for new machines (includes AWS profile setup)
 - `README.md` - This file
+- `../aws/` - AWS configuration files (config, credentials) that sync across machines
 
 ### AWS Functions
 
@@ -39,8 +40,9 @@ The script will automatically request Administrator privileges if needed.
 - Automatically requests elevated privileges
 - Clones the repo
 - Creates necessary directories
-- Backs up your existing profile
-- Creates a symbolic link to the profile
+- Backs up your existing profile and AWS configs
+- Creates symbolic links to the profile and AWS configurations
+- Syncs your AWS profiles across machines
 
 **Options:**
 ```powershell
@@ -72,15 +74,31 @@ The script will automatically request Administrator privileges if needed.
 
 ## Syncing Across Machines
 
-Since the profile is linked (or sourced) from the cloned repository, simply pull the latest changes:
+Since the profile and AWS configs are symlinked from the repository, simply pull the latest changes:
 
 ```powershell
 cd "$env:USERPROFILE\dotfiles"
 git pull
-& $PROFILE  # Reload if you made changes
+& $PROFILE  # Reload profile if you made changes
 ```
 
+**What syncs automatically:**
+- PowerShell functions and profile settings
+- AWS profiles and SSO configurations (from `aws/config` and `aws/credentials`)
+
 To keep everything in sync, pull regularly or set up a scheduled task.
+
+### Setting Up AWS Profiles on a New Machine
+
+1. On your current machine, commit your AWS config:
+   ```powershell
+   cd "$env:USERPROFILE\dotfiles"
+   git add aws/
+   git commit -m "Add AWS profiles"
+   git push
+   ```
+
+2. On the new machine, run the setup script - it will automatically set up the symlinks to your AWS configs!
 
 ## Adding New Functions
 

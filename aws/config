@@ -1,0 +1,42 @@
+[default]
+sso_session = TEXO_LM_DEV
+sso_account_id = 038462778066
+sso_role_name = InfoManagerTeamAdminAccess
+region = us-east-1
+output = json
+
+[profile TEXO_LM_DEV]
+sso_session = TEXO_LM_DEV
+sso_account_id = 038462778066
+sso_role_name = InfoManagerTeamAdminAccess
+region = us-east-1
+output = json
+
+[sso-session TEXO_LM_DEV]
+sso_start_url = https://d-906783401c.awsapps.com/start/#
+sso_region = us-east-1
+sso_registration_scopes = sso:account:access
+
+[profile TEXO_LM_UAT]
+sso_session = TEXO_LM_UAT
+sso_account_id = 124355669310
+sso_role_name = InfoManagerTeamAdminAccess
+region = us-east-1
+output = json
+
+[sso-session TEXO_LM_UAT]
+sso_start_url = https://d-906783401c.awsapps.com/start/#
+sso_region = us-east-1
+sso_registration_scopes = sso:account:access
+
+[profile TEXO_LM_PRD]
+sso_session = TEXO_LM_PRD
+sso_account_id = 869935092369
+sso_role_name = InfoManagerTeamAdminAccess
+region = us-east-1
+output = json
+
+[sso-session TEXO_LM_PRD]
+sso_start_url = https://d-906783401c.awsapps.com/start/#
+sso_region = us-east-1
+sso_registration_scopes = sso:account:access
