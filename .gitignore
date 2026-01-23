@@ -1,0 +1,6 @@
+# AWS credentials - never commit these
+aws/credentials
+
+# AWS config can be committed since we use SSO (no static credentials)
+# Uncomment the line below if you prefer not to sync AWS config
+# aws/config
