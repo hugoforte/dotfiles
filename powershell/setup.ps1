@@ -113,6 +113,42 @@ if ($needsProfileSetup) {
     New-Item -ItemType SymbolicLink -Path $PROFILE -Target $profileTarget -Force | Out-Null
     Write-Host "[OK] PowerShell profile linked successfully" -ForegroundColor Green
 }
+
+# Setup all-hosts PowerShell profile symlink so functions load in any host
+$allHostsProfile = $PROFILE.CurrentUserAllHosts
+$needsAllHostsSetup = $false
+
+if (Test-Path $allHostsProfile) {
+    $item = Get-Item $allHostsProfile
+    if ($item.LinkType -eq "SymbolicLink") {
+        $currentTarget = $item.Target
+        if ($currentTarget -eq $profileTarget) {
+            Write-Host "[OK] PowerShell all-hosts profile already linked correctly" -ForegroundColor Green
+        } else {
+            Write-Host "All-hosts profile is symlinked to different location: $currentTarget" -ForegroundColor Yellow
+            $needsAllHostsSetup = $true
+        }
+    } else {
+        Write-Host "PowerShell all-hosts profile exists but is not a symlink" -ForegroundColor Yellow
+        $needsAllHostsSetup = $true
+    }
+} else {
+    $needsAllHostsSetup = $true
+}
+
+if ($needsAllHostsSetup) {
+    if ((Test-Path $allHostsProfile) -and (Get-Item $allHostsProfile).LinkType -ne "SymbolicLink") {
+        $backupPath = "$allHostsProfile.backup.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+        Write-Host "Backing up existing all-hosts profile..." -ForegroundColor Yellow
+        Copy-Item $allHostsProfile $backupPath
+        Write-Host "[OK] Backup saved to: $backupPath" -ForegroundColor Green
+        Remove-Item $allHostsProfile -Force
+    }
+
+    Write-Host "Creating symbolic link for PowerShell all-hosts profile..." -ForegroundColor Green
+    New-Item -ItemType SymbolicLink -Path $allHostsProfile -Target $profileTarget -Force | Out-Null
+    Write-Host "[OK] PowerShell all-hosts profile linked successfully" -ForegroundColor Green
+}
 Write-Host ""
 
 # Setup AWS profiles
