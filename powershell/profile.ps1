@@ -23,6 +23,11 @@ function list-functions {
     Write-Host "list-functions" -ForegroundColor Green
     Write-Host "  Display this help message with all available functions"
     Write-Host ""
+
+    Write-Host "git-list-merged-branches [BranchName] [Location]" -ForegroundColor Green
+    Write-Host "  List local branches merged into a target branch (default: develop local)"
+    Write-Host "  Examples: git-list-merged-branches, git-list-merged-branches main, git-list-merged-branches main origin"
+    Write-Host ""
 }
 
 function aws-whoami {
@@ -89,7 +94,13 @@ function aws-switch-profile {
         return
     }
 
-    $index = [int]$selection - 1
+    [int]$selectionNumber = 0
+    if (-not [int]::TryParse($selection, [ref]$selectionNumber)) {
+        Write-Host "Invalid selection. Please enter a number." -ForegroundColor Red
+        return
+    }
+
+    $index = $selectionNumber - 1
     if ($index -ge 0 -and $index -lt $profiles.Count) {
         $selectedProfile = $profiles[$index]
         $env:AWS_PROFILE = $selectedProfile
@@ -112,4 +123,66 @@ function aws-switch-profile {
     } else {
         Write-Host "Invalid selection." -ForegroundColor Red
     }
+}
+
+# Backward-compatible wrapper for users who call the plural form.
+function aws-switch-profiles {
+    aws-switch-profile
+}
+
+function git-list-merged-branches {
+    param(
+        [string]$BranchName = "develop",
+        [string]$Location = "local"
+    )
+
+    $gitDir = git rev-parse --git-dir 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Not a git repository." -ForegroundColor Red
+        return
+    }
+
+    $normalizedLocation = $Location.Trim().ToLower()
+    if (-not $normalizedLocation) {
+        $normalizedLocation = "local"
+    }
+
+    if (-not $BranchName -or -not $BranchName.Trim()) {
+        Write-Host "Branch name cannot be empty." -ForegroundColor Red
+        return
+    }
+
+    $targetRef = ""
+    $targetDisplay = ""
+    if ($normalizedLocation -eq "local") {
+        $targetRef = "refs/heads/$BranchName"
+        $targetDisplay = "$BranchName (local)"
+    } else {
+        $targetRef = "refs/remotes/$normalizedLocation/$BranchName"
+        $targetDisplay = "$normalizedLocation/$BranchName"
+    }
+
+    git show-ref --verify --quiet $targetRef
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Target branch not found: $targetDisplay" -ForegroundColor Yellow
+        return
+    }
+
+    $currentBranch = (git rev-parse --abbrev-ref HEAD 2>$null).Trim()
+    $mergedBranches = git branch --format "%(refname:short)" --merged $targetRef |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -and $_ -ne $BranchName -and $_ -ne $currentBranch } |
+        Select-Object -Unique | Sort-Object
+
+    if ($mergedBranches -isnot [System.Array]) {
+        $mergedBranches = @($mergedBranches)
+    }
+
+    if (-not $mergedBranches -or $mergedBranches.Count -eq 0) {
+        Write-Host "No local branches are merged into $targetDisplay." -ForegroundColor Yellow
+        return
+    }
+
+    Write-Host "Local branches merged into $targetDisplay:" -ForegroundColor Cyan
+    $mergedBranches | ForEach-Object { Write-Host "  $_" -ForegroundColor White }
 }
