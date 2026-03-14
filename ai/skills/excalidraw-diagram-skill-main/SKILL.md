@@ -9,6 +9,17 @@ Generate `.excalidraw` JSON files that **argue visually**, not just display info
 
 **Setup:** If the user asks you to set up this skill (renderer, dependencies, etc.), see `README.md` for instructions.
 
+## Copilot Execution Notes
+
+When running this skill in GitHub Copilot (VS Code):
+- Use `read_file` to inspect existing diagram files and references before editing.
+- Use incremental `apply_patch` updates for large diagrams (section-by-section), not one giant rewrite.
+- Use the terminal to render, then open the PNG in VS Code to validate visual quality.
+- Keep edits surgical: preserve existing IDs/bindings unless a structural fix requires changes.
+- Treat binding integrity as mandatory: text inside shapes must be container-bound, and arrows between shapes must be endpoint-bound, so layout remains intact when elements move.
+- Do **not** claim "verified" or "looks good" unless a PNG was actually generated and opened for visual review.
+- If rendering cannot run (missing `uv`, missing dependencies, script failure), explicitly report "not visually verified yet," include the blocker, and provide exact setup commands.
+
 ## Customization
 
 **All colors and brand-specific styles live in one file:** `references/color-palette.md`. Read it before generating any diagram and use it as the single source of truth for all color choices — shape fills, strokes, text colors, evidence artifact backgrounds, everything.
@@ -207,7 +218,7 @@ After generating the JSON, you MUST run the render-view-fix loop until the diagr
 
 ## Large / Comprehensive Diagram Strategy
 
-**For comprehensive or technical diagrams, you MUST build the JSON one section at a time.** Do NOT attempt to generate the entire file in a single pass. This is a hard constraint — Claude Code has a ~32,000 token output limit per response, and a comprehensive diagram easily exceeds that in one shot. Even if it didn't, generating everything at once leads to worse quality. Section-by-section is better in every way.
+**For comprehensive or technical diagrams, you MUST build the JSON one section at a time.** Do NOT attempt to generate the entire file in a single pass. This is a hard constraint — single-response output limits can truncate large JSON payloads, and a comprehensive diagram can exceed practical limits in one shot. Even when it fits, generating everything at once usually lowers quality. Section-by-section is better in every way.
 
 ### The Section-by-Section Workflow
 
@@ -246,7 +257,7 @@ Each section should be independently understandable: its elements, internal arro
 ### What NOT to Do
 
 - **Don't generate the entire diagram in one response.** You will hit the output token limit and produce truncated, broken JSON. Even if the diagram is small enough to fit, splitting into sections produces better results.
-- **Don't use a coding agent** to generate the JSON. The agent won't have sufficient context about the skill's rules, and the coordination overhead negates any benefit.
+- **Don't offload JSON generation to a separate sub-agent by default.** The handoff can lose diagram context and skill constraints; direct section-by-section authoring is usually more reliable.
 - **Don't write a Python generator script.** The templating and coordinate math seem helpful but introduce a layer of indirection that makes debugging harder. Hand-crafted JSON with descriptive IDs is more maintainable.
 
 ---
@@ -420,6 +431,13 @@ Position alone doesn't show relationships. If A relates to B, there must be an a
 
 Settings: `fontSize: 16`, `fontFamily: 3`, `textAlign: "center"`, `verticalAlign: "middle"`
 
+If text is visually inside a shape, it must be container-bound:
+- `containerId` must point to the parent shape id.
+- Parent shape `boundElements` must include `{ "id": "<textId>", "type": "text" }`.
+- Keep `text` and `originalText` semantically aligned (line wrapping is fine, content should match).
+
+If text is intended to float independently, keep `containerId: null`.
+
 ---
 
 ## JSON Structure
@@ -442,25 +460,52 @@ Settings: `fontSize: 16`, `fontFamily: 3`, `textAlign: "center"`, `verticalAlign
 
 See `references/element-templates.md` for copy-paste JSON templates for each element type (text, line, dot, rectangle, arrow). Pull colors from `references/color-palette.md` based on each element's semantic purpose.
 
+## Binding Rules (Movement Safety)
+
+These rules ensure diagrams remain connected when users drag elements in Excalidraw.
+
+### Text-in-shape binding (required)
+- Any label meant to move with a shape must set `containerId` to that shape id.
+- The shape must reference that text in `boundElements` with type `text`.
+- Avoid free-floating text for primary node labels unless intentionally independent.
+
+### Arrow endpoint binding (required for connectors)
+- For arrows that connect shapes, set both `startBinding.elementId` and `endBinding.elementId`.
+- The source/target shapes should include the arrow id in their `boundElements` as type `arrow`.
+- Use explicit `points` for routing, but do not rely on coordinates alone for attachment.
+
+### Existing-file edits
+- When editing existing diagrams, preserve and repair bindings rather than recreating elements.
+- If an element has moved from free-floating to attached, update both sides of the relationship (`containerId` + `boundElements`, or arrow bindings + shape `boundElements`).
+
 ---
 
 ## Render & Validate (MANDATORY)
 
 You cannot judge a diagram from JSON alone. After generating or editing the Excalidraw JSON, you MUST render it to PNG, view the image, and fix what you see — in a loop until it's right. This is a core part of the workflow, not a final check.
 
+### Verification Gate (Required Before Reporting Success)
+
+Before reporting that a diagram is done or looks good, all of the following must be true:
+1. A PNG export exists for the current `.excalidraw` file.
+2. The PNG was opened and visually inspected.
+3. Any detected layout/text issues were fixed and re-rendered.
+
+If any item is missing, report status as **not visually verified**.
+
 ### How to Render
 
 ```bash
-cd .claude/skills/excalidraw-diagram/references && uv run python render_excalidraw.py <path-to-file.excalidraw>
+cd .copilot/skills/excalidraw-diagram/references && uv run python render_excalidraw.py <path-to-file.excalidraw>
 ```
 
-This outputs a PNG next to the `.excalidraw` file. Then use the **Read tool** on the PNG to actually view it.
+This outputs a PNG next to the `.excalidraw` file. Then open the PNG in VS Code (or any local image viewer) to visually inspect it.
 
 ### The Loop
 
 After generating the initial JSON, run this cycle:
 
-**1. Render & View** — Run the render script, then Read the PNG.
+**1. Render & View** — Run the render script, then open/view the PNG.
 
 **2. Audit against your original vision** — Before looking for bugs, compare the rendered result to what you designed in Steps 1-4. Ask:
 - Does the visual structure match the conceptual structure you planned?
@@ -487,7 +532,7 @@ After generating the initial JSON, run this cycle:
 - Reposition labels closer to the element they describe
 - Resize elements to rebalance visual weight across sections
 
-**5. Re-render & re-view** — Run the render script again and Read the new PNG.
+**5. Re-render & re-view** — Run the render script again and open/view the new PNG.
 
 **6. Repeat** — Keep cycling until the diagram passes both the vision check (Step 2) and the defect check (Step 3). Typically takes 2-4 iterations. Don't stop after one pass just because there are no critical bugs — if the composition could be better, improve it.
 
@@ -501,11 +546,16 @@ The loop is done when:
 - You'd be comfortable showing it to someone without caveats
 
 ### First-Time Setup
-If the render script hasn't been set up yet:
+If the render script hasn't been set up yet (run from the skill's `references` folder):
 ```bash
-cd .claude/skills/excalidraw-diagram/references
+cd .copilot/skills/excalidraw-diagram/references
 uv sync
 uv run playwright install chromium
+```
+
+Windows install for `uv` (if command not found):
+```bash
+winget install Astral-sh.uv
 ```
 
 ---
@@ -541,12 +591,14 @@ uv run playwright install chromium
 18. **Roughness**: `roughness: 0` for clean/modern (unless hand-drawn style requested)
 19. **Opacity**: `opacity: 100` for all elements (no transparency)
 20. **Container ratio**: <30% of text elements should be inside containers
+21. **Text binding integrity**: Text intended inside a shape has valid `containerId` and reciprocal shape `boundElements`
+22. **Arrow binding integrity**: Connector arrows have valid `startBinding`/`endBinding` and reciprocal shape `boundElements`
 
 ### Visual Validation (Render Required)
-21. **Rendered to PNG**: Diagram has been rendered and visually inspected
-22. **No text overflow**: All text fits within its container
-23. **No overlapping elements**: Shapes and text don't overlap unintentionally
-24. **Even spacing**: Similar elements have consistent spacing
-25. **Arrows land correctly**: Arrows connect to intended elements without crossing others
-26. **Readable at export size**: Text is legible in the rendered PNG
-27. **Balanced composition**: No large empty voids or overcrowded regions
+23. **Rendered to PNG**: Diagram has been rendered and visually inspected
+24. **No text overflow**: All text fits within its container
+25. **No overlapping elements**: Shapes and text don't overlap unintentionally
+26. **Even spacing**: Similar elements have consistent spacing
+27. **Arrows land correctly**: Arrows connect to intended elements without crossing others
+28. **Readable at export size**: Text is legible in the rendered PNG
+29. **Balanced composition**: No large empty voids or overcrowded regions
