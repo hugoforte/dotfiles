@@ -17,6 +17,18 @@ function list-functions {
     Write-Host "  Interactive AWS profile switcher"
     Write-Host ""
 
+    Write-Host "aws-setup-profile" -ForegroundColor Green
+    Write-Host "  Copy repo aws/config to your ~/.aws/config"
+    Write-Host ""
+
+    Write-Host "aws-view-profile" -ForegroundColor Green
+    Write-Host "  Print your ~/.aws/config contents"
+    Write-Host ""
+
+    Write-Host "aws-goto-profile-path" -ForegroundColor Green
+    Write-Host "  Change directory to your ~/.aws path"
+    Write-Host ""
+
     Write-Host "list-functions" -ForegroundColor Green
     Write-Host "  Show this function list"
     Write-Host ""

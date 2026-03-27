@@ -19,6 +19,66 @@ function aws-profile {
     }
 }
 
+function aws-setup-profile {
+    $repoRoot = Split-Path -Parent $PSScriptRoot
+    $sourceConfigPath = Join-Path $repoRoot "aws\config"
+    $awsDir = Join-Path $env:USERPROFILE ".aws"
+    $targetConfigPath = Join-Path $awsDir "config"
+
+    if (-not (Test-Path -LiteralPath $sourceConfigPath)) {
+        Write-Host "Source AWS config not found at: $sourceConfigPath" -ForegroundColor Red
+        return
+    }
+
+    if (-not (Test-Path -LiteralPath $awsDir)) {
+        New-Item -ItemType Directory -Path $awsDir | Out-Null
+        Write-Host "Created AWS directory: $awsDir" -ForegroundColor Green
+    }
+
+    if (Test-Path -LiteralPath $targetConfigPath) {
+        $sourceContent = Get-Content -LiteralPath $sourceConfigPath -Raw
+        $targetContent = Get-Content -LiteralPath $targetConfigPath -Raw
+
+        if ($sourceContent -eq $targetContent) {
+            Write-Host "AWS config is already up to date." -ForegroundColor Green
+            return
+        }
+
+        $backupPath = "$targetConfigPath.backup.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+        Copy-Item -LiteralPath $targetConfigPath -Destination $backupPath -Force
+        Write-Host "Backed up existing AWS config to: $backupPath" -ForegroundColor Yellow
+    }
+
+    Copy-Item -LiteralPath $sourceConfigPath -Destination $targetConfigPath -Force
+    Write-Host "Copied AWS config from repo to: $targetConfigPath" -ForegroundColor Green
+    Write-Host "Run 'aws sso login' to authenticate." -ForegroundColor DarkGray
+}
+
+function aws-view-profile {
+    $configPath = Join-Path (Join-Path $env:USERPROFILE ".aws") "config"
+
+    if (-not (Test-Path -LiteralPath $configPath)) {
+        Write-Host "AWS config file not found at: $configPath" -ForegroundColor Red
+        return
+    }
+
+    Write-Host "AWS config: $configPath" -ForegroundColor Cyan
+    Write-Host "----------------------------------------" -ForegroundColor Cyan
+    Get-Content -LiteralPath $configPath
+}
+
+function aws-goto-profile-path {
+    $awsDir = Join-Path $env:USERPROFILE ".aws"
+
+    if (-not (Test-Path -LiteralPath $awsDir)) {
+        New-Item -ItemType Directory -Path $awsDir | Out-Null
+        Write-Host "Created AWS directory: $awsDir" -ForegroundColor Green
+    }
+
+    Set-Location -LiteralPath $awsDir
+    Write-Host "Changed directory to: $awsDir" -ForegroundColor Green
+}
+
 function aws-switch-profile {
     $configPath = "$env:USERPROFILE\.aws\config"
     $credentialsPath = "$env:USERPROFILE\.aws\credentials"

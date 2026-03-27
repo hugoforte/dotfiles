@@ -23,6 +23,9 @@ cd "$env:USERPROFILE\dotfiles\powershell"
 - `aws-profile [ProfileName]`
 - `aws-switch-profile`
 - `aws-switch-profiles`
+- `aws-setup-profile` (copies `aws/config` to `%USERPROFILE%\\.aws\\config`)
+- `aws-view-profile` (prints `%USERPROFILE%\\.aws\\config`)
+- `aws-goto-profile-path` (changes directory to `%USERPROFILE%\\.aws`)
 - `git-list-merged-branches`
 - `git-delete-merged-branches`
 

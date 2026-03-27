@@ -19,7 +19,7 @@ cd "$env:USERPROFILE\dotfiles\powershell"
 `setup.ps1` will:
 
 - Request Administrator privileges (required for symlinks)
-- Clone or update this repository in `%USERPROFILE%\dotfiles`
+- Use the current checkout when run from this repo; otherwise clone/update `%USERPROFILE%\dotfiles` as needed
 - Symlink PowerShell profile files to `powershell/profile.ps1`
 - Symlink `%USERPROFILE%\.aws\config` to `aws/config`
 - Offer to reload your profile
