@@ -96,51 +96,6 @@ Line: <number>
 Comment: <your suggestion>
 ```
 
-### Step 6: Prepare gh CLI Commands
-
-Generate ready-to-run commands. **Important**: Create a pending review first, add each line comment individually, then submit.
-
-1. Get the commit SHA for comments:
-
-   ```bash
-   COMMIT_SHA=$(gh pr view <PR_NUMBER> --json headRefOid -q .headRefOid)
-   ```
-
-2. Create an empty pending review:
-
-   ```bash
-   gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews \
-     -f commit_id="$COMMIT_SHA"
-   ```
-
-3. Add each line comment to the pending review (one call per comment):
-
-   ```bash
-   gh api repos/{owner}/{repo}/pulls/{pr_number}/comments \
-     -f body="<comment>" \
-     -f path="<file_path>" \
-     -f commit_id="$COMMIT_SHA" \
-     -F line=<line_number> \
-     -f side="RIGHT"
-   ```
-
-   For multi-line comments, add `-F start_line=<start>` before `-F line=<end>`.
-
-4. Reply to existing comments (if needed):
-
-   ```bash
-   gh api repos/{owner}/{repo}/pulls/{pr_number}/comments/{comment_id}/replies \
-     -f body="<reply>"
-   ```
-
-5. **After all comments are added**, submit the review as an approval:
-
-   ```bash
-   gh pr review <PR_NUMBER> --approve --body "Short summary here."
-   ```
-
-   **Keep the final review body short** (1-2 sentences). The detailed feedback is in the line comments.
-
 ### Output Format
 
 Present your findings in sections, then wait for my feedback. I will:
@@ -149,4 +104,4 @@ Present your findings in sections, then wait for my feedback. I will:
 - Tell you which comments to keep/remove
 - Request changes to the review approach
 
-Do NOT submit any reviews or comments until I explicitly approve the plan.
+Do NOT submit any reviews or comments
