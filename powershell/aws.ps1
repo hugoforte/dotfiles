@@ -88,7 +88,8 @@ function aws-switch-profile {
     if (Test-Path $configPath) {
         $profiles += Get-Content $configPath |
             Select-String -Pattern '^\[(profile\s+)?(.+)\]$' |
-            ForEach-Object { $_.Matches.Groups[2].Value }
+            ForEach-Object { $_.Matches.Groups[2].Value } |
+            Where-Object { $_ -notmatch '^sso-session\s' }
     }
 
     if (Test-Path $credentialsPath) {

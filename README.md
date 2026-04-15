@@ -11,6 +11,8 @@ Personal dotfiles for PowerShell, AWS CLI, and AI tooling.
 
 ## Quick Start (Windows)
 
+### PowerShell + AWS
+
 ```powershell
 cd "$env:USERPROFILE\dotfiles\powershell"
 .\setup.ps1
@@ -23,3 +25,20 @@ cd "$env:USERPROFILE\dotfiles\powershell"
 - Symlink PowerShell profile files to `powershell/profile.ps1`
 - Symlink `%USERPROFILE%\.aws\config` to `aws/config`
 - Offer to reload your profile
+
+### Claude Code (AI tooling)
+
+Run from Git Bash or WSL after cloning:
+
+```sh
+./ai/install.sh
+```
+
+Requires `claude`, `jq`, and `npx` on your `PATH`. `install.sh` will:
+
+- Symlink `CLAUDE.md` and agents into `~/.claude/`
+- Register MCP servers with `claude mcp add`
+- Configure hooks and tool permissions in `~/.claude/settings.json`
+- Validate the final settings
+
+Run `./ai/install.sh --help` to install components selectively.

@@ -1,6 +1,8 @@
 #!/bin/sh
 
-export ZSH=$HOME/.dotfiles
+# Derive repo root from script location (works regardless of where repo is cloned)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+export ZSH="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Source helper functions
 . $ZSH/ai/helpers/output.sh
@@ -162,8 +164,7 @@ PERMISSIONS_CONFIG=$(cat <<'EOF'
       "Bash(cd :* && cargo build::*)",
       "Bash(cd :* && cargo check::*)",
       "Bash(* > /tmp/*)",
-      "Read(/tmp/**)",
-      "Read(//Users/haacked/dev/**)"
+      "Read(/tmp/**)"
     ]
   }
 }
@@ -201,6 +202,13 @@ if command -v jq > /dev/null 2>&1 && \
 else
     # Merge permissions configuration using helper function
     if merge_json_settings "$SETTINGS_FILE" "$PERMISSIONS_CONFIG" "MCP permissions"; then
+        # Add dynamic home-relative dev path permission
+        DEV_READ_PERM="Read($HOME/dev/**)"
+        jq --arg perm "$DEV_READ_PERM" \
+            '.permissions.allow += [$perm] | .permissions.allow |= unique' \
+            "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" \
+            && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
+
         success "Safe tool operations auto-approved"
         info "Write/dangerous operations will still require approval:"
         info "  • GitHub: create/update/merge operations"

@@ -1,6 +1,8 @@
 #!/bin/sh
 
-export ZSH=$HOME/.dotfiles
+# Derive repo root from script location (works regardless of where repo is cloned)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+export ZSH="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Source helper functions
 . $ZSH/ai/helpers/output.sh

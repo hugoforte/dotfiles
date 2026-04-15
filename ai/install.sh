@@ -1,10 +1,28 @@
 #!/bin/sh
 
-export ZSH=$HOME/.dotfiles
+# Derive repo root from script location (works regardless of where repo is cloned)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+export ZSH="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Source helper functions
 . $ZSH/ai/helpers/output.sh
 . $ZSH/ai/helpers/json-settings.sh
+
+# Check required tools are available
+check_prereqs() {
+    local missing=0
+    for cmd in claude jq npx; do
+        if ! command -v "$cmd" > /dev/null 2>&1; then
+            error "Required tool not found: $cmd"
+            missing=1
+        fi
+    done
+    if [ "$missing" -eq 1 ]; then
+        info "Install missing tools and re-run this script"
+        exit 1
+    fi
+    success "All prerequisites found"
+}
 
 # Uninstall function
 uninstall_claude_config() {
@@ -158,6 +176,8 @@ if [ "$UNINSTALL" = "true" ]; then
     exit 0
 fi
 
+check_prereqs
+
 info "Installing Claude configuration…"
 
 # Ensure ~/.claude directory exists
@@ -184,11 +204,11 @@ fi
 # Define MCP servers as a list of entries
 # Format: "name|description|command"
 MCP_SERVERS="
-posthog-db|PostHog database connection|/Users/haacked/.local/bin/postgres-mcp --access-mode=restricted
+posthog-db|PostHog database connection|$HOME/.local/bin/postgres-mcp --access-mode=restricted
 puppeteer|Puppeteer web automation|npx -y @modelcontextprotocol/server-puppeteer
 memory|Persistent memory across sessions|npx -y @modelcontextprotocol/server-memory
 git|Structured git operations|npx -y @modelcontextprotocol/server-git
-spelungit|Git history semantic search|/Users/haacked/dev/haacked/spelungit/venv/bin/python
+spelungit|Git history semantic search|$HOME/dev/haacked/spelungit/venv/bin/python
 "
 
 # Special environment variables for specific servers
@@ -199,7 +219,7 @@ set_server_env() {
             echo "-e DATABASE_URI=postgresql://posthog:posthog@localhost:5432/posthog"
             ;;
         spelungit)
-            echo "-e PYTHONPATH=/Users/haacked/dev/haacked/spelungit/src -- -m spelungit.lite_server"
+            echo "-e PYTHONPATH=$HOME/dev/haacked/spelungit/src -- -m spelungit.lite_server"
             ;;
         *)
             echo ""
@@ -259,53 +279,13 @@ if [ "$INSTALL_HOOKS" = "true" ]; then
             success "Created initial settings.json"
         fi
 
-        # Create hooks configuration with separate matchers for each tool
+        # Create hooks configuration with a single matcher covering all edit tools
         HOOKS_CONFIG=$(cat <<'EOF'
 {
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if [ -n \"$CLAUDE_FILE_PATHS\" ]; then for file in $CLAUDE_FILE_PATHS; do if [[ \"$file\" == *.md || \"$file\" == *.markdown ]]; then markdownlint \"$file\" || echo \"Markdownlint failed for $file\"; fi; done; fi",
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "if [ -n \"$CLAUDE_FILE_PATHS\" ]; then for file in $CLAUDE_FILE_PATHS; do if [[ \"$file\" == *.py ]]; then if command -v ruff > /dev/null 2>&1; then ruff format \"$file\" || echo \"Ruff format failed for $file\"; else echo \"Ruff not installed - skipping Python formatting\"; fi; fi; done; fi",
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "if [ -d .github/workflows ]; then if grep -r 'mypy' .github/workflows/ > /dev/null 2>&1; then if command -v mypy > /dev/null 2>&1; then echo 'Running mypy...'; mypy .; else echo 'MyPy configured in CI but not installed locally'; fi; fi; fi",
-            "timeout": 120
-          }
-        ]
-      },
-      {
-        "matcher": "Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if [ -n \"$CLAUDE_FILE_PATHS\" ]; then for file in $CLAUDE_FILE_PATHS; do if [[ \"$file\" == *.md || \"$file\" == *.markdown ]]; then markdownlint \"$file\" || echo \"Markdownlint failed for $file\"; fi; done; fi",
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "if [ -n \"$CLAUDE_FILE_PATHS\" ]; then for file in $CLAUDE_FILE_PATHS; do if [[ \"$file\" == *.py ]]; then if command -v ruff > /dev/null 2>&1; then ruff format \"$file\" || echo \"Ruff format failed for $file\"; else echo \"Ruff not installed - skipping Python formatting\"; fi; fi; done; fi",
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "if [ -d .github/workflows ]; then if grep -r 'mypy' .github/workflows/ > /dev/null 2>&1; then if command -v mypy > /dev/null 2>&1; then echo 'Running mypy...'; mypy .; else echo 'MyPy configured in CI but not installed locally'; fi; fi; fi",
-            "timeout": 120
-          }
-        ]
-      },
-      {
-        "matcher": "MultiEdit",
+        "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
@@ -353,3 +333,7 @@ fi
 
 echo ""
 success "Claude configuration installed successfully!"
+
+# Validate the final settings
+echo ""
+"$ZSH/ai/validate-settings.sh"
