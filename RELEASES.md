@@ -6,7 +6,7 @@
 - Vendored Matt Pocock's engineering and productivity skills as `matt-*` (25 skills, MIT, pinned in `ai/licenses/`)
 - `review-pr` skill (was a user-level Claude command)
 - `ai/install.sh` rewritten: `--check` drift report, `--uninstall`, per-component flags, native symlinks on Git Bash, prerequisites checked per component
-- `ai/claude/settings.json` fragment merged into `~/.claude/settings.json` (model, plugins, marketplaces, read-only tool allowlist)
+- `ai/claude/settings.json` fragment merged into `~/.claude/settings.json` (model, plugins, marketplaces, read-only tool allowlist); `--check` reports settings drift both ways and `--settings-export` copies Claude-side changes back to the repo
 - `powershell/sync.ps1` pull-and-relink, `install-sync-task.ps1` scheduled task, `dotfiles-sync` profile function
 - `ai/CLAUDE.md` rewritten as my own guidelines; agents trimmed to the seven generic ones with PostHog and Rust sections removed
 - Removed inherited MCP server list, hooks, and tool-permissions script

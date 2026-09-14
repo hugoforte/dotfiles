@@ -165,13 +165,49 @@ check_settings() {
         CHECK_FAILED=1
         return
     fi
-    missing="$(jq -r --slurpfile frag "$SETTINGS_FRAGMENT" '$frag[0] | keys[] as $k | select(input has($k) | not) | $k' "$SETTINGS_FRAGMENT" "$SETTINGS_FILE" 2>/dev/null)"
-    if [ -z "$missing" ]; then
-        success "$SETTINGS_FILE has every key from ai/claude/settings.json"
-    else
-        warning "$SETTINGS_FILE is missing keys: $(echo "$missing" | tr '\n' ' ')"
+    # Compare every key the fragment manages against the live file.
+    # MISSING / DIFF are drift (exit 1). EXTRA is live-only additions under a
+    # managed key (e.g. "always allow" answers); informational, use --settings-export to keep them.
+    # Walk every leaf path in the fragment (arrays count as leaves) and compare with the live file.
+    report="$(jq -r --slurpfile frag "$SETTINGS_FRAGMENT" '
+        . as $live | $frag[0] as $f
+        | [$f | paths(type != "object") | select(all(.[]; type == "string"))][]
+        | . as $p | ($p | join(".")) as $name
+        | ($f | getpath($p)) as $fv | ($live | getpath($p)) as $lv
+        | if $lv == null then "MISSING \($name)"
+          elif ($fv | type) == "array" then
+              (($lv - $fv) | if length > 0 then "EXTRA \($name): \(join(", "))" else empty end)
+          elif $lv != $fv then "DIFF \($name): live=\($lv) repo=\($fv)"
+          else empty end' "$SETTINGS_FILE" 2>/dev/null)"
+    if [ -z "$report" ]; then
+        success "$SETTINGS_FILE matches ai/claude/settings.json"
+        return
+    fi
+    echo "$report" | while IFS= read -r line; do
+        case "$line" in
+            EXTRA*) info "$line" ;;
+            *)      warning "$line" ;;
+        esac
+    done
+    if echo "$report" | grep -qv '^EXTRA'; then
         CHECK_FAILED=1
     fi
+}
+
+# Copy the managed keys from the live file back into the repo fragment.
+export_settings() {
+    if ! command -v jq > /dev/null 2>&1; then
+        error "jq not found - cannot export settings"
+        exit 1
+    fi
+    if [ ! -f "$SETTINGS_FILE" ]; then
+        error "$SETTINGS_FILE missing"
+        exit 1
+    fi
+    jq --slurpfile frag "$SETTINGS_FRAGMENT" \
+        '. as $live | $frag[0] | with_entries(.value = ($live[.key] // .value))' \
+        "$SETTINGS_FILE" > "${SETTINGS_FRAGMENT}.tmp" && mv "${SETTINGS_FRAGMENT}.tmp" "$SETTINGS_FRAGMENT"
+    success "Wrote managed keys from $SETTINGS_FILE to ai/claude/settings.json (review with git diff)"
 }
 
 # ---------------------------------------------------------------------------
@@ -202,6 +238,7 @@ show_help() {
     echo "  (default)           Install"
     echo "  --check             Report link drift without changing anything (exit 1 on drift)"
     echo "  --uninstall         Remove the symlinks"
+    echo "  --settings-export   Copy the managed settings keys from ~/.claude/settings.json back into the repo"
     echo ""
     echo "Component flags:"
     echo "  --claude-md-only    Only CLAUDE.md"
@@ -221,6 +258,7 @@ while [ $# -gt 0 ]; do
     case $1 in
         --uninstall)        MODE=uninstall ;;
         --check)            MODE=check ;;
+        --settings-export)  MODE=export; disable_all; INSTALL_SETTINGS=true ;;
         --claude-md-only)   disable_all; INSTALL_CLAUDE_MD=true ;;
         --agents-only)      disable_all; INSTALL_AGENTS=true ;;
         --skills-only)      disable_all; INSTALL_SKILLS=true ;;
@@ -247,6 +285,7 @@ case $MODE in
     install)   info "Installing AI tooling from $ZSH…" ;;
     uninstall) info "Removing AI tooling links…" ;;
     check)     info "Checking AI tooling links…" ;;
+    export)    info "Exporting settings…" ;;
 esac
 
 [ "$INSTALL_CLAUDE_MD" = "true" ] && ${MODE}_claude_md
@@ -258,6 +297,7 @@ echo ""
 case $MODE in
     install)   success "Done" ;;
     uninstall) success "Done" ;;
+    export)    success "Done" ;;
     check)
         if [ "$CHECK_FAILED" = "1" ]; then
             warning "Drift found - run $0 to fix"

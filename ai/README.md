@@ -72,7 +72,13 @@ Copy the wanted folders from `skills/engineering` and `skills/productivity` to `
 
 ## Settings
 
-`claude/settings.json` is deep-merged into `~/.claude/settings.json`: objects merge, arrays union, scalars in the fragment win. Machine-local keys already in the target survive. Grow the `permissions.allow` list here rather than in the live file so it syncs.
+`claude/settings.json` is deep-merged into `~/.claude/settings.json`: objects merge, arrays union, scalars in the fragment win. Keys already in the live file that the fragment does not mention survive, which leaves room for machine-local or secret-bearing config later.
+
+The merge is one-directional and never deletes, so:
+
+- `./ai/install.sh --check` compares every managed key. `MISSING` and `DIFF` (a scalar changed on the Claude side, e.g. via `/model`) count as drift. `EXTRA` lists live-only additions under a managed key, such as "always allow" answers, and is informational.
+- `./ai/install.sh --settings-export` copies the managed keys from the live file back into the repo fragment. Review with `git diff`, then commit. This is how a change made through Claude reaches other machines.
+- To remove an allowlist entry everywhere, delete it from the fragment and from each machine's live file; the merge cannot delete.
 
 ## Agents and CLAUDE.md
 
