@@ -31,9 +31,9 @@ Structure your documentation to capture:
 
 ### 3. **Documentation Creation**
 Create structured notes following this approach:
-- **File Location**: `~/dev/ai/notes/{org}/{repo}/{feature-or-area}.md`
+- **File Location**: `~/ai-notes/notes/{org}/{repo}/{feature-or-area}.md`
 - **Naming Convention**: Use kebab-case (e.g., `cohort-uploads.md`, `oauth-flow.md`)
-- **Directory Structure**: Create as needed (e.g., `~/dev/ai/notes/posthog/posthog/cohorts/`)
+- **Directory Structure**: Create as needed (e.g., `~/ai-notes/notes/org/repo/area/`)
 - **Update Strategy**: Enhance existing notes rather than creating duplicates
 
 ### 4. **Quality Validation**

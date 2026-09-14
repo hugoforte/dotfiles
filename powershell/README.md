@@ -11,6 +11,8 @@ Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in tu
 - `git.ps1`: Git helper functions
 - `rig.ps1`: rig (cross-repo work harness) launcher
 - `setup.ps1`: symlink/setup automation
+- `sync.ps1`: `git pull --ff-only` then `ai/install.sh`; logs to `%LOCALAPPDATA%\dotfiles\sync.log`
+- `install-sync-task.ps1`: registers the "Dotfiles Sync" scheduled task that runs `sync.ps1` at logon and every 4 hours (`-Uninstall` removes it)
 
 ## Setup
 
@@ -41,6 +43,7 @@ What it does, idempotently:
 - `git-delete-merged-branches`
 - `rig` (cross-repo work harness — see [hugoforte/rig](https://github.com/hugoforte/rig))
 - `rig-goto-root`
+- `dotfiles-sync` (runs `sync.ps1` in the foreground)
 
 ## Notes
 

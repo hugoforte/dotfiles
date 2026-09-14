@@ -32,6 +32,8 @@ dotfiles/
 │   ├── git.ps1
 │   ├── rig.ps1
 │   ├── setup.ps1
+│   ├── sync.ps1
+│   ├── install-sync-task.ps1
 │   └── README.md
 ├── aws/
 │   ├── config
@@ -39,10 +41,11 @@ dotfiles/
 ├── ai/
 │   ├── CLAUDE.md
 │   ├── install.sh
-│   ├── configure-tool-permissions.sh
 │   ├── validate-settings.sh
+│   ├── claude/settings.json
 │   ├── helpers/
 │   ├── agents/
+│   ├── licenses/
 │   └── skills/<name>/SKILL.md
 ├── docs/agents/
 ├── AGENTS.md
@@ -96,7 +99,8 @@ cd ai
 
 - PowerShell setup links current-user profile and current-user-all-hosts profile to powershell/profile.ps1.
 - AWS setup links %USERPROFILE%\\.aws\\config to aws/config.
-- AI setup links ~/.claude/CLAUDE.md and ~/.claude/agents/* and merges settings JSON.
+- AI setup links ~/.claude/CLAUDE.md, ~/.claude/agents/* and <tool>/skills/* and merges ai/claude/settings.json into ~/.claude/settings.json.
+- sync.ps1 (scheduled task "Dotfiles Sync") pulls fast-forward-only and re-runs ai/install.sh; it never commits or pushes.
 
 ## Validation Steps
 

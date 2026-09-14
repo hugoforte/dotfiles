@@ -47,6 +47,10 @@ function list-functions {
     Write-Host "rig-goto-root" -ForegroundColor Green
     Write-Host "  Change directory to the rig checkout"
     Write-Host ""
+
+    Write-Host "dotfiles-sync" -ForegroundColor Green
+    Write-Host "  Pull the dotfiles repo and re-link AI tooling (same as the scheduled task)"
+    Write-Host ""
 }
 
 $profilePath = $MyInvocation.MyCommand.Path
@@ -99,4 +103,9 @@ if (Test-Path $rigHelpersPath) {
     . $rigHelpersPath
 } else {
     Write-Host "WARNING: Could not find rig.ps1 at $rigHelpersPath" -ForegroundColor Yellow
+}
+
+$dotfilesSyncScript = Join-Path $profileScriptRoot "sync.ps1"
+function dotfiles-sync {
+    & $dotfilesSyncScript
 }
