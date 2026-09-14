@@ -7,21 +7,21 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Output functions
+# Output functions (printf: `echo` in POSIX sh does not interpret escape codes)
 error() {
-    echo "${RED}Error: $1${NC}" >&2
+    printf "${RED}Error: %s${NC}\n" "$1" >&2
 }
 
 warning() {
-    echo "${YELLOW}Warning: $1${NC}"
+    printf "${YELLOW}Warning: %s${NC}\n" "$1"
 }
 
 success() {
-    echo "${GREEN}✓ $1${NC}"
+    printf "${GREEN}✓ %s${NC}\n" "$1"
 }
 
 info() {
-    echo "${BLUE}$1${NC}"
+    printf "${BLUE}%s${NC}\n" "$1"
 }
 
 # Exit with error message

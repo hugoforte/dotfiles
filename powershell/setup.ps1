@@ -3,7 +3,7 @@
 # Idempotent - safe to run multiple times
 
 param(
-    [string]$RepoUrl = "https://github.com/haacked/dotfiles.git",
+    [string]$RepoUrl = "https://github.com/hugoforte/dotfiles.git",
     [switch]$Force
 )
 

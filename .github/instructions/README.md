@@ -11,8 +11,14 @@
 │   ├── shell.instructions.md
 │   └── ai.instructions.md
 └── prompts/
+    ├── execute-prd-documents.prompt.md
+    ├── generate-copilot-instructions-for-repo.prompt.md
+    ├── pr-review.prompt.md
+    ├── pr-review-terraform.prompt.md
     └── review-my-work.prompt.md
 ```
+
+Prompts are reusable Copilot Chat prompts (`/prompt-name` in VS Code): PR review, Terraform PR review, reviewing work in progress, executing PRD documents, and generating copilot instructions for a repo.
 
 ## Breakdown Philosophy
 

@@ -25,11 +25,12 @@ dotfiles/
 │   │   ├── shell.instructions.md
 │   │   └── ai.instructions.md
 │   └── prompts/
-│       └── review-my-work.prompt.md
+│       └── *.prompt.md
 ├── powershell/
 │   ├── profile.ps1
 │   ├── aws.ps1
 │   ├── git.ps1
+│   ├── rig.ps1
 │   ├── setup.ps1
 │   └── README.md
 ├── aws/
@@ -38,9 +39,13 @@ dotfiles/
 ├── ai/
 │   ├── CLAUDE.md
 │   ├── install.sh
+│   ├── configure-tool-permissions.sh
 │   ├── validate-settings.sh
 │   ├── helpers/
-│   └── agents/
+│   ├── agents/
+│   └── skills/<name>/SKILL.md
+├── docs/agents/
+├── AGENTS.md
 ├── README.md
 └── RELEASES.md
 ```

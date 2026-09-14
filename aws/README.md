@@ -1,10 +1,11 @@
-# AWS Configuration Files
+# AWS Configuration
 
-This directory contains your AWS configuration and credentials files that are symlinked to `~/.aws/` on your system.
+AWS CLI config, symlinked to `~/.aws/config` by `powershell/setup.ps1`.
 
 ## Files
 
-- `config` - AWS CLI configuration (profiles, SSO settings, regions)
+- `config` - AWS CLI configuration (profiles, SSO settings, regions). The only file managed here.
+- `credentials` - never committed (see `.gitignore`); SSO means it is not needed.
 
 ## SSO Authentication
 

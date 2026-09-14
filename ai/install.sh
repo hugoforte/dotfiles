@@ -8,10 +8,33 @@ export ZSH="$(cd "$SCRIPT_DIR/.." && pwd)"
 . $ZSH/ai/helpers/output.sh
 . $ZSH/ai/helpers/json-settings.sh
 
-# Check required tools are available
+# On Git Bash (MSYS), `ln -s` silently copies unless native symlinks are enabled.
+# Native symlinks need Windows Developer Mode or an elevated shell.
+case "$(uname -s)" in
+    MINGW*|MSYS*) export MSYS="winsymlinks:nativestrict" ;;
+esac
+
+# Skill directories: every ai/skills/<name>/ is linked into each of these.
+# ~/.claude/skills is always used; the others only when their tool directory exists.
+SKILL_TARGETS="$HOME/.claude/skills $HOME/.codex/skills $HOME/.copilot/skills"
+
+skill_target_dirs() {
+    for target in $SKILL_TARGETS; do
+        parent="$(dirname "$target")"
+        if [ "$target" = "$HOME/.claude/skills" ] || [ -d "$parent" ]; then
+            echo "$target"
+        fi
+    done
+}
+
+# Check required tools are available. Only the components being installed count:
+# MCP needs claude + npx; hooks and permissions need jq. Symlink-only components need nothing.
 check_prereqs() {
     local missing=0
-    for cmd in claude jq npx; do
+    local required=""
+    [ "$INSTALL_MCP" = "true" ] && required="$required claude npx"
+    { [ "$INSTALL_HOOKS" = "true" ] || [ "$INSTALL_PERMISSIONS" = "true" ]; } && required="$required jq"
+    for cmd in $required; do
         if ! command -v "$cmd" > /dev/null 2>&1; then
             error "Required tool not found: $cmd"
             missing=1
@@ -50,6 +73,20 @@ uninstall_claude_config() {
         fi
     fi
 
+    # Remove skill symlinks (only links that point into this repo)
+    if [ "$INSTALL_SKILLS" = "true" ]; then
+        for target in $(skill_target_dirs); do
+            [ -d "$target" ] || continue
+            for skill in "$ZSH"/ai/skills/*/; do
+                link="$target/$(basename "$skill")"
+                if [ -L "$link" ]; then
+                    rm -f "$link"
+                fi
+            done
+        done
+        success "Removed skill symlinks"
+    fi
+
     echo ""
     success "Claude configuration uninstalled successfully!"
     info "Note: MCP servers, hooks, and permissions are not removed by uninstall"
@@ -59,9 +96,20 @@ uninstall_claude_config() {
 UNINSTALL=false
 INSTALL_CLAUDE_MD=true
 INSTALL_AGENTS=true
+INSTALL_SKILLS=true
 INSTALL_MCP=true
 INSTALL_HOOKS=true
 INSTALL_PERMISSIONS=true
+
+# Turn off every component; used by the --*-only flags
+disable_all() {
+    INSTALL_CLAUDE_MD=false
+    INSTALL_AGENTS=false
+    INSTALL_SKILLS=false
+    INSTALL_MCP=false
+    INSTALL_HOOKS=false
+    INSTALL_PERMISSIONS=false
+}
 
 show_help() {
     echo "Usage: $0 [OPTIONS]"
@@ -72,11 +120,13 @@ show_help() {
     echo "  --uninstall         Remove symlinks for file-based components"
     echo "  --claude-md-only    Install only CLAUDE.md file"
     echo "  --agents-only       Install only agent files"
+    echo "  --skills-only       Install only skills"
     echo "  --mcp-only          Install only MCP servers"
     echo "  --hooks-only        Install only Claude Code hooks"
     echo "  --permissions-only  Install only tool permissions"
     echo "  --no-claude-md      Skip CLAUDE.md installation"
     echo "  --no-agents         Skip agent files installation"
+    echo "  --no-skills         Skip skills installation"
     echo "  --no-mcp            Skip MCP servers installation"
     echo "  --no-hooks          Skip Claude Code hooks installation"
     echo "  --no-permissions    Skip tool permissions configuration"
@@ -86,6 +136,7 @@ show_help() {
     echo "  $0                      # Install everything (default)"
     echo "  $0 --claude-md-only     # Install only CLAUDE.md"
     echo "  $0 --agents-only        # Install only agent files"
+    echo "  $0 --skills-only        # Link ai/skills/* into each tool's skills directory"
     echo "  $0 --no-mcp             # Install everything except MCP servers"
     echo "  $0 --uninstall          # Remove all symlinks"
     echo "  $0 --uninstall --agents-only  # Remove only agent symlinks"
@@ -99,42 +150,32 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         --claude-md-only)
+            disable_all
             INSTALL_CLAUDE_MD=true
-            INSTALL_AGENTS=false
-            INSTALL_MCP=false
-            INSTALL_HOOKS=false
-            INSTALL_PERMISSIONS=false
             shift
             ;;
         --agents-only)
-            INSTALL_CLAUDE_MD=false
+            disable_all
             INSTALL_AGENTS=true
-            INSTALL_MCP=false
-            INSTALL_HOOKS=false
-            INSTALL_PERMISSIONS=false
+            shift
+            ;;
+        --skills-only)
+            disable_all
+            INSTALL_SKILLS=true
             shift
             ;;
         --mcp-only)
-            INSTALL_CLAUDE_MD=false
-            INSTALL_AGENTS=false
+            disable_all
             INSTALL_MCP=true
-            INSTALL_HOOKS=false
-            INSTALL_PERMISSIONS=false
             shift
             ;;
         --hooks-only)
-            INSTALL_CLAUDE_MD=false
-            INSTALL_AGENTS=false
-            INSTALL_MCP=false
+            disable_all
             INSTALL_HOOKS=true
-            INSTALL_PERMISSIONS=false
             shift
             ;;
         --permissions-only)
-            INSTALL_CLAUDE_MD=false
-            INSTALL_AGENTS=false
-            INSTALL_MCP=false
-            INSTALL_HOOKS=false
+            disable_all
             INSTALL_PERMISSIONS=true
             shift
             ;;
@@ -144,6 +185,10 @@ while [ $# -gt 0 ]; do
             ;;
         --no-agents)
             INSTALL_AGENTS=false
+            shift
+            ;;
+        --no-skills)
+            INSTALL_SKILLS=false
             shift
             ;;
         --no-mcp)
@@ -199,6 +244,26 @@ if [ "$INSTALL_AGENTS" = "true" ]; then
         ln -sf "$agent" ~/.claude/agents/"$agent_name"
     done
     success "Symlinked agents"
+fi
+
+# Symlink skills: ai/skills/<name>/ -> <tool>/skills/<name>
+if [ "$INSTALL_SKILLS" = "true" ]; then
+    for target in $(skill_target_dirs); do
+        mkdir -p "$target"
+        for skill in "$ZSH"/ai/skills/*/; do
+            skill="${skill%/}"
+            name="$(basename "$skill")"
+            link="$target/$name"
+            if [ -L "$link" ]; then
+                rm -f "$link"
+            elif [ -e "$link" ]; then
+                warning "$link exists and is not a symlink - skipping (remove it to manage this skill from dotfiles)"
+                continue
+            fi
+            ln -s "$skill" "$link"
+        done
+        success "Linked skills into $target"
+    done
 fi
 
 # Define MCP servers as a list of entries
@@ -334,6 +399,8 @@ fi
 echo ""
 success "Claude configuration installed successfully!"
 
-# Validate the final settings
-echo ""
-"$ZSH/ai/validate-settings.sh"
+# Validate the final settings when this run touched settings.json
+if [ "$INSTALL_HOOKS" = "true" ] || [ "$INSTALL_PERMISSIONS" = "true" ]; then
+    echo ""
+    "$ZSH/ai/validate-settings.sh"
+fi

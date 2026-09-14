@@ -1,6 +1,8 @@
 # PowerShell
 
-PowerShell profile setup and helper functions.
+PowerShell profile, helper functions, and the setup script that symlinks them into place.
+
+Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in turn loads the helper files below. Run `list-functions` in a new shell to confirm.
 
 ## Files
 
@@ -13,9 +15,17 @@ PowerShell profile setup and helper functions.
 ## Setup
 
 ```powershell
-cd "$env:USERPROFILE\dotfiles\powershell"
+cd <path-to-dotfiles>\powershell
 .\setup.ps1
 ```
+
+What it does, idempotently:
+
+- Re-launches itself elevated (symlinks need admin unless Developer Mode is on)
+- Uses the checkout it is run from; if run from elsewhere, clones or updates `%USERPROFILE%\dotfiles`
+- Symlinks `$PROFILE` and the all-hosts profile to `profile.ps1`, backing up any regular file it replaces
+- Symlinks `%USERPROFILE%\.aws\config` to `aws/config`
+- Offers to reload the profile
 
 ## Functions
 
