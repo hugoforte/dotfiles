@@ -40,6 +40,13 @@ function list-functions {
     Write-Host "git-delete-merged-branches [options]" -ForegroundColor Green
     Write-Host "  Delete merged branches after confirmation"
     Write-Host ""
+    Write-Host "rig <command>" -ForegroundColor Green
+    Write-Host "  Cross-repo work harness (rig help for commands)"
+    Write-Host ""
+
+    Write-Host "rig-goto-root" -ForegroundColor Green
+    Write-Host "  Change directory to the rig checkout"
+    Write-Host ""
 }
 
 $profilePath = $MyInvocation.MyCommand.Path
@@ -61,15 +68,18 @@ if ($profileItem -and $profileItem.LinkType -eq "SymbolicLink" -and $profileItem
 $profileScriptRoot = Split-Path -Parent $profilePath
 $awsHelpersPath = Join-Path $profileScriptRoot "aws.ps1"
 $gitHelpersPath = Join-Path $profileScriptRoot "git.ps1"
+$rigHelpersPath = Join-Path $profileScriptRoot "rig.ps1"
 
 if (-not (Test-Path $awsHelpersPath) -or -not (Test-Path $gitHelpersPath)) {
     $fallbackRoot = Join-Path $env:USERPROFILE "dotfiles\powershell"
     $fallbackAwsPath = Join-Path $fallbackRoot "aws.ps1"
     $fallbackGitPath = Join-Path $fallbackRoot "git.ps1"
+    $fallbackRigPath = Join-Path $fallbackRoot "rig.ps1"
 
     if ((Test-Path $fallbackAwsPath) -and (Test-Path $fallbackGitPath)) {
         $awsHelpersPath = $fallbackAwsPath
         $gitHelpersPath = $fallbackGitPath
+        $rigHelpersPath = $fallbackRigPath
     }
 }
 
@@ -83,4 +93,10 @@ if (Test-Path $gitHelpersPath) {
     . $gitHelpersPath
 } else {
     Write-Host "WARNING: Could not find git.ps1 at $gitHelpersPath" -ForegroundColor Yellow
+}
+
+if (Test-Path $rigHelpersPath) {
+    . $rigHelpersPath
+} else {
+    Write-Host "WARNING: Could not find rig.ps1 at $rigHelpersPath" -ForegroundColor Yellow
 }
