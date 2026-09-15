@@ -73,8 +73,8 @@ function rig-install {
         Write-Host "%USERPROFILE%\rig without a D: drive. A non-default path is recorded in the" -ForegroundColor White
         Write-Host "RIG_ROOT user environment variable so 'rig' finds it in new shells." -ForegroundColor White
         Write-Host "-Email fills the commit identity for every org in rig.local.json." -ForegroundColor White
-        Write-Host "-DataRepo also clones a private data repo (catalogue, work records," -ForegroundColor White
-        Write-Host "rig.json) next to the tool, as '<parent>\rig-data', and points dataRoot at it." -ForegroundColor White
+        Write-Host "-DataRepo joins a private data repo (catalogue, work records, rig.json)," -ForegroundColor White
+        Write-Host "cloning it beside the tool — or creates it, private, if it does not exist." -ForegroundColor White
         Write-Host ""
         Write-Host "Needs: git, Node.js 18+, and an authenticated gh." -ForegroundColor DarkGray
         return
@@ -120,21 +120,8 @@ function rig-install {
 
     $initArgs = @("init")
     if ($Email) { $initArgs += @("--email", $Email) }
-
-    if ($DataRepo) {
-        $dataPath = Join-Path (Split-Path $Path -Parent) "rig-data"
-        if (Test-Path -LiteralPath $dataPath) {
-            Write-Host "$dataPath already exists; using it as the data root without cloning." -ForegroundColor Yellow
-        } else {
-            Write-Host "Cloning $DataRepo to $dataPath…" -ForegroundColor Cyan
-            gh repo clone $DataRepo $dataPath
-            if ($LASTEXITCODE -ne 0) {
-                Write-Host "Data repo clone failed; continuing with the tool checkout as the data root." -ForegroundColor Red
-                $dataPath = $null
-            }
-        }
-        if ($dataPath) { $initArgs += @("--data-root", $dataPath) }
-    }
+    # rig itself joins the data repo, or creates it when it does not exist yet.
+    if ($DataRepo) { $initArgs += @("--data-repo", $DataRepo) }
 
     node ([System.IO.Path]::Combine($Path, "bin\rig.mjs")) @initArgs
 }
