@@ -16,7 +16,7 @@
 - Colored script output now renders correctly in POSIX `sh`
 - Fix `setup.ps1` cloning the upstream fork instead of this repo on a fresh machine
 - Vendored `excalidraw-diagram` skill (folder renamed from `excalidraw-diagram-skill-main`)
-- `rig` and `rig-goto-root` launcher functions
+- `rig`, `rig-install` and `rig-goto-root` launcher functions
 - AWS profile helpers: `aws-switch-profiles`, `aws-setup-profile`, `aws-view-profile`, `aws-goto-profile-path`
 - GitHub Copilot repo instructions and reusable prompts under `.github/`
 - `AGENTS.md` and `docs/agents/` config for the engineering skills (GitHub issues, default triage labels, single-context domain docs)

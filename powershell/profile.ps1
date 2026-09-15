@@ -44,6 +44,10 @@ function list-functions {
     Write-Host "  Cross-repo work harness (rig help for commands)"
     Write-Host ""
 
+    Write-Host "rig-install [-Path <dir>] [-Email <address>]" -ForegroundColor Green
+    Write-Host "  Clone hugoforte/rig and run rig init"
+    Write-Host ""
+
     Write-Host "rig-goto-root" -ForegroundColor Green
     Write-Host "  Change directory to the rig checkout"
     Write-Host ""

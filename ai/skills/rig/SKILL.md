@@ -11,6 +11,14 @@ The checkout is at `RIG_ROOT` if set, else `D:\rig`, else `C:\rig`. Confirm with
 
 Invoke it as `node <root>/bin/rig.mjs <command>` in every shell. The bare `rig` command is a PowerShell profile function and is absent from Git Bash, which is what Claude Code's Bash tool runs.
 
+**No checkout anywhere:** install it, then continue. Needs Node 18+, `git`, and an authenticated `gh` (the repo is private).
+
+```powershell
+rig-install [-Path <dir>] [-Email <work address>]     # dotfiles profile function: clone + init
+```
+
+Or the two commands it wraps, from any shell: `gh repo clone hugoforte/rig <path>` then `node <path>/bin/rig.mjs init --email <work address>`. Ask the user for the path and email rather than guessing; the defaults are `D:\rig` and an empty identity.
+
 ## Step 2: Read the instructions
 
 Read `<root>/AGENTS.md` in full. It is the single source of truth for how rig works: the two roots (`D:\rig` durable and committed, `D:\w` disposable), the commands, the catalogue, the context-doc conventions, and the rules. Continue only once you have read it.

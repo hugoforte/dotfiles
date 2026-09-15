@@ -1,4 +1,4 @@
-$script:RigRootCandidates = @(
+﻿$script:RigRootCandidates = @(
     $env:RIG_ROOT,
     "D:\rig",
     "C:\rig",
@@ -41,8 +41,8 @@ function rig {
         }
         Write-Host ""
         Write-Host "Install it with:" -ForegroundColor Cyan
-        Write-Host "  git clone https://github.com/hugoforte/rig.git D:\rig" -ForegroundColor White
-        Write-Host "  node D:\rig\bin\rig.mjs init" -ForegroundColor White
+        Write-Host "  rig-install                    # D:\rig, or %USERPROFILE%\rig without a D: drive" -ForegroundColor White
+        Write-Host "  rig-install -Path <dir>        # anywhere else" -ForegroundColor White
         Write-Host ""
         Write-Host "Or set RIG_ROOT to an existing checkout." -ForegroundColor DarkGray
         return
@@ -54,6 +54,70 @@ function rig {
     }
 
     node ([System.IO.Path]::Combine($root, "bin\rig.mjs")) @Arguments
+}
+
+function rig-install {
+    param(
+        [string]$Path,
+        [string]$Email,
+        [Alias("h", "?")]
+        [switch]$Help
+    )
+
+    if ($Help) {
+        Write-Host "Usage:" -ForegroundColor Cyan
+        Write-Host "  rig-install [-Path <dir>] [-Email <address>]" -ForegroundColor White
+        Write-Host ""
+        Write-Host "Clones hugoforte/rig and runs 'rig init'. Default path is D:\rig, or" -ForegroundColor White
+        Write-Host "%USERPROFILE%\rig without a D: drive. A non-default path is recorded in the" -ForegroundColor White
+        Write-Host "RIG_ROOT user environment variable so 'rig' finds it in new shells." -ForegroundColor White
+        Write-Host "-Email fills the commit identity for every org in rig.local.json." -ForegroundColor White
+        Write-Host ""
+        Write-Host "Needs: git, Node.js 18+, and an authenticated gh (the repo is private)." -ForegroundColor DarkGray
+        return
+    }
+
+    $existing = Get-RigRoot
+    if ($existing) {
+        Write-Host "rig is already installed at $existing" -ForegroundColor Yellow
+        Write-Host "Run 'node $existing\bin\rig.mjs init' to (re)initialise it." -ForegroundColor DarkGray
+        return
+    }
+
+    foreach ($tool in @("git", "node", "gh")) {
+        if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+            Write-Host "rig-install needs '$tool' on PATH, and it was not found." -ForegroundColor Red
+            return
+        }
+    }
+
+    if (-not $Path) {
+        $Path = if (Test-Path "D:\") { "D:\rig" } else { Join-Path $env:USERPROFILE "rig" }
+    }
+    $Path = [System.IO.Path]::GetFullPath($Path)
+
+    if (Test-Path -LiteralPath $Path) {
+        Write-Host "$Path already exists but has no bin\rig.mjs. Remove it or pick another -Path." -ForegroundColor Red
+        return
+    }
+
+    Write-Host "Cloning hugoforte/rig to $Path…" -ForegroundColor Cyan
+    gh repo clone hugoforte/rig $Path
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Clone failed. Is gh authenticated (gh auth status) and do you have access to hugoforte/rig?" -ForegroundColor Red
+        return
+    }
+
+    if ($script:RigRootCandidates -notcontains $Path) {
+        [Environment]::SetEnvironmentVariable("RIG_ROOT", $Path, "User")
+        $env:RIG_ROOT = $Path
+        $script:RigRootCandidates = @($Path) + $script:RigRootCandidates
+        Write-Host "Set RIG_ROOT=$Path (user environment) so 'rig' finds this checkout." -ForegroundColor DarkGray
+    }
+
+    $initArgs = @("init")
+    if ($Email) { $initArgs += @("--email", $Email) }
+    node ([System.IO.Path]::Combine($Path, "bin\rig.mjs")) @initArgs
 }
 
 function rig-goto-root {
