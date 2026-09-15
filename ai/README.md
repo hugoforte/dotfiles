@@ -70,7 +70,7 @@ Copy the wanted folders from `skills/engineering` and `skills/productivity` to `
 ### Not managed here
 
 - `twg` skills: installed by the TWG CLI installer next to its binary; per machine.
-- Work skills that carry credentials: see the agent-secret-sync issue in this repo.
+- Work skills that live in an app repo (`app-db-query`, `payments-query`, `payment-vendor-sandbox`): the skill stays there; only its credential files are managed here, under `secrets/`.
 
 ## Settings
 
