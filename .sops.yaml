@@ -1,0 +1,12 @@
+# Recipients for encrypted files under ai/secrets/.
+# Each machine decrypts with its own SSH key (~/.ssh/id_ed25519); SOPS finds it automatically.
+# The recovery key lives in the password manager only. Its public half stays here permanently.
+# Add a machine: append its ssh-ed25519 public key, then run: sops updatekeys ai/secrets/**/*
+creation_rules:
+  - path_regex: ^ai/secrets/.*
+    age: >-
+      ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILGY+sCr5sFl39E5J6IxxN5yfgXJOBIiKIA8Ba5fxsY2,
+      age1hmq37vtj6ajdpj8dp6l5rtwz8mc58mqa5ljrshnf50dyupp46dlq7f75yl
+# Recipient list, for humans:
+#   Zenbook   ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILGY+sCr5sFl39E5J6IxxN5yfgXJOBIiKIA8Ba5fxsY2
+#   recovery  age1hmq37vtj6ajdpj8dp6l5rtwz8mc58mqa5ljrshnf50dyupp46dlq7f75yl
