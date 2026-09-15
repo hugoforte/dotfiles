@@ -5,19 +5,13 @@
   "theme": "dark",
   "enabledPlugins": {
     "bloomfilter-agent-miner-claude-code-windows@bloomfilter-plugins": false,
-    "mattpocock-skills@mattpocock": true
+    "mattpocock-skills@mattpocock": false
   },
   "extraKnownMarketplaces": {
     "bloomfilter-plugins": {
       "source": {
         "source": "github",
         "repo": "Bloomfilter-Engineering/bloomfilter-plugins"
-      }
-    },
-    "mattpocock": {
-      "source": {
-        "source": "github",
-        "repo": "mattpocock/skills"
       }
     }
   },
