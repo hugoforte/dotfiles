@@ -8,6 +8,7 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
 |---|---|---|---|
 | PowerShell profile + helper functions | `powershell/` | `$PROFILE` and the all-hosts profile (symlinks) | `powershell/setup.ps1` |
 | AWS CLI profiles (SSO, no secrets) | `aws/config` | `%USERPROFILE%\.aws\config` (symlink) | `powershell/setup.ps1` |
+| Git identity, incl. per-org email overrides | `git/` | `~/.gitconfig`, `~/.gitconfig-employer` (symlinks) | `powershell/setup.ps1` |
 | Agent skills | `ai/skills/<name>/` | `~/.claude/skills`, `~/.codex/skills`, `~/.copilot/skills` (symlinks) | `ai/install.sh` |
 | Claude Code global instructions | `ai/CLAUDE.md` | `~/.claude/CLAUDE.md` (symlink) | `ai/install.sh` |
 | Claude Code sub-agents | `ai/agents/*.md` | `~/.claude/agents/` (symlinks) | `ai/install.sh` |

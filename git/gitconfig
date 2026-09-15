@@ -1,0 +1,18 @@
+[user]
+	name = Hugo Forte
+	email = hugo@hugoforte.com
+[core]
+	autocrlf = true
+	longpaths = true
+[difftool "sourcetree"]
+	cmd = "'' "
+[mergetool "sourcetree"]
+	cmd = "'' "
+	trustExitCode = false
+	keepBackup = false
+[credential "https://github.com"]
+	username = hugoforte
+[windows]
+	appendAtomically = false
+[includeIf "hasconfig:remote.*.url:https://github.com/employer/**"]
+	path = ~/.gitconfig-employer

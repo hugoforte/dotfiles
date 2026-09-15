@@ -201,6 +201,61 @@ if (Test-Path "$dotfilesAwsDir\config") {
 }
 
 Write-Host ""
+
+# Setup git config
+$dotfilesGitDir = "$dotfilesPath\git"
+
+function Set-DotfileSymlink {
+    param(
+        [string]$LinkPath,
+        [string]$TargetPath,
+        [string]$Label
+    )
+
+    if (!(Test-Path $TargetPath)) {
+        return
+    }
+
+    $needsSetup = $false
+    if (Test-Path $LinkPath) {
+        $item = Get-Item $LinkPath -Force
+        if ($item.LinkType -eq "SymbolicLink") {
+            if ($item.Target -eq $TargetPath) {
+                Write-Host "[OK] $Label already linked correctly" -ForegroundColor Green
+            } else {
+                Write-Host "$Label is symlinked to different location: $($item.Target)" -ForegroundColor Yellow
+                $needsSetup = $true
+            }
+        } else {
+            Write-Host "$Label exists but is not a symlink" -ForegroundColor Yellow
+            $needsSetup = $true
+        }
+    } else {
+        $needsSetup = $true
+    }
+
+    if (-not $needsSetup) {
+        return
+    }
+
+    if ((Test-Path $LinkPath) -and (Get-Item $LinkPath -Force).LinkType -ne "SymbolicLink") {
+        $backupPath = "$LinkPath.backup.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+        Copy-Item $LinkPath $backupPath
+        Write-Host "[OK] Backed up existing $Label to: $(Split-Path $backupPath -Leaf)" -ForegroundColor Yellow
+        Remove-Item $LinkPath -Force
+    }
+
+    New-Item -ItemType SymbolicLink -Path $LinkPath -Target $TargetPath -Force | Out-Null
+    Write-Host "[OK] $Label linked successfully" -ForegroundColor Green
+}
+
+if (Test-Path $dotfilesGitDir) {
+    Write-Host "Setting up git config..." -ForegroundColor Green
+    Set-DotfileSymlink -LinkPath "$env:USERPROFILE\.gitconfig" -TargetPath "$dotfilesGitDir\gitconfig" -Label "~/.gitconfig"
+    Set-DotfileSymlink -LinkPath "$env:USERPROFILE\.gitconfig-employer" -TargetPath "$dotfilesGitDir\gitconfig-employer" -Label "~/.gitconfig-employer"
+    Write-Host ""
+}
+
 Write-Host "=== Setup Complete ===" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Dotfiles location: $dotfilesPath" -ForegroundColor DarkGray
