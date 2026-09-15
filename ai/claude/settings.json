@@ -1,24 +1,23 @@
 {
-  "model": "haiku",
+  "model": "sonnet",
   "autoUpdatesChannel": "latest",
   "tui": "fullscreen",
   "theme": "dark",
   "enabledPlugins": {
-    "caveman@caveman": true,
-    "bloomfilter-agent-miner-claude-code-windows@bloomfilter-plugins": true,
-    "bloomfilter-agent-miner-claude-code@bloomfilter-plugins": true
+    "bloomfilter-agent-miner-claude-code-windows@bloomfilter-plugins": false,
+    "mattpocock-skills@mattpocock": true
   },
   "extraKnownMarketplaces": {
-    "caveman": {
-      "source": {
-        "source": "github",
-        "repo": "JuliusBrussee/caveman"
-      }
-    },
     "bloomfilter-plugins": {
       "source": {
         "source": "github",
         "repo": "Bloomfilter-Engineering/bloomfilter-plugins"
+      }
+    },
+    "mattpocock": {
+      "source": {
+        "source": "github",
+        "repo": "mattpocock/skills"
       }
     }
   },
