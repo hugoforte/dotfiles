@@ -1,14 +1,16 @@
 # Recipients for encrypted files under ai/secrets/.
 # Each machine decrypts with its own SSH key (~/.ssh/id_ed25519); SOPS finds it automatically.
 # The recovery key lives in the password manager only. Its public half stays here permanently.
-# Add a machine: append its ssh-ed25519 public key, then run: sops updatekeys ai/secrets/**/*
+# Add a machine: append its ssh-ed25519 public key, then run: sops updatekeys -y ai/secrets/*/.secrets.env ai/secrets/*/keys.local.json
 #
 # path_regex uses "." for the separator because SOPS matches Windows paths with backslashes.
 creation_rules:
   - path_regex: ai.secrets.
     age: >-
       ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILGY+sCr5sFl39E5J6IxxN5yfgXJOBIiKIA8Ba5fxsY2,
+      ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKJ2KHgYU1T5jQGSmqryi9TmVIcMXmCcZnm3ODb2IhHA,
       age1hmq37vtj6ajdpj8dp6l5rtwz8mc58mqa5ljrshnf50dyupp46dlq7f75yl
-# Recipient list, for humans:
-#   Zenbook   ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILGY+sCr5sFl39E5J6IxxN5yfgXJOBIiKIA8Ba5fxsY2
-#   recovery  age1hmq37vtj6ajdpj8dp6l5rtwz8mc58mqa5ljrshnf50dyupp46dlq7f75yl
+# Recipient list, for humans (public keys also at https://github.com/hugoforte.keys):
+#   Zenbook      ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILGY+sCr5sFl39E5J6IxxN5yfgXJOBIiKIA8Ba5fxsY2
+#   HugoDesktop  ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKJ2KHgYU1T5jQGSmqryi9TmVIcMXmCcZnm3ODb2IhHA
+#   recovery     age1hmq37vtj6ajdpj8dp6l5rtwz8mc58mqa5ljrshnf50dyupp46dlq7f75yl
