@@ -1,0 +1,3 @@
+# Keep LF everywhere: sh scripts break under CRLF in Git Bash, and SOPS dotenv files
+# fail to parse with carriage returns. PowerShell reads LF fine.
+* text=auto eol=lf
