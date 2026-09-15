@@ -43,7 +43,7 @@ What it does, idempotently:
 - `git-list-merged-branches`
 - `git-delete-merged-branches`
 - `rig` (cross-repo work harness — see [hugoforte/rig](https://github.com/hugoforte/rig))
-- `rig-install [-Path <dir>] [-Email <address>]` (clones the repo and runs `rig init`; records a non-default path in `RIG_ROOT`)
+- `rig-install [-Path <dir>] [-Email <address>] [-DataRepo <owner/name>]` (clones the tool, optionally its private data repo as `rig-data` beside it, and runs `rig init`; records a non-default path in `RIG_ROOT`)
 - `rig-goto-root`
 - `dotfiles-sync` (runs `sync.ps1` in the foreground)
 
