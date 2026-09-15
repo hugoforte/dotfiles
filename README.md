@@ -2,8 +2,6 @@
 
 Personal, symlink-based setup for a Windows development machine: PowerShell profile, AWS CLI config, and AI coding-agent configuration (Claude Code, Codex, Copilot). Clone it on every machine, run two scripts, and edits made anywhere flow through git. A scheduled task keeps each machine pulled and linked.
 
-Forked from [haacked/dotfiles](https://github.com/haacked/dotfiles) for the installer skeleton; the content is now my own.
-
 ## What is managed
 
 | Area | Source in repo | Installed to | Installer |
