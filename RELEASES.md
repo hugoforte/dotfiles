@@ -5,6 +5,7 @@
 - Skills sync: `ai/install.sh` links every `ai/skills/<name>/` into the Claude Code, Codex and Copilot skills directories
 - Vendored Matt Pocock's engineering and productivity skills as `matt-*` (25 skills, MIT, pinned in `ai/licenses/`)
 - `review-pr` skill (was a user-level Claude command)
+- `rig` skill: points any agent at the cross-repo work harness from any folder
 - `ai/install.sh` rewritten: `--check` drift report, `--uninstall`, per-component flags, native symlinks on Git Bash, prerequisites checked per component
 - `ai/claude/settings.json` fragment merged into `~/.claude/settings.json` (model, plugins, marketplaces, read-only tool allowlist); `--check` reports settings drift both ways and `--settings-export` copies Claude-side changes back to the repo
 - `powershell/sync.ps1` pull-and-relink, `install-sync-task.ps1` scheduled task, `dotfiles-sync` profile function

@@ -45,6 +45,7 @@ An existing real file or directory at a target path is never overwritten; the sc
 |---|---|---|
 | `matt-*` | 25 | [mattpocock/skills](https://github.com/mattpocock/skills), engineering + productivity sets, MIT. Pinned commit in `licenses/mattpocock-skills-VERSION`. |
 | `review-pr` | 1 | Own. PR review workflow via `gh`. |
+| `rig` | 1 | Own. Entry point to the [rig](https://github.com/hugoforte/rig) cross-repo work harness: where it lives, how to invoke it from any shell, which folder to start from. |
 | `excalidraw-diagram` | 1 | [coleam00/excalidraw-diagram-skill](https://github.com/coleam00/excalidraw-diagram-skill). |
 
 Matt's skills are prefixed `matt-` (folder and `name:`), and their `/slash` cross-references were rewritten to match, so `/matt-triage`, `/matt-grill-with-docs`, and so on. Backticked mentions like "the `research` skill" were left as-is because the same words also name wayfinder ticket types.
