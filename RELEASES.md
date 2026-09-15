@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Skill secrets: `ai/secrets/` holds SOPS + age encrypted credential files for project-level skills; `deploy-secrets.ps1` decrypts per machine and symlinks them into every checkout; each machine's SSH key is its identity, plus a recovery key in the password manager; `sync.ps1` deploys automatically; `install.sh --check` refuses plaintext under `ai/secrets/`
+- `dotfiles-secrets` skill pointing at the procedures
 - Skills sync: `ai/install.sh` links every `ai/skills/<name>/` into the Claude Code, Codex and Copilot skills directories
 - Vendored Matt Pocock's engineering and productivity skills as `matt-*` (25 skills, MIT, pinned in `ai/licenses/`)
 - `review-pr` skill (was a user-level Claude command)

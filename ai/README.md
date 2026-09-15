@@ -14,6 +14,7 @@ Configuration for AI coding agents (Claude Code, Codex, Copilot). Everything is 
 | `validate-settings.sh` | Prints a summary of `~/.claude/settings.json` (needs `jq`). |
 | `helpers/` | `output.sh` (colored output) and `json-settings.sh` (deep-merge JSON into a settings file). |
 | `licenses/` | License and pinned version for vendored third-party skills. |
+| `secrets/` | Encrypted credential files for project-level skills, deployed by `powershell/deploy-secrets.ps1`. See [secrets/README.md](secrets/README.md). |
 
 ## Installing
 

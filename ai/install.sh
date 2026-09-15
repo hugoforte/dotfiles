@@ -293,6 +293,15 @@ esac
 [ "$INSTALL_SKILLS" = "true" ]    && ${MODE}_skills
 [ "$INSTALL_SETTINGS" = "true" ]  && ${MODE}_settings
 
+# Secrets under ai/secrets/ must never be committed in plaintext; verify on every check.
+if [ "$MODE" = "check" ]; then
+    if sh "$ZSH/ai/secrets/check-encrypted.sh"; then
+        success "ai/secrets: all files encrypted"
+    else
+        CHECK_FAILED=1
+    fi
+fi
+
 echo ""
 case $MODE in
     install)   success "Done" ;;

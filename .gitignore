@@ -4,3 +4,6 @@ aws/credentials
 # AWS config can be committed since we use SSO (no static credentials)
 # Uncomment the line below if you prefer not to sync AWS config
 # aws/config
+
+# Per-machine secrets deployment config
+ai/secrets/machine.local.psd1

@@ -14,13 +14,18 @@ Forked from [haacked/dotfiles](https://github.com/haacked/dotfiles) for the inst
 | Claude Code global instructions | `ai/CLAUDE.md` | `~/.claude/CLAUDE.md` (symlink) | `ai/install.sh` |
 | Claude Code sub-agents | `ai/agents/*.md` | `~/.claude/agents/` (symlinks) | `ai/install.sh` |
 | Claude Code settings (model, plugins, allowlist) | `ai/claude/settings.json` | merged into `~/.claude/settings.json` | `ai/install.sh` |
+| Skill secrets (encrypted with SOPS + age) | `ai/secrets/<skill>/` | `%USERPROFILE%\.agent-secrets\`, then symlinked into every checkout that has the skill | `powershell/deploy-secrets.ps1` |
 | Automatic pull-and-relink | `powershell/sync.ps1` | Windows scheduled task "Dotfiles Sync" | `powershell/install-sync-task.ps1` |
 | Copilot repo instructions and prompts | `.github/` | used in place by GitHub Copilot | none |
 | Engineering-skill config for this repo | `AGENTS.md`, `docs/agents/` | used in place by Claude Code | none |
 
 ## Quick start (new Windows machine)
 
-1. Turn on Developer Mode (Settings > System > For developers) so symlinks work without elevation. Install `jq`: `winget install jqlang.jq`.
+1. Turn on Developer Mode (Settings > System > For developers) so symlinks work without elevation. Install the tools:
+
+   ```powershell
+   winget install jqlang.jq FiloSottile.age SecretsOPerationS.SOPS
+   ```
 2. Clone the repo anywhere, for example `C:\source\dotfiles`.
 3. PowerShell profile and AWS config:
 
@@ -37,6 +42,13 @@ Forked from [haacked/dotfiles](https://github.com/haacked/dotfiles) for the inst
    ```sh
    ./ai/install.sh
    ./ai/install.sh --check
+   ```
+
+5. Skill secrets: register the machine as a recipient (see [ai/secrets/README.md](ai/secrets/README.md), "Add a machine"), then:
+
+   ```powershell
+   Copy-Item ai\secrets\machine.local.psd1.example ai\secrets\machine.local.psd1
+   .\powershell\deploy-secrets.ps1
    ```
 
 ## Keeping machines in sync

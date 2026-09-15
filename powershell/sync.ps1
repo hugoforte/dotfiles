@@ -69,6 +69,18 @@ try {
         exit 1
     }
     Write-Log "ai/install.sh ok"
+
+    # Skill secrets: only on machines that have opted in with a machine.local.psd1
+    if (Test-Path (Join-Path $repoRoot "ai\secrets\machine.local.psd1")) {
+        $secretsOutput = & (Join-Path $PSScriptRoot "deploy-secrets.ps1") -Quiet 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            Write-Log "deploy-secrets.ps1 reported problems:`n$secretsOutput"
+            exit 1
+        }
+        Write-Log "deploy-secrets.ps1 ok"
+    } else {
+        Write-Log "deploy-secrets.ps1 skipped (no ai/secrets/machine.local.psd1)"
+    }
 }
 finally {
     Pop-Location

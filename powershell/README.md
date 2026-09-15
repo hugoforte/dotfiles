@@ -11,7 +11,8 @@ Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in tu
 - `git.ps1`: Git helper functions
 - `rig.ps1`: rig (cross-repo work harness) launcher
 - `setup.ps1`: symlink/setup automation
-- `sync.ps1`: `git pull --ff-only` then `ai/install.sh`; logs to `%LOCALAPPDATA%\dotfiles\sync.log`
+- `sync.ps1`: `git pull --ff-only`, then `ai/install.sh`, then `deploy-secrets.ps1` if the machine has opted in; logs to `%LOCALAPPDATA%\dotfiles\sync.log`
+- `deploy-secrets.ps1`: decrypts `ai/secrets/` and symlinks the files into every checkout that has the skill (`-Check` for report only); see `ai/secrets/README.md`
 - `install-sync-task.ps1`: registers the "Dotfiles Sync" scheduled task that runs `sync.ps1` at logon and every 4 hours (`-Uninstall` removes it)
 
 ## Setup
