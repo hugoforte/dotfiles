@@ -8,10 +8,13 @@
 	cmd = "'' "
 [mergetool "sourcetree"]
 	cmd = "'' "
-	trustExitCode = false
-	keepBackup = false
+	trustExitCode = true
 [credential "https://github.com"]
-	username = hugoforte
+	helper =
+	helper = !'C:\\Program Files\\GitHub CLI\\gh.exe' auth git-credential
+[credential "https://gist.github.com"]
+	helper =
+	helper = !'C:\\Program Files\\GitHub CLI\\gh.exe' auth git-credential
 [windows]
 	appendAtomically = false
 [includeIf "hasconfig:remote.*.url:https://github.com/employer/**"]
