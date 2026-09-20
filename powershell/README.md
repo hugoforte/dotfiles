@@ -2,7 +2,7 @@
 
 PowerShell profile, helper functions, and the setup script that symlinks them into place.
 
-Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in turn loads the helper files below. Run `list-functions` in a new shell to confirm.
+Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in turn loads `aws.ps1`, `git.ps1`, `rig.ps1` and `markdown.ps1`. Run `list-functions` in a new shell to confirm. The other files below are run, or dot-sourced, by the scripts that need them — not by the profile.
 
 ## Files
 
@@ -57,7 +57,9 @@ What it does, idempotently:
 
 ## Reporting
 
-`install-tools.ps1`, `deploy-secrets.ps1` and `sync.ps1` dot-source `output.ps1`. `Ok`, `Change`, `Warn`, `Todo` and `Fail` each print a line and record it on a result object; `Say` only prints, because chatter is not an outcome. Run with `-PassThru` the script returns that result - counts plus messages - and `sync.ps1` writes it to `sync.log`. The console, the log and the exit code are three adapters over one result.
+`install-tools.ps1` and `deploy-secrets.ps1` report through `output.ps1`; `sync.ps1` dot-sources it to *read* what they return, and opens no result of its own. `Ok`, `Change`, `Warn`, `Todo` and `Fail` each print a line and record it on a result object; `Say` only prints, because chatter is not an outcome. Run with `-PassThru`, the script returns that result - counts plus messages - and `sync.ps1` writes it to `sync.log`. The console, the log and the exit code are three adapters over one result.
+
+A closing summary counts outcomes already reported, so it goes through `Summary <Kind> <message>`, which prints in that outcome's style without recording one. Recording it would inflate the counts it is summarising, and the caller would read one more warning than there were problems.
 
 The result is what crosses the call boundary: `Write-Host` writes to the information stream, which Windows PowerShell 5.1 does not capture through `| Out-String`, so a caller that pipes a child script gets an empty string.
 

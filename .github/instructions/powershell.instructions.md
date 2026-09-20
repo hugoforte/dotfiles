@@ -36,9 +36,10 @@ Exit-WithResult $result 1
 
 Key points:
 
-- `Ok`/`Change`/`Warn`/`Todo`/`Fail` print and record; `Say` only prints.
+- `Ok`/`Change`/`Warn`/`Todo`/`Fail` print and record; `Say` only prints. Under `-Quiet` only `Warn` and `Fail` reach the console, but every one of them still records.
+- A closing summary counts outcomes already reported, so report it with `Summary <Kind> <message>`: it prints in that outcome's style and records nothing. `Warn "$missing tool(s) missing"` would count itself.
 - `-PassThru` returns the result to the caller. `Write-Host` alone does not reach it: it writes to the information stream, which PowerShell 5.1 does not capture through `| Out-String`.
-- Read a returned result with `Get-ResultSummary` and `Get-ResultLines`, not by parsing console text.
+- Read a returned result with `Get-ResultSummary` and `Get-ResultLines`, not by parsing console text. A script that only reads results does not open one; `Say` works without one, the outcome verbs throw.
 - Count a domain fact (drift, failures, deferrals) in its own variable, never as a side effect of printing.
 
 ## Symlink-Aware Loader Pattern

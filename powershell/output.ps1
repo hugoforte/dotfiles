@@ -94,21 +94,28 @@ function Get-ResultSummary {
 
 # --- The console adapter ------------------------------------------------------------------------
 
+# Say needs only the Quiet flag, so it does not require an open result. A script can read
+# results without reporting any of its own - sync.ps1 dot-sources this module for
+# Get-ResultSummary, Get-ResultLines and Remove-AnsiEscape, and must not die for saying so.
 function Say {
     param([string]$Message, [string]$Color = "Gray")
-    if (-not (Get-ScriptResult).Quiet) { Write-Host $Message -ForegroundColor $Color }
+    if ($script:ScriptResult -and $script:ScriptResult.Quiet) { return }
+    Write-Host $Message -ForegroundColor $Color
 }
 
 function Write-Outcome {
     param(
         [Parameter(Mandatory)][string]$Kind,
-        [Parameter(Mandatory)][AllowEmptyString()][string]$Message
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Message,
+        [switch]$NoRecord
     )
     $result = Get-ScriptResult
     $style = Get-OutcomeStyle $Kind
-    $result.Messages += [pscustomobject]@{ Kind = $Kind; Message = $Message }
-    $countName = $style.Count
-    $result.$countName = $result.$countName + 1
+    if (-not $NoRecord) {
+        $result.Messages += [pscustomobject]@{ Kind = $Kind; Message = $Message }
+        $countName = $style.Count
+        $result.$countName = $result.$countName + 1
+    }
     # Quiet is for unattended callers; a problem is still worth a console line when one watches.
     if (-not $result.Quiet -or $Kind -in @("Warn", "Error")) {
         Write-Host "$($style.Prefix) $Message" -ForegroundColor $style.Color
@@ -120,6 +127,18 @@ function Change { param([string]$Message) Write-Outcome "Change" $Message }
 function Warn   { param([string]$Message) Write-Outcome "Warn"   $Message }
 function Todo   { param([string]$Message) Write-Outcome "Todo"   $Message }
 function Fail   { param([string]$Message) Write-Outcome "Error"  $Message }
+
+# A closing summary counts outcomes already reported ("3 tool(s) missing"), so it prints in an
+# outcome's style without recording one. Recording it would inflate the very counts it is
+# summarising, and a caller reading the result would see one more warning than there were
+# problems.
+function Summary {
+    param(
+        [Parameter(Mandatory)][string]$Kind,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Message
+    )
+    Write-Outcome $Kind $Message -NoRecord
+}
 
 # --- The exit-code adapter ----------------------------------------------------------------------
 

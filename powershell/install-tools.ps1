@@ -186,14 +186,16 @@ if (-not $Check -and $failed -eq 0) {
     Set-Content -Path $statePath -Value $manifestHash -Encoding utf8
 }
 
+# Each of these counts outcomes reported per tool above, so they go through Summary and are
+# not recorded a second time.
 Say ""
 if ($Check) {
-    if ($missing -gt 0) { Warn "$missing tool(s) missing"; Exit-WithResult $result 1 }
-    Ok "every declared tool is installed"
+    if ($missing -gt 0) { Summary Warn "$missing tool(s) missing"; Exit-WithResult $result 1 }
+    Summary Ok "every declared tool is installed"
     Exit-WithResult $result 0
 }
 
-if ($deferred -gt 0) { Warn "$deferred tool(s) skipped as not safe to install unwatched - run powershell\install-tools.ps1 when convenient" }
-if ($failed -gt 0) { Warn "$failed tool(s) failed to install"; Exit-WithResult $result 1 }
-Ok "tools up to date"
+if ($deferred -gt 0) { Summary Warn "$deferred tool(s) skipped as not safe to install unwatched - run powershell\install-tools.ps1 when convenient" }
+if ($failed -gt 0) { Summary Warn "$failed tool(s) failed to install"; Exit-WithResult $result 1 }
+Summary Ok "tools up to date"
 Exit-WithResult $result 0

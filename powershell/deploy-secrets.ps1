@@ -146,17 +146,15 @@ foreach ($root in $roots) {
     }
 }
 
-# Anything warned about is a reason to exit 1, so read the count before the summary adds to it.
-$warned = $result.Warned
-
+# Anything warned about is a reason to exit 1. The summary reports through Summary, which does
+# not record, so these counts mean the same before and after it.
 Say ""
-if ($warned -eq 0) {
-    Ok $(if ($Check) { "Everything in place." } else { "Done." })
+if ($result.Warned -eq 0) {
+    Summary Ok $(if ($Check) { "Everything in place." } else { "Done." })
 } else {
-    if ($drift -gt 0) { Warn "$drift item(s) would change. Run deploy-secrets.ps1 to apply." }
-    $problems = $warned - $drift
-    if ($problems -gt 0) { Warn "$problems warning(s) that deploying will not fix; see above." }
+    if ($drift -gt 0) { Summary Warn "$drift item(s) would change. Run deploy-secrets.ps1 to apply." }
+    $problems = $result.Warned - $drift
+    if ($problems -gt 0) { Summary Warn "$problems warning(s) that deploying will not fix; see above." }
 }
 
-$exitCode = if ($warned -gt 0) { 1 } else { 0 }
-Exit-WithResult $result $exitCode
+Exit-WithResult $result $(if ($result.Warned -gt 0) { 1 } else { 0 })
