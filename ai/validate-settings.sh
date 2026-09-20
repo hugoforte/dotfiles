@@ -6,23 +6,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 export ZSH="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 . "$ZSH/ai/helpers/output.sh"
+. "$ZSH/ai/helpers/settings-reconcile.sh"
 
 SETTINGS_FILE="$HOME/.claude/settings.json"
 
-if [ ! -f "$SETTINGS_FILE" ]; then
-    error "Settings file not found: $SETTINGS_FILE"
-    exit 1
-fi
-
-if ! command -v jq > /dev/null 2>&1; then
-    error "jq not found - required for settings validation"
-    exit 1
-fi
-
-if ! jq empty "$SETTINGS_FILE" > /dev/null 2>&1; then
-    error "Settings file contains invalid JSON"
-    exit 1
-fi
+# jq presence, file presence and JSON validity are the reconciliation
+# module's precondition; ask it rather than repeating the checks here.
+settings_file_ready "$SETTINGS_FILE" || exit 1
 success "Settings file has valid JSON"
 
 info "model:            $(jq -r '.model // "(unset)"' "$SETTINGS_FILE")"

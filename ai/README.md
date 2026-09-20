@@ -12,7 +12,7 @@ Configuration for AI coding agents (Claude Code, Codex, Copilot). Everything is 
 | `claude/settings.json` | Fragment merged into `~/.claude/settings.json`: model, plugins, marketplaces, UI prefs, a read-only tool allowlist. |
 | `install.sh` | Installer, checker and uninstaller for all of the above. |
 | `validate-settings.sh` | Prints a summary of `~/.claude/settings.json` (needs `jq`). |
-| `helpers/` | `output.sh` (colored output) and `json-settings.sh` (deep-merge JSON into a settings file). |
+| `helpers/` | `output.sh` (colored output) and `settings-reconcile.sh` (the managed-key spec, and the merge, check and export directions over it). |
 | `licenses/` | License and pinned version for vendored third-party skills. |
 | `secrets/` | Encrypted credential files for project-level skills, deployed by `powershell/deploy-secrets.ps1`. See [secrets/README.md](secrets/README.md). |
 
@@ -74,13 +74,13 @@ Copy the wanted folders from `skills/engineering` and `skills/productivity` to `
 
 ## Settings
 
-`claude/settings.json` is deep-merged into `~/.claude/settings.json`: objects merge, arrays union, scalars in the fragment win. Keys already in the live file that the fragment does not mention survive, which leaves room for machine-local or secret-bearing config later.
+`claude/settings.json` is the fragment. `helpers/settings-reconcile.sh` moves keys between it and `~/.claude/settings.json` in three directions — merge, check and export — over one spec of what "managed" means: a managed key is a leaf path of the fragment, where arrays count as leaves and objects do not. Nothing outside that set is read or written in any direction, so the live file keeps its machine-local or secret-bearing keys and the committed fragment never acquires them.
 
-The merge is one-directional and never deletes, so:
+Both write directions union arrays and neither deletes, so:
 
-- `./ai/install.sh --check` compares every managed key. `MISSING` and `DIFF` (a scalar changed on the Claude side, e.g. via `/model`) count as drift. `EXTRA` lists live-only additions under a managed key, such as "always allow" answers, and is informational.
-- `./ai/install.sh --settings-export` copies the managed keys from the live file back into the repo fragment. Review with `git diff`, then commit. This is how a change made through Claude reaches other machines.
-- To remove an allowlist entry everywhere, delete it from the fragment and from each machine's live file; the merge cannot delete.
+- `./ai/install.sh --check` compares every managed key in both directions. `MISSING` (a key, or an array entry, that the fragment declares and the live file lacks) and `DIFF` (a scalar changed on the Claude side, e.g. via `/model`) count as drift. `EXTRA` lists live-only array entries, such as "always allow" answers, and is informational.
+- `./ai/install.sh --settings-export` copies the managed leaf paths from the live file back into the repo fragment — live scalars win, arrays union — and leaves every unmanaged key, such as `permissions.deny`, where it is. Review with `git diff`, then commit. This is how a change made through Claude reaches other machines.
+- To remove an allowlist entry everywhere, delete it from the fragment and from each machine's live file; no direction deletes.
 
 ## Agents and CLAUDE.md
 

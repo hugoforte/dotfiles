@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Settings reconciliation module `ai/helpers/settings-reconcile.sh` (replaces `json-settings.sh`): one managed-key spec behind all three directions, so `--check` now fails on repo-declared entries missing from the live file, `--settings-export` writes back only the managed leaf paths instead of whole top-level keys, and `validate-settings.sh` shares the same jq and JSON-validity precondition
 - Skill secrets: `ai/secrets/` holds SOPS + age encrypted credential files for project-level skills; `deploy-secrets.ps1` decrypts per machine and symlinks them into every checkout; each machine's SSH key is its identity, plus a recovery key in the password manager; `sync.ps1` deploys automatically; `install.sh --check` refuses plaintext under `ai/secrets/`
 - `dotfiles-secrets` skill pointing at the procedures
 - Skills sync: `ai/install.sh` links every `ai/skills/<name>/` into the Claude Code, Codex and Copilot skills directories

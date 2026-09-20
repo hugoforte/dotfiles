@@ -13,7 +13,7 @@ This file captures implementation patterns for AI shell scripts.
 
 export ZSH=$HOME/.dotfiles
 . $ZSH/ai/helpers/output.sh
-. $ZSH/ai/helpers/json-settings.sh
+. $ZSH/ai/helpers/settings-reconcile.sh
 ```
 
 Key points:
@@ -84,21 +84,22 @@ Key points:
 - Remove only symlinks.
 - Warn and skip regular files.
 
-## JSON Merge Pattern
+## Settings Reconciliation Pattern
 
-Use `merge_json_settings` from `ai/helpers/json-settings.sh`.
+Use `reconcile_settings` from `ai/helpers/settings-reconcile.sh`. The module owns the managed-key spec; the direction and both file paths are arguments.
 
 ```bash
-if merge_json_settings "$SETTINGS_FILE" "$HOOKS_CONFIG" "hooks"; then
-    success "Configured Claude Code hooks"
+if reconcile_settings merge "$SETTINGS_FILE" "$SETTINGS_FRAGMENT"; then
+    success "Merged ai/claude/settings.json into $SETTINGS_FILE"
 fi
 ```
 
 Key points:
 
-- Validate inputs before merge.
+- Take the target path as a parameter; do not read a module-level constant.
+- Return failure; do not signal through a global flag.
 - Guard optional dependencies (`jq`) inside the helper.
-- Merge through temp file and atomic move.
+- Write through a temp file and an atomic move.
 
 ## Output Pattern
 
