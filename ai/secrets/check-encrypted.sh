@@ -3,7 +3,9 @@
 # Run before committing; ai/install.sh --check runs it too.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 status=0
-for f in "$SCRIPT_DIR"/*/*; do
+# Both patterns are needed: a POSIX glob never matches dot-prefixed names, and the
+# secret files are mostly called .secrets.env. `.` and `..` fall out at the -f test.
+for f in "$SCRIPT_DIR"/*/* "$SCRIPT_DIR"/*/.*; do
     [ -f "$f" ] || continue
     if ! grep -qE 'sops_|"sops"' "$f"; then
         echo "NOT ENCRYPTED: $f" >&2
