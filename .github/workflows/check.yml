@@ -1,0 +1,88 @@
+name: Check
+
+# windows-latest only, and deliberately so.
+#
+# These scripts run under Windows PowerShell 5.1 and Git Bash on a real Windows machine, and
+# both defects this repo has actually shipped were invisible anywhere else: `Write-Host` does
+# not survive `| Out-String` under 5.1 (hugoforte/dotfiles#9), and jq on Windows emits CRLF
+# into a repo whose .gitattributes demands LF (#8). A Linux runner passes both vacuously,
+# which is worse than not testing them at all - it looks like coverage.
+#
+# For the same reason every PowerShell step is `shell: powershell` (5.1), never `pwsh` (7.x):
+# 5.1 is what the scheduled task runs. `shell: bash` on this runner is Git Bash, which is what
+# sync.ps1 finds and uses.
+#
+# Nothing here may run an installer. setup.ps1, sync.ps1, install-sync-task.ps1, and
+# install-tools.ps1 / deploy-secrets.ps1 without -Check all mutate the machine they run on.
+# The seam that would make those testable is hugoforte/dotfiles#11.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax
+        shell: bash
+        run: |
+          status=0
+          for f in $(git ls-files '*.sh'); do
+            sh -n "$f" || { echo "syntax error: $f"; status=1; }
+          done
+          exit $status
+
+      - name: PowerShell syntax
+        shell: powershell
+        run: |
+          $bad = 0
+          foreach ($f in (git ls-files '*.ps1')) {
+            try { $null = [scriptblock]::Create((Get-Content $f -Raw)) }
+            catch { Write-Host "parse error: $f -> $($_.Exception.Message)"; $bad++ }
+          }
+          if ($bad -gt 0) { exit 1 }
+
+      - name: Shell tests
+        shell: bash
+        run: |
+          jq --version
+          sh tests/run.sh
+
+      - name: PowerShell tests
+        shell: powershell
+        run: |
+          # The runner image usually ships Pester 5; install only when it does not, because
+          # Install-Module is slow and the built-in 3.4 cannot run these tests.
+          $have = Get-Module -ListAvailable Pester |
+                  Where-Object { $_.Version.Major -ge 5 } |
+                  Select-Object -First 1
+          if (-not $have) {
+            Install-Module Pester -MinimumVersion 5.0 -Force -Scope CurrentUser -SkipPublisherCheck
+          }
+          .\tests\Run-Pester.ps1 -CI
+
+      - name: Markdown
+        shell: bash
+        # An allowlist of the docs this repo writes, not the whole tree. .github/prompts,
+        # ai/agents and ai/skills are generated or vendored - 234 findings between them, none
+        # of them ours to fix - and a linter that is always red gets ignored. That is the same
+        # reasoning powershell/markdownlint.jsonc gives for being an allowlist of rules.
+        #
+        # Unpinned, matching how powershell/tools.psd1 declares markdownlint-cli2.
+        run: |
+          npx --yes markdownlint-cli2 --config powershell/markdownlint.jsonc \
+            "*.md" \
+            ".github/instructions/**/*.md" \
+            "ai/*.md" \
+            "ai/secrets/**/*.md" \
+            "docs/**/*.md" \
+            "powershell/**/*.md" \
+            "tests/**/*.md"

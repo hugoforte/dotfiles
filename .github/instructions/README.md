@@ -39,8 +39,8 @@ applyTo: "glob/pattern/**/*"
 How it works:
 
 - Pattern matching starts at repo root.
-- ** matches nested directories.
-- * matches file names.
+- `**` matches nested directories.
+- `*` matches file names.
 - Keep globs narrow to avoid pattern bleed across layers.
 
 ## Adding New Instruction Files
