@@ -55,6 +55,14 @@ function list-functions {
     Write-Host "dotfiles-sync" -ForegroundColor Green
     Write-Host "  Pull the dotfiles repo and re-link AI tooling (same as the scheduled task)"
     Write-Host ""
+
+    Write-Host "dotfiles-tools [-Check]" -ForegroundColor Green
+    Write-Host "  Install the tools declared in powershell/tools.psd1 (-Check reports only)"
+    Write-Host ""
+
+    Write-Host "md-lint [args]" -ForegroundColor Green
+    Write-Host "  Lint markdown, using the repo's own config or the dotfiles default"
+    Write-Host ""
 }
 
 $profilePath = $MyInvocation.MyCommand.Path
@@ -77,17 +85,20 @@ $profileScriptRoot = Split-Path -Parent $profilePath
 $awsHelpersPath = Join-Path $profileScriptRoot "aws.ps1"
 $gitHelpersPath = Join-Path $profileScriptRoot "git.ps1"
 $rigHelpersPath = Join-Path $profileScriptRoot "rig.ps1"
+$markdownHelpersPath = Join-Path $profileScriptRoot "markdown.ps1"
 
 if (-not (Test-Path $awsHelpersPath) -or -not (Test-Path $gitHelpersPath)) {
     $fallbackRoot = Join-Path $env:USERPROFILE "dotfiles\powershell"
     $fallbackAwsPath = Join-Path $fallbackRoot "aws.ps1"
     $fallbackGitPath = Join-Path $fallbackRoot "git.ps1"
     $fallbackRigPath = Join-Path $fallbackRoot "rig.ps1"
+    $fallbackMarkdownPath = Join-Path $fallbackRoot "markdown.ps1"
 
     if ((Test-Path $fallbackAwsPath) -and (Test-Path $fallbackGitPath)) {
         $awsHelpersPath = $fallbackAwsPath
         $gitHelpersPath = $fallbackGitPath
         $rigHelpersPath = $fallbackRigPath
+        $markdownHelpersPath = $fallbackMarkdownPath
     }
 }
 
@@ -109,7 +120,18 @@ if (Test-Path $rigHelpersPath) {
     Write-Host "WARNING: Could not find rig.ps1 at $rigHelpersPath" -ForegroundColor Yellow
 }
 
+if (Test-Path $markdownHelpersPath) {
+    . $markdownHelpersPath
+} else {
+    Write-Host "WARNING: Could not find markdown.ps1 at $markdownHelpersPath" -ForegroundColor Yellow
+}
+
 $dotfilesSyncScript = Join-Path $profileScriptRoot "sync.ps1"
 function dotfiles-sync {
     & $dotfilesSyncScript
+}
+
+$dotfilesToolsScript = Join-Path $profileScriptRoot "install-tools.ps1"
+function dotfiles-tools {
+    & $dotfilesToolsScript @args
 }

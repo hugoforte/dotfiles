@@ -256,6 +256,12 @@ if (Test-Path $dotfilesGitDir) {
     Write-Host ""
 }
 
+# Tools: this script is already elevated, so the whole manifest installs here, including the
+# entries sync.ps1 is not allowed to install unwatched.
+Write-Host "Installing declared tools..." -ForegroundColor Green
+& (Join-Path $PSScriptRoot "install-tools.ps1")
+Write-Host ""
+
 Write-Host "=== Setup Complete ===" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Dotfiles location: $dotfilesPath" -ForegroundColor DarkGray

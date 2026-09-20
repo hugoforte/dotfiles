@@ -14,17 +14,15 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
 | Claude Code sub-agents | `ai/agents/*.md` | `~/.claude/agents/` (symlinks) | `ai/install.sh` |
 | Claude Code settings (model, plugins, allowlist) | `ai/claude/settings.json` | merged into `~/.claude/settings.json` | `ai/install.sh` |
 | Skill secrets (encrypted with SOPS + age) | `ai/secrets/<skill>/` | `%USERPROFILE%\.agent-secrets\`, then symlinked into every checkout that has the skill | `powershell/deploy-secrets.ps1` |
+| Tools and programs a machine needs | `powershell/tools.psd1` | installed via winget and npm | `powershell/install-tools.ps1` |
+| Default markdownlint rules | `powershell/markdownlint.jsonc` | passed to `markdownlint-cli2` by the `md-lint` function | none (used in place) |
 | Automatic pull-and-relink | `powershell/sync.ps1` | Windows scheduled task "Dotfiles Sync" | `powershell/install-sync-task.ps1` |
 | Copilot repo instructions and prompts | `.github/` | used in place by GitHub Copilot | none |
 | Engineering-skill config for this repo | `AGENTS.md`, `docs/agents/` | used in place by Claude Code | none |
 
 ## Quick start (new Windows machine)
 
-1. Turn on Developer Mode (Settings > System > For developers) so symlinks work without elevation. Install the tools:
-
-   ```powershell
-   winget install jqlang.jq FiloSottile.age SecretsOPerationS.SOPS
-   ```
+1. Turn on Developer Mode (Settings > System > For developers) so symlinks work without elevation.
 2. Clone the repo anywhere, for example `C:\source\dotfiles`.
 3. PowerShell profile and AWS config:
 
@@ -34,7 +32,7 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
    .\install-sync-task.ps1
    ```
 
-   `setup.ps1` elevates itself, links both PowerShell profiles and `~/.aws/config`, backs up any regular files it replaces, and offers to reload the profile. `install-sync-task.ps1` registers the "Dotfiles Sync" task (at logon and every 4 hours). Both are safe to re-run.
+   `setup.ps1` elevates itself, links both PowerShell profiles and `~/.aws/config`, backs up any regular files it replaces, installs everything in [powershell/tools.psd1](powershell/tools.psd1), and offers to reload the profile. `install-sync-task.ps1` registers the "Dotfiles Sync" task (at logon and every 4 hours). Both are safe to re-run.
 
 4. AI tooling, from Git Bash:
 
@@ -55,6 +53,7 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
 - Edit files in this repo, commit, push.
 - Other machines pull and re-link automatically via the scheduled task, or on demand with `dotfiles-sync` in PowerShell. Symlinked files pick up edits without re-running anything; new files need a re-link, which the sync does.
 - `./ai/install.sh --check` reports any link that is missing, replaced by a real file, or pointing elsewhere.
+- Tools are declared in [powershell/tools.psd1](powershell/tools.psd1). Add an entry, commit, push, and every machine installs it on its next sync — the sync only does this work when the manifest has actually changed. Entries marked `Unattended = $false` are skipped by the scheduled task and wait for `dotfiles-tools`; `dotfiles-tools -Check` reports what is missing without installing anything.
 
 ## Layout
 

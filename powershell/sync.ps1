@@ -70,6 +70,15 @@ try {
     }
     Write-Log "ai/install.sh ok"
 
+    # Tools: only when tools.psd1 has changed since the last successful run, and only the
+    # entries marked safe to install unwatched - this task must never raise a UAC prompt.
+    $toolsOutput = & (Join-Path $PSScriptRoot "install-tools.ps1") -IfChanged -Unattended -Quiet | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "install-tools.ps1 reported problems:`n$toolsOutput"
+        exit 1
+    }
+    if ($toolsOutput.Trim()) { Write-Log "install-tools.ps1:`n$($toolsOutput.Trim())" } else { Write-Log "install-tools.ps1 ok" }
+
     # Skill secrets: only on machines that have opted in with a machine.local.psd1
     if (Test-Path (Join-Path $repoRoot "ai\secrets\machine.local.psd1")) {
         $secretsOutput = & (Join-Path $PSScriptRoot "deploy-secrets.ps1") -Quiet 2>&1 | Out-String

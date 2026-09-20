@@ -98,7 +98,7 @@ Never post PR review comments without explicit approval. When replying to an exi
 
 - Consistent heading levels, blank lines around headings and code blocks, one list marker style, no trailing whitespace.
 - Never hard-wrap lines when editing markdown; preserve the existing line structure.
-- Run `markdownlint` on edited markdown files when it is installed.
+- Run `md-lint <file>` on edited markdown files. It wraps `markdownlint-cli2` and supplies the dotfiles default rules, which a repo overrides by shipping its own `.markdownlint-cli2.jsonc`. Both arrive via `powershell/install-tools.ps1`.
 
 ## Shell scripts
 

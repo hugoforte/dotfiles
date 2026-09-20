@@ -1,0 +1,39 @@
+// Default markdownlint rules for repos that do not ship their own config.
+//
+// markdownlint-cli2 does NOT look above the current directory and ignores any config in your
+// home directory, so this file only takes effect when something passes it with --config.
+// That is what the md-lint function in markdown.ps1 does.
+//
+// A repo that disagrees wins: drop a .markdownlint-cli2.jsonc in it and md-lint steps aside.
+//
+// This is an allowlist, not the stock ruleset minus exceptions. The stock ruleset reports 654
+// issues across 55 files in this repo alone - mostly agent prompts and skill docs written by
+// other tools - and a linter that is always wrong gets ignored, which is how ai/CLAUDE.md's
+// markdown rules ended up unenforced in the first place. So: "default": false, and then only
+// the rules ai/CLAUDE.md actually asks for. Adding a rule here is a deliberate act.
+//
+// Do NOT add a "globs" key. markdownlint-cli2 appends config globs to the command line, so a
+// glob here makes `md-lint README.md` lint the whole tree.
+{
+  "config": {
+    "default": false,
+
+    // "Consistent heading levels"
+    "MD001": true,
+
+    // "blank lines around headings and code blocks"
+    "MD022": true,
+    "MD031": true,
+
+    // "one list marker style" - dash, because that is what this repo already uses
+    "MD004": { "style": "dash" },
+
+    // "no trailing whitespace"
+    "MD009": true
+
+    // Deliberately absent: MD013 (line length) contradicts "never hard-wrap lines"; MD033
+    // (inline HTML) fires on the HTML comments several docs here use for scaffolding notes;
+    // MD060 (table column style) fires on every compact table in the repo.
+  },
+  "ignores": ["**/node_modules/**", "**/.git/**"]
+}
