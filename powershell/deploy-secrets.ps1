@@ -1,7 +1,8 @@
 # Decrypt managed skill secrets from ai/secrets/ and symlink them into every matching checkout.
 #
-#   deploy-secrets.ps1          decrypt, discover, link; report each target
-#   deploy-secrets.ps1 -Check   report only; exit 1 if anything would change
+#   deploy-secrets.ps1            decrypt, discover, link; report each target
+#   deploy-secrets.ps1 -Check     report only; exit 1 if anything would change
+#   deploy-secrets.ps1 -PassThru  also return the result object, for a caller that reads it
 #
 # Reads ai/secrets/registry.psd1 (tracked) and ai/secrets/machine.local.psd1 (per machine, ignored).
 # Decrypted files live in %USERPROFILE%\.agent-secrets\<skill>\ and are shared by all checkouts via symlinks.
@@ -10,41 +11,44 @@
 
 param(
     [switch]$Check,
-    [switch]$Quiet
+    [switch]$Quiet,
+    [switch]$PassThru
 )
 
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot "output.ps1")
 
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $secretsDir = Join-Path $repoRoot "ai\secrets"
 $registryPath = Join-Path $secretsDir "registry.psd1"
 $localPath = Join-Path $secretsDir "machine.local.psd1"
 $secretsHome = Join-Path $env:USERPROFILE ".agent-secrets"
+
+# What -Check found out of place. Counted at the sites that mean "this would change", which is
+# not every warning: a failed decrypt or an origin mismatch is a problem to look at, not an
+# item deploy-secrets.ps1 would fix on the next run.
 $drift = 0
 
-function Say { param([string]$Message, [string]$Color = "Gray") if (-not $Quiet -or $Color -in @("Yellow", "Red")) { Write-Host $Message -ForegroundColor $Color } }
-function Ok      { param([string]$Message) Say "[OK] $Message" Green }
-function Change  { param([string]$Message) Say "[..] $Message" Cyan }
-function Warn    { param([string]$Message) Say "[!!] $Message" Yellow; $script:drift++ }
+$result = New-ScriptResult -Name "deploy-secrets.ps1" -Quiet:$Quiet -PassThru:$PassThru
 
 # --- Preconditions --------------------------------------------------------------------------------
 
 if (-not (Get-Command sops -ErrorAction SilentlyContinue)) {
-    Write-Host "ERROR: sops not found. Install with: winget install SecretsOPerationS.SOPS" -ForegroundColor Red
-    exit 1
+    Fail "sops not found. Install with: winget install SecretsOPerationS.SOPS"
+    Exit-WithResult $result 1
 }
 if (-not (Test-Path $localPath)) {
-    Write-Host "ERROR: $localPath not found." -ForegroundColor Red
-    Write-Host "       Copy machine.local.psd1.example to machine.local.psd1 and set SearchRoots." -ForegroundColor Yellow
-    exit 1
+    Fail "$localPath not found. Copy machine.local.psd1.example to machine.local.psd1 and set SearchRoots."
+    Exit-WithResult $result 1
 }
 
 $registry = Import-PowerShellDataFile $registryPath
 $local = Import-PowerShellDataFile $localPath
 $roots = @($local.SearchRoots | Where-Object { Test-Path $_ })
 if ($roots.Count -eq 0) {
-    Write-Host "ERROR: none of the SearchRoots in machine.local.psd1 exist" -ForegroundColor Red
-    exit 1
+    Fail "none of the SearchRoots in machine.local.psd1 exist"
+    Exit-WithResult $result 1
 }
 
 # --- Phase 1: decrypt to %USERPROFILE%\.agent-secrets\<skill>\ -------------------------------------
@@ -71,6 +75,7 @@ foreach ($skill in $registry.Skills) {
             Ok "$($skill.Id)/$file current"
         } elseif ($Check) {
             Remove-Item $tmp
+            $drift++
             Warn "$($skill.Id)/$file would be updated"
         } else {
             Move-Item $tmp $decrypted -Force
@@ -120,6 +125,7 @@ foreach ($root in $roots) {
                     continue
                 }
                 if ($Check) {
+                    $drift++
                     if ($item) { Warn "$label`: exists and is not the managed link" } else { Warn "$label`: missing" }
                     continue
                 }
@@ -140,11 +146,17 @@ foreach ($root in $roots) {
     }
 }
 
+# Anything warned about is a reason to exit 1, so read the count before the summary adds to it.
+$warned = $result.Warned
+
 Say ""
-if ($Check) {
-    if ($drift -gt 0) { Write-Host "$drift item(s) would change. Run deploy-secrets.ps1 to apply." -ForegroundColor Yellow; exit 1 }
-    Write-Host "Everything in place." -ForegroundColor Green
+if ($warned -eq 0) {
+    Ok $(if ($Check) { "Everything in place." } else { "Done." })
 } else {
-    if ($drift -gt 0) { Write-Host "Done with $drift warning(s)." -ForegroundColor Yellow; exit 1 }
-    Write-Host "Done." -ForegroundColor Green
+    if ($drift -gt 0) { Warn "$drift item(s) would change. Run deploy-secrets.ps1 to apply." }
+    $problems = $warned - $drift
+    if ($problems -gt 0) { Warn "$problems warning(s) that deploying will not fix; see above." }
 }
+
+$exitCode = if ($warned -gt 0) { 1 } else { 0 }
+Exit-WithResult $result $exitCode

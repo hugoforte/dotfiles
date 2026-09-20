@@ -22,6 +22,25 @@ Key points:
 - Keep AWS helpers in `aws.ps1` and git helpers in `git.ps1`.
 - Dot-source helpers only after path checks.
 
+## Script Reporting Pattern
+
+Scripts that a caller runs (`install-tools.ps1`, `deploy-secrets.ps1`) dot-source `output.ps1`, open a result, report through it, and end through `Exit-WithResult`.
+
+```powershell
+. (Join-Path $PSScriptRoot "output.ps1")
+$result = New-ScriptResult -Name "install-tools.ps1" -Quiet:$Quiet -PassThru:$PassThru
+Ok "$id"
+Warn "$id missing ($source)"
+Exit-WithResult $result 1
+```
+
+Key points:
+
+- `Ok`/`Change`/`Warn`/`Todo`/`Fail` print and record; `Say` only prints.
+- `-PassThru` returns the result to the caller. `Write-Host` alone does not reach it: it writes to the information stream, which PowerShell 5.1 does not capture through `| Out-String`.
+- Read a returned result with `Get-ResultSummary` and `Get-ResultLines`, not by parsing console text.
+- Count a domain fact (drift, failures, deferrals) in its own variable, never as a side effect of printing.
+
 ## Symlink-Aware Loader Pattern
 
 When profile is symlinked, resolve target path before locating helper files.

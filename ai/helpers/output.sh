@@ -8,16 +8,20 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Output functions (printf: `echo` in POSIX sh does not interpret escape codes)
+#
+# Prefixes match powershell/output.ps1 so both languages report the same way. ASCII on purpose:
+# sync.ps1 captures this output into sync.log, and neither that file nor the Windows console is
+# reliably UTF-8 - a check mark arrives there mangled.
 error() {
-    printf "${RED}Error: %s${NC}\n" "$1" >&2
+    printf "${RED}[XX] %s${NC}\n" "$1" >&2
 }
 
 warning() {
-    printf "${YELLOW}Warning: %s${NC}\n" "$1"
+    printf "${YELLOW}[!!] %s${NC}\n" "$1"
 }
 
 success() {
-    printf "${GREEN}✓ %s${NC}\n" "$1"
+    printf "${GREEN}[OK] %s${NC}\n" "$1"
 }
 
 info() {

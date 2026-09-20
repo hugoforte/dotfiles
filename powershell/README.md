@@ -11,6 +11,7 @@ Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in tu
 - `git.ps1`: Git helper functions
 - `rig.ps1`: rig (cross-repo work harness) launcher
 - `markdown.ps1`: `md-lint` wrapper around markdownlint-cli2
+- `output.ps1`: the reporting vocabulary and the result object the scripts return
 - `tools.psd1`: the tools and programs a machine needs, declared
 - `install-tools.ps1`: installs what `tools.psd1` declares (`-Check` reports only)
 - `markdownlint.jsonc`: default markdownlint rules, used by `md-lint` when a repo has none of its own
@@ -53,6 +54,22 @@ What it does, idempotently:
 - `dotfiles-sync` (runs `sync.ps1` in the foreground)
 - `dotfiles-tools [-Check]` (runs `install-tools.ps1`; `-Check` reports what is missing and installs nothing)
 - `md-lint [args]` (markdownlint-cli2 with the dotfiles default rules, unless the current directory ships its own config)
+
+## Reporting
+
+`install-tools.ps1`, `deploy-secrets.ps1` and `sync.ps1` dot-source `output.ps1`. `Ok`, `Change`, `Warn`, `Todo` and `Fail` each print a line and record it on a result object; `Say` only prints, because chatter is not an outcome. Run with `-PassThru` the script returns that result - counts plus messages - and `sync.ps1` writes it to `sync.log`. The console, the log and the exit code are three adapters over one result.
+
+The result is what crosses the call boundary: `Write-Host` writes to the information stream, which Windows PowerShell 5.1 does not capture through `| Out-String`, so a caller that pipes a child script gets an empty string.
+
+| Outcome | Prefix | `output.ps1` | `ai/helpers/output.sh` |
+|---|---|---|---|
+| ok | `[OK]` | `Ok` | `success` |
+| changed | `[..]` | `Change` | - |
+| warning | `[!!]` | `Warn` | `warning` |
+| to do | `[->]` | `Todo` | - |
+| error | `[XX]` | `Fail` | `error` |
+
+Both languages use the same prefixes, in ASCII: neither `sync.log` nor the Windows console is reliably UTF-8.
 
 ## Notes
 

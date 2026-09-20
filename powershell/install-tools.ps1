@@ -4,21 +4,25 @@
 #   install-tools.ps1 -Check       report only; exit 1 if anything is missing
 #   install-tools.ps1 -Unattended  install only entries safe to install unwatched
 #   install-tools.ps1 -IfChanged   do nothing unless tools.psd1 has changed since the last run
+#   install-tools.ps1 -PassThru    also return the result object, for a caller that reads it
 #
 # Idempotent: entries install only when missing. Nothing is ever upgraded or uninstalled -
 # a program on the machine and not in the manifest was installed on purpose.
 #
-# sync.ps1 calls this as -IfChanged -Unattended -Quiet from a scheduled task, so nothing here
-# may raise a UAC prompt: winget installs use --scope user unless the shell is already elevated.
+# sync.ps1 calls this as -IfChanged -Unattended -Quiet -PassThru from a scheduled task, so nothing
+# here may raise a UAC prompt: winget installs use --scope user unless the shell is already elevated.
 
 param(
     [switch]$Check,
     [switch]$Quiet,
     [switch]$Unattended,
-    [switch]$IfChanged
+    [switch]$IfChanged,
+    [switch]$PassThru
 )
 
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot "output.ps1")
 
 $manifestPath = Join-Path $PSScriptRoot "tools.psd1"
 $stateDir = Join-Path $env:LOCALAPPDATA "dotfiles"
@@ -27,24 +31,20 @@ $missing = 0
 $failed = 0
 $deferred = 0
 
-function Say { param([string]$Message, [string]$Color = "Gray") if (-not $Quiet -or $Color -in @("Yellow", "Red")) { Write-Host $Message -ForegroundColor $Color } }
-function Ok      { param([string]$Message) Say "[OK] $Message" Green }
-function Change  { param([string]$Message) Say "[..] $Message" Cyan }
-function Warn    { param([string]$Message) Say "[!!] $Message" Yellow }
-function Todo    { param([string]$Message) Say "[->] $Message" Magenta }
+$result = New-ScriptResult -Name "install-tools.ps1" -Quiet:$Quiet -PassThru:$PassThru
 
 # --- Preconditions --------------------------------------------------------------------------
 
 if (-not (Test-Path $manifestPath)) {
-    Write-Host "ERROR: $manifestPath not found" -ForegroundColor Red
-    exit 1
+    Fail "$manifestPath not found"
+    Exit-WithResult $result 1
 }
 
 $manifest = Import-PowerShellDataFile $manifestPath
 $tools = @($manifest.Tools)
 if ($tools.Count -eq 0) {
-    Write-Host "ERROR: tools.psd1 declares no tools" -ForegroundColor Red
-    exit 1
+    Fail "tools.psd1 declares no tools"
+    Exit-WithResult $result 1
 }
 
 $manifestHash = (Get-FileHash $manifestPath -Algorithm SHA256).Hash
@@ -53,8 +53,8 @@ if ($IfChanged) {
     $applied = $null
     if (Test-Path $statePath) { $applied = (Get-Content $statePath -Raw).Trim() }
     if ($applied -eq $manifestHash) {
-        Say "tools.psd1 unchanged since the last successful run; nothing to do"
-        exit 0
+        Ok "tools.psd1 unchanged since the last successful run; nothing to do"
+        Exit-WithResult $result 0
     }
 }
 
@@ -188,12 +188,12 @@ if (-not $Check -and $failed -eq 0) {
 
 Say ""
 if ($Check) {
-    if ($missing -gt 0) { Warn "$missing tool(s) missing"; exit 1 }
+    if ($missing -gt 0) { Warn "$missing tool(s) missing"; Exit-WithResult $result 1 }
     Ok "every declared tool is installed"
-    exit 0
+    Exit-WithResult $result 0
 }
 
 if ($deferred -gt 0) { Warn "$deferred tool(s) skipped as not safe to install unwatched - run powershell\install-tools.ps1 when convenient" }
-if ($failed -gt 0) { Warn "$failed tool(s) failed to install"; exit 1 }
+if ($failed -gt 0) { Warn "$failed tool(s) failed to install"; Exit-WithResult $result 1 }
 Ok "tools up to date"
-exit 0
+Exit-WithResult $result 0

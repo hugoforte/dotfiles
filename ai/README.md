@@ -12,7 +12,7 @@ Configuration for AI coding agents (Claude Code, Codex, Copilot). Everything is 
 | `claude/settings.json` | Fragment merged into `~/.claude/settings.json`: model, plugins, marketplaces, UI prefs, a read-only tool allowlist. |
 | `install.sh` | Installer, checker and uninstaller for all of the above. |
 | `validate-settings.sh` | Prints a summary of `~/.claude/settings.json` (needs `jq`). |
-| `helpers/` | `output.sh` (colored output) and `settings-reconcile.sh` (the managed-key spec, and the merge, check and export directions over it). |
+| `helpers/` | `output.sh` (colored output, same prefixes as `powershell/output.ps1`) and `settings-reconcile.sh` (the managed-key spec, and the merge, check and export directions over it). |
 | `licenses/` | License and pinned version for vendored third-party skills. |
 | `secrets/` | Encrypted credential files for project-level skills, deployed by `powershell/deploy-secrets.ps1`. See [secrets/README.md](secrets/README.md). |
 

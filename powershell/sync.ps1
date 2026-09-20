@@ -8,6 +8,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "output.ps1")
+
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $logDir = Join-Path $env:LOCALAPPDATA "dotfiles"
 $logFile = Join-Path $logDir "sync.log"
@@ -18,6 +20,19 @@ function Write-Log {
     $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $Message"
     Add-Content -Path $logFile -Value $line
     if (-not $Quiet) { Write-Host $line }
+}
+
+# The sync.log adapter over a child script's result: what it did, then the lines worth keeping.
+# The child reports through Write-Host too, but that is the information stream and does not
+# survive the call - the result does.
+function Write-ResultLog {
+    param([psobject]$Result)
+    if (-not $Result) {
+        Write-Log "no result returned (the script exited before reporting one)"
+        return
+    }
+    Write-Log (Get-ResultSummary $Result)
+    foreach ($line in (Get-ResultLines $Result -Kinds Warn, Error, Todo)) { Write-Log "  $line" }
 }
 
 function Find-Sh {
@@ -63,30 +78,33 @@ try {
         exit 1
     }
 
-    $installOutput = & $sh "$repoRoot/ai/install.sh" 2>&1 | Out-String
+    # install.sh colours its output; the escape sequences are noise in a log file.
+    $installOutput = Remove-AnsiEscape (& $sh "$repoRoot/ai/install.sh" 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0) {
-        Write-Log "ai/install.sh failed:`n$installOutput"
+        Write-Log "ai/install.sh failed:`n$($installOutput.Trim())"
         exit 1
     }
     Write-Log "ai/install.sh ok"
 
     # Tools: only when tools.psd1 has changed since the last successful run, and only the
     # entries marked safe to install unwatched - this task must never raise a UAC prompt.
-    $toolsOutput = & (Join-Path $PSScriptRoot "install-tools.ps1") -IfChanged -Unattended -Quiet | Out-String
-    if ($LASTEXITCODE -ne 0) {
-        Write-Log "install-tools.ps1 reported problems:`n$toolsOutput"
+    $toolsResult = & (Join-Path $PSScriptRoot "install-tools.ps1") -IfChanged -Unattended -Quiet -PassThru
+    $toolsExit = $LASTEXITCODE
+    Write-ResultLog $toolsResult
+    if ($toolsExit -ne 0) {
+        Write-Log "install-tools.ps1 exited $toolsExit"
         exit 1
     }
-    if ($toolsOutput.Trim()) { Write-Log "install-tools.ps1:`n$($toolsOutput.Trim())" } else { Write-Log "install-tools.ps1 ok" }
 
     # Skill secrets: only on machines that have opted in with a machine.local.psd1
     if (Test-Path (Join-Path $repoRoot "ai\secrets\machine.local.psd1")) {
-        $secretsOutput = & (Join-Path $PSScriptRoot "deploy-secrets.ps1") -Quiet 2>&1 | Out-String
-        if ($LASTEXITCODE -ne 0) {
-            Write-Log "deploy-secrets.ps1 reported problems:`n$secretsOutput"
+        $secretsResult = & (Join-Path $PSScriptRoot "deploy-secrets.ps1") -Quiet -PassThru
+        $secretsExit = $LASTEXITCODE
+        Write-ResultLog $secretsResult
+        if ($secretsExit -ne 0) {
+            Write-Log "deploy-secrets.ps1 exited $secretsExit"
             exit 1
         }
-        Write-Log "deploy-secrets.ps1 ok"
     } else {
         Write-Log "deploy-secrets.ps1 skipped (no ai/secrets/machine.local.psd1)"
     }

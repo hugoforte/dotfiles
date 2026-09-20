@@ -11,16 +11,18 @@ This file captures implementation patterns for AI shell scripts.
 ```bash
 #!/bin/sh
 
-export ZSH=$HOME/.dotfiles
-. $ZSH/ai/helpers/output.sh
-. $ZSH/ai/helpers/settings-reconcile.sh
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+export ZSH="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+. "$ZSH/ai/helpers/output.sh"
+. "$ZSH/ai/helpers/settings-reconcile.sh"
 ```
 
 Key points:
 
 - Use POSIX sh (`#!/bin/sh`).
-- Source shared helpers first.
-- Keep `$ZSH` as the current repo-root alias used by scripts.
+- Source shared helpers first, so every script reports the same way.
+- Derive `$ZSH` from the script's own location: the checkout is not always `~/.dotfiles`.
 
 ## Option Parsing Pattern
 
