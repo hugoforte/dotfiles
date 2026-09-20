@@ -39,7 +39,7 @@ printf 'API_KEY=hunter2\n' > "$secrets/skillB/plain.env"
 # testing two identical scripts.
 old_glob="$secrets/old-glob-check.sh"
 sed 's|^for f in .*$|for f in "$SCRIPT_DIR"/*/*; do|' "$secrets/check-encrypted.sh" > "$old_glob"
-if cmp -s "$secrets/check-encrypted.sh" "$old_glob"; then
+if [ "$(cat "$secrets/check-encrypted.sh")" = "$(cat "$old_glob")" ]; then
     differs=n
 else
     differs=y
