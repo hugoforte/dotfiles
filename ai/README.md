@@ -38,16 +38,18 @@ Symlinks on Windows need Developer Mode (Settings > System > For developers) or 
 
 An existing real file or directory at a target path is never overwritten; the script warns and skips it. Delete the local copy and re-run to let the repo own it.
 
+A skill or agent deleted from the repo leaves a dangling symlink on every machine that had it linked, which the agents still list and then fail to read. An install prunes those, and `--check` reports them as drift. Only links pointing into this repo are touched.
+
 ## Skills
 
 ### Managed here
 
 | Prefix | Count | Origin |
 |---|---|---|
-| `matt-*` | 25 | [mattpocock/skills](https://github.com/mattpocock/skills), engineering + productivity sets, MIT. Pinned commit in `licenses/mattpocock-skills-VERSION`. |
+| `matt-*` | 24 | [mattpocock/skills](https://github.com/mattpocock/skills), engineering + productivity sets, MIT. Pinned commit in `licenses/mattpocock-skills-VERSION`. |
 | `review-pr` | 1 | Own. PR review workflow via `gh`. |
+| `resolve-pr-comments` | 1 | Own. Works a PR's review comments to zero: action, reply, resolve. |
 | `rig` | 1 | Own. Entry point to the [rig](https://github.com/hugoforte/rig) cross-repo work harness: where it lives, how to invoke it from any shell, which folder to start from. |
-| `excalidraw-diagram` | 1 | [coleam00/excalidraw-diagram-skill](https://github.com/coleam00/excalidraw-diagram-skill). |
 
 Matt's skills are prefixed `matt-` (folder and `name:`), and their `/slash` cross-references were rewritten to match, so `/matt-triage`, `/matt-grill-with-docs`, and so on. Backticked mentions like "the `research` skill" were left as-is because the same words also name wayfinder ticket types.
 

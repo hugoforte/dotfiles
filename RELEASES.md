@@ -10,6 +10,9 @@
 - `dotfiles-secrets` skill pointing at the procedures
 - Skills sync: `ai/install.sh` links every `ai/skills/<name>/` into the Claude Code, Codex and Copilot skills directories
 - Vendored Matt Pocock's engineering and productivity skills as `matt-*` (25 skills, MIT, pinned in `ai/licenses/`)
+- `ai/install.sh` prunes stale skill and agent links: a component deleted from the repo used to leave a dangling symlink behind on every machine, which `--check` called clean because both loops only walked the repo side
+- Pruned two never-invoked skills: `matt-code-review` (Claude Code's built-in `/code-review` covers it) and `excalidraw-diagram`
+- `resolve-pr-comments` skill: triages a PR's review comments, actions the ones worth actioning behind one approval gate, then replies in-thread and resolves
 - `review-pr` skill (was a user-level Claude command)
 - `rig` skill: points any agent at the cross-repo work harness from any folder
 - `ai/install.sh` rewritten: `--check` drift report, `--uninstall`, per-component flags, native symlinks on Git Bash, prerequisites checked per component
@@ -19,7 +22,6 @@
 - Removed inherited MCP server list, hooks, and tool-permissions script
 - Colored script output now renders correctly in POSIX `sh`
 - Fix `setup.ps1` cloning the upstream fork instead of this repo on a fresh machine
-- Vendored `excalidraw-diagram` skill (folder renamed from `excalidraw-diagram-skill-main`)
 - `rig`, `rig-install` (with `-DataRepo` for the private data repo) and `rig-goto-root` launcher functions
 - AWS profile helpers: `aws-switch-profiles`, `aws-setup-profile`, `aws-view-profile`, `aws-goto-profile-path`
 - GitHub Copilot repo instructions and reusable prompts under `.github/`

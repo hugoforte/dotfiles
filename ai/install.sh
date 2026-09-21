@@ -65,6 +65,30 @@ unlink_if_link() {
     fi
 }
 
+# is_orphan_link <entry> <source_dir>: true when <entry> is a symlink into
+# <source_dir> that no longer resolves. A skill or agent deleted from the repo
+# leaves exactly this behind on every machine that had linked it, and a
+# dangling link is not harmless: the agents still list the name and then fail
+# to read it. Links pointing anywhere else are somebody else's business.
+is_orphan_link() {
+    [ -L "$1" ] || return 1
+    [ -e "$1" ] && return 1
+    case "$(readlink "$1")" in
+        "$2"/*) return 0 ;;
+    esac
+    return 1
+}
+
+# prune_orphans <dir> <source_dir>: delete the orphans in <dir>
+prune_orphans() {
+    [ -d "$1" ] || return 0
+    for entry in "$1"/*; do
+        is_orphan_link "$entry" "$2" || continue
+        rm -f "$entry"
+        success "Removed stale link $entry"
+    done
+}
+
 CHECK_FAILED=0
 
 # check_link <src> <dst>: report the state of one managed link
@@ -87,6 +111,16 @@ check_link() {
     fi
 }
 
+# check_orphans <dir> <source_dir>: report the orphans in <dir> as drift
+check_orphans() {
+    [ -d "$1" ] || return 0
+    for entry in "$1"/*; do
+        is_orphan_link "$entry" "$2" || continue
+        warning "$entry is a stale link to something no longer in the repo"
+        CHECK_FAILED=1
+    done
+}
+
 # ---------------------------------------------------------------------------
 # Components: each has install_<c>, uninstall_<c>, check_<c>
 # ---------------------------------------------------------------------------
@@ -107,6 +141,7 @@ install_agents() {
     for agent in "$ZSH"/ai/agents/*.md; do
         link "$agent" "$CLAUDE_DIR/agents/$(basename "$agent")"
     done
+    prune_orphans "$CLAUDE_DIR/agents" "$ZSH/ai/agents"
     success "Linked agents into $CLAUDE_DIR/agents"
 }
 uninstall_agents() {
@@ -119,6 +154,7 @@ check_agents() {
     for agent in "$ZSH"/ai/agents/*.md; do
         check_link "$agent" "$CLAUDE_DIR/agents/$(basename "$agent")"
     done
+    check_orphans "$CLAUDE_DIR/agents" "$ZSH/ai/agents"
 }
 
 install_skills() {
@@ -128,6 +164,7 @@ install_skills() {
             skill="${skill%/}"
             link "$skill" "$target/$(basename "$skill")"
         done
+        prune_orphans "$target" "$ZSH/ai/skills"
         success "Linked skills into $target"
     done
 }
@@ -146,6 +183,7 @@ check_skills() {
             skill="${skill%/}"
             check_link "$skill" "$target/$(basename "$skill")"
         done
+        check_orphans "$target" "$ZSH/ai/skills"
     done
 }
 
