@@ -19,38 +19,45 @@ function aws-profile {
     }
 }
 
+# Points ~/.aws/config at the repo's aws/config, the same link setup.ps1 makes, so running this
+# after setup leaves the managed link in place instead of replacing it with a copy that goes stale.
 function aws-setup-profile {
     $repoRoot = Split-Path -Parent $PSScriptRoot
     $sourceConfigPath = Join-Path $repoRoot "aws\config"
-    $awsDir = Join-Path $env:USERPROFILE ".aws"
-    $targetConfigPath = Join-Path $awsDir "config"
+    $targetConfigPath = Join-Path (Join-Path $env:USERPROFILE ".aws") "config"
 
     if (-not (Test-Path -LiteralPath $sourceConfigPath)) {
         Write-Host "Source AWS config not found at: $sourceConfigPath" -ForegroundColor Red
         return
     }
 
-    if (-not (Test-Path -LiteralPath $awsDir)) {
-        New-Item -ItemType Directory -Path $awsDir | Out-Null
-        Write-Host "Created AWS directory: $awsDir" -ForegroundColor Green
+    # Loaded here, not at file scope: profile.ps1 dot-sources aws.ps1 into every shell, and a
+    # checkout without managed-link.ps1 beside it would then error on every shell start. The
+    # repo's rule is to dot-source helpers only after a path check (powershell.instructions.md).
+    $linkModule = Join-Path $PSScriptRoot "managed-link.ps1"
+    if (-not (Test-Path -LiteralPath $linkModule)) {
+        Write-Host "Cannot link AWS config: $linkModule not found" -ForegroundColor Red
+        return
+    }
+    . $linkModule
+
+    try {
+        $link = Set-ManagedLink -Path $targetConfigPath -Source $sourceConfigPath
+    } catch {
+        Write-Host $_.Exception.Message -ForegroundColor Red
+        return
     }
 
-    if (Test-Path -LiteralPath $targetConfigPath) {
-        $sourceContent = Get-Content -LiteralPath $sourceConfigPath -Raw
-        $targetContent = Get-Content -LiteralPath $targetConfigPath -Raw
-
-        if ($sourceContent -eq $targetContent) {
-            Write-Host "AWS config is already up to date." -ForegroundColor Green
-            return
-        }
-
-        $backupPath = "$targetConfigPath.backup.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-        Copy-Item -LiteralPath $targetConfigPath -Destination $backupPath -Force
-        Write-Host "Backed up existing AWS config to: $backupPath" -ForegroundColor Yellow
+    if ($link.Action -eq "AlreadyCorrect") {
+        Write-Host "AWS config is already linked to: $sourceConfigPath" -ForegroundColor Green
+        return
     }
 
-    Copy-Item -LiteralPath $sourceConfigPath -Destination $targetConfigPath -Force
-    Write-Host "Copied AWS config from repo to: $targetConfigPath" -ForegroundColor Green
+    if ($link.BackupPath) {
+        Write-Host "Backed up existing AWS config to: $($link.BackupPath)" -ForegroundColor Yellow
+    }
+
+    Write-Host "Linked AWS config to repo: $targetConfigPath -> $sourceConfigPath" -ForegroundColor Green
     Write-Host "Run 'aws sso login' to authenticate." -ForegroundColor DarkGray
 }
 

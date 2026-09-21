@@ -38,14 +38,22 @@ skill_target_dirs() {
 # Link primitives
 # ---------------------------------------------------------------------------
 
-# link <src> <dst>: replace an existing symlink, refuse to clobber a real file/dir
+# link <src> <dst>: point dst at src, backing up whatever real file was already there.
+#
+# A symlink at dst holds no content of its own, so it is replaced without a backup. A real file
+# is someone's work: it is moved aside, never deleted, under the same <leaf>.backup.<timestamp>
+# name powershell/managed-link.ps1 uses, so one convention shows up in both languages.
 link() {
     src="$1"; dst="$2"
     if [ -L "$dst" ]; then
         rm -f "$dst"
     elif [ -e "$dst" ]; then
-        warning "$dst exists and is not a symlink - skipping (remove it to manage it from dotfiles)"
-        return 1
+        backup="$dst.backup.$(date +%Y%m%d_%H%M%S)"
+        if ! mv "$dst" "$backup"; then
+            error "Could not move $dst aside to $backup - leaving it alone"
+            return 1
+        fi
+        warning "$dst was not a symlink - backed it up to $backup"
     fi
     ln -s "$src" "$dst"
 }

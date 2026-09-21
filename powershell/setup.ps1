@@ -4,15 +4,76 @@
 
 param(
     [string]$RepoUrl = "https://github.com/hugoforte/dotfiles.git",
-    [switch]$Force
+    [switch]$Force,
+    [switch]$Check
 )
 
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "managed-link.ps1")
+
+# Every managed link this script owns, in one list, so -Check and the apply path can never
+# disagree about what "set up" means.
+function Get-ManagedLinkPlan {
+    param([Parameter(Mandatory)][string]$RepoPath)
+
+    $plan = @(
+        @{ Label = "PowerShell profile";           Path = $PROFILE;                                   Source = "$RepoPath\powershell\profile.ps1" }
+        @{ Label = "PowerShell all-hosts profile"; Path = $PROFILE.CurrentUserAllHosts;               Source = "$RepoPath\powershell\profile.ps1" }
+        @{ Label = "AWS config";                   Path = "$env:USERPROFILE\.aws\config";             Source = "$RepoPath\aws\config" }
+        @{ Label = "~/.gitconfig";                 Path = "$env:USERPROFILE\.gitconfig";              Source = "$RepoPath\git\gitconfig" }
+        @{ Label = "~/.gitconfig-employer";     Path = "$env:USERPROFILE\.gitconfig-employer";  Source = "$RepoPath\git\gitconfig-employer" }
+    )
+    # A source the repo does not ship is not a link this machine is missing.
+    return @($plan | Where-Object { Test-Path -LiteralPath $_.Source })
+}
+
+# --- Check: report the managed links and change nothing ----------------------------------------
+#
+# Deliberately before the elevation, the update prompt and the clone: reading state needs none of
+# them. This is the -Check that ai/install.sh, install-tools.ps1 and deploy-secrets.ps1 all had
+# and this script did not.
+if ($Check) {
+    Write-Host "=== PowerShell Dotfiles Check ===" -ForegroundColor Cyan
+    Write-Host ""
+
+    $repoPath = Split-Path $PSScriptRoot -Parent
+    $wrong = 0
+    foreach ($entry in (Get-ManagedLinkPlan -RepoPath $repoPath)) {
+        $state = Test-ManagedLink -Path $entry.Path -Source $entry.Source
+        if ($state.IsCorrect) {
+            Write-Host "[OK] $($entry.Label)" -ForegroundColor Green
+        } else {
+            $wrong++
+            $detail = switch ($state.Reason) {
+                'Missing'     { "missing" }
+                'NotALink'    { "exists and is not a symlink" }
+                'WrongTarget' { "points at $($state.ActualTarget)" }
+            }
+            Write-Host "[!!] $($entry.Label): $detail" -ForegroundColor Yellow
+            Write-Host "     expected $($entry.Path) -> $($entry.Source)" -ForegroundColor DarkGray
+        }
+    }
+
+    Write-Host ""
+    if ($wrong -gt 0) {
+        Write-Host "$wrong link(s) would change. Run setup.ps1 to apply." -ForegroundColor Yellow
+        exit 1
+    }
+    Write-Host "Every managed link is in place." -ForegroundColor Green
+    exit 0
+}
+
 Write-Host "=== PowerShell Dotfiles Setup ===" -ForegroundColor Cyan
 Write-Host ""
 
-# Check if running as admin (required for symlinks on Windows)
+# Elevation is NOT for the symlinks. The managed-link module uses `cmd /c mklink`, which honours
+# Developer Mode and works unelevated - measured; PowerShell 5.1's New-Item -ItemType SymbolicLink
+# does not, which is why this script used to need admin.
+#
+# What the elevation still earns is install-tools.ps1 below: winget installs machine-wide only
+# when elevated, and this deliberate, watched run is where that is wanted. sync.ps1 runs the same
+# installer unelevated on purpose, and gets --scope user.
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
     Write-Host "Requesting Administrator privileges..." -ForegroundColor Yellow
@@ -69,193 +130,45 @@ if (!(Test-Path "$dotfilesPath\.git")) {
 }
 Write-Host ""
 
-# Create WindowsPowerShell directory if needed
-$psDir = "$env:USERPROFILE\Documents\WindowsPowerShell"
-if (!(Test-Path $psDir)) {
-    Write-Host "Creating PowerShell directory..." -ForegroundColor Green
-    mkdir $psDir | Out-Null
-    Write-Host "[OK] Created $psDir" -ForegroundColor Green
+# --- The managed links -------------------------------------------------------------------------
+#
+# Five links, one implementation. This used to be the same ~28-line probe/backup/link block
+# written out four times - three inline and once as Set-DotfileSymlink, which was the
+# generalisation, defined below the copies that should have used it and called only for the
+# gitconfigs. All of it now lives in managed-link.ps1 (hugoforte/dotfiles#6).
+
+# Parent directories the links need. Set-ManagedLink creates a missing parent itself, but these
+# two are directories Windows and the AWS CLI expect to exist in their own right, not just as
+# somewhere to put a link.
+foreach ($dir in @("$env:USERPROFILE\Documents\WindowsPowerShell", "$env:USERPROFILE\.aws")) {
+    if (!(Test-Path $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Write-Host "[OK] Created $dir" -ForegroundColor Green
+    }
 }
 
-# Setup PowerShell profile symlink
-$profileTarget = "$dotfilesPath\powershell\profile.ps1"
-$needsProfileSetup = $false
+Write-Host "Linking managed files..." -ForegroundColor Green
+$linkedAws = $false
+foreach ($entry in (Get-ManagedLinkPlan -RepoPath $dotfilesPath)) {
+    $result = Set-ManagedLink -Path $entry.Path -Source $entry.Source
 
-if (Test-Path $PROFILE) {
-    $item = Get-Item $PROFILE
-    if ($item.LinkType -eq "SymbolicLink") {
-        $currentTarget = $item.Target
-        if ($currentTarget -eq $profileTarget) {
-            Write-Host "[OK] PowerShell profile already linked correctly" -ForegroundColor Green
-        } else {
-            Write-Host "Profile is symlinked to different location: $currentTarget" -ForegroundColor Yellow
-            $needsProfileSetup = $true
+    switch ($result.Action) {
+        'AlreadyCorrect'    { Write-Host "[OK] $($entry.Label) already linked correctly" -ForegroundColor Green }
+        'Created'           { Write-Host "[OK] $($entry.Label) linked" -ForegroundColor Green }
+        'Repointed'         { Write-Host "[OK] $($entry.Label) repointed at the repo" -ForegroundColor Green }
+        'BackedUpAndLinked' {
+            Write-Host "[OK] $($entry.Label) linked" -ForegroundColor Green
+            Write-Host "     backed up what was there to $(Split-Path $result.BackupPath -Leaf)" -ForegroundColor Yellow
         }
-    } else {
-        Write-Host "Profile exists but is not a symlink" -ForegroundColor Yellow
-        $needsProfileSetup = $true
     }
-} else {
-    $needsProfileSetup = $true
+
+    if ($entry.Label -eq "AWS config" -and $result.Action -ne 'AlreadyCorrect') { $linkedAws = $true }
 }
 
-if ($needsProfileSetup) {
-    # Backup existing profile if it's a regular file
-    if ((Test-Path $PROFILE) -and (Get-Item $PROFILE).LinkType -ne "SymbolicLink") {
-        $backupPath = "$PROFILE.backup.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-        Write-Host "Backing up existing profile..." -ForegroundColor Yellow
-        Copy-Item $PROFILE $backupPath
-        Write-Host "[OK] Backup saved to: $backupPath" -ForegroundColor Green
-        Remove-Item $PROFILE -Force
-    }
-    
-    Write-Host "Creating symbolic link for PowerShell profile..." -ForegroundColor Green
-    New-Item -ItemType SymbolicLink -Path $PROFILE -Target $profileTarget -Force | Out-Null
-    Write-Host "[OK] PowerShell profile linked successfully" -ForegroundColor Green
-}
-
-# Setup all-hosts PowerShell profile symlink so functions load in any host
-$allHostsProfile = $PROFILE.CurrentUserAllHosts
-$needsAllHostsSetup = $false
-
-if (Test-Path $allHostsProfile) {
-    $item = Get-Item $allHostsProfile
-    if ($item.LinkType -eq "SymbolicLink") {
-        $currentTarget = $item.Target
-        if ($currentTarget -eq $profileTarget) {
-            Write-Host "[OK] PowerShell all-hosts profile already linked correctly" -ForegroundColor Green
-        } else {
-            Write-Host "All-hosts profile is symlinked to different location: $currentTarget" -ForegroundColor Yellow
-            $needsAllHostsSetup = $true
-        }
-    } else {
-        Write-Host "PowerShell all-hosts profile exists but is not a symlink" -ForegroundColor Yellow
-        $needsAllHostsSetup = $true
-    }
-} else {
-    $needsAllHostsSetup = $true
-}
-
-if ($needsAllHostsSetup) {
-    if ((Test-Path $allHostsProfile) -and (Get-Item $allHostsProfile).LinkType -ne "SymbolicLink") {
-        $backupPath = "$allHostsProfile.backup.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-        Write-Host "Backing up existing all-hosts profile..." -ForegroundColor Yellow
-        Copy-Item $allHostsProfile $backupPath
-        Write-Host "[OK] Backup saved to: $backupPath" -ForegroundColor Green
-        Remove-Item $allHostsProfile -Force
-    }
-
-    Write-Host "Creating symbolic link for PowerShell all-hosts profile..." -ForegroundColor Green
-    New-Item -ItemType SymbolicLink -Path $allHostsProfile -Target $profileTarget -Force | Out-Null
-    Write-Host "[OK] PowerShell all-hosts profile linked successfully" -ForegroundColor Green
+if ($linkedAws) {
+    Write-Host "     Run 'aws sso login' to authenticate" -ForegroundColor DarkGray
 }
 Write-Host ""
-
-# Setup AWS profiles
-$awsDir = "$env:USERPROFILE\.aws"
-$dotfilesAwsDir = "$dotfilesPath\aws"
-
-if (Test-Path "$dotfilesAwsDir\config") {
-    Write-Host "Setting up AWS profiles..." -ForegroundColor Green
-    
-    # Create .aws directory if needed
-    if (!(Test-Path $awsDir)) {
-        mkdir $awsDir | Out-Null
-        Write-Host "[OK] Created .aws directory" -ForegroundColor Green
-    }
-    
-    $awsConfigTarget = "$dotfilesAwsDir\config"
-    $needsAwsSetup = $false
-    
-    if (Test-Path "$awsDir\config") {
-        $item = Get-Item "$awsDir\config"
-        if ($item.LinkType -eq "SymbolicLink") {
-            $currentTarget = $item.Target
-            if ($currentTarget -eq $awsConfigTarget) {
-                Write-Host "[OK] AWS config already linked correctly" -ForegroundColor Green
-            } else {
-                Write-Host "AWS config is symlinked to different location: $currentTarget" -ForegroundColor Yellow
-                $needsAwsSetup = $true
-            }
-        } else {
-            Write-Host "AWS config exists but is not a symlink" -ForegroundColor Yellow
-            $needsAwsSetup = $true
-        }
-    } else {
-        $needsAwsSetup = $true
-    }
-    
-    if ($needsAwsSetup) {
-        # Backup existing AWS config if it's a regular file
-        if ((Test-Path "$awsDir\config") -and (Get-Item "$awsDir\config").LinkType -ne "SymbolicLink") {
-            $backupPath = "$awsDir\config.backup.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-            Copy-Item "$awsDir\config" $backupPath
-            Write-Host "[OK] Backed up existing AWS config to: $(Split-Path $backupPath -Leaf)" -ForegroundColor Yellow
-            Remove-Item "$awsDir\config" -Force
-        }
-        
-        New-Item -ItemType SymbolicLink -Path "$awsDir\config" -Target $awsConfigTarget -Force | Out-Null
-        Write-Host "[OK] AWS config linked successfully" -ForegroundColor Green
-        Write-Host "    Run 'aws sso login' to authenticate" -ForegroundColor DarkGray
-    }
-}
-
-Write-Host ""
-
-# Setup git config
-$dotfilesGitDir = "$dotfilesPath\git"
-
-function Set-DotfileSymlink {
-    param(
-        [string]$LinkPath,
-        [string]$TargetPath,
-        [string]$Label
-    )
-
-    if (!(Test-Path $TargetPath)) {
-        return
-    }
-
-    $needsSetup = $false
-    if (Test-Path $LinkPath) {
-        $item = Get-Item $LinkPath -Force
-        if ($item.LinkType -eq "SymbolicLink") {
-            if ($item.Target -eq $TargetPath) {
-                Write-Host "[OK] $Label already linked correctly" -ForegroundColor Green
-            } else {
-                Write-Host "$Label is symlinked to different location: $($item.Target)" -ForegroundColor Yellow
-                $needsSetup = $true
-            }
-        } else {
-            Write-Host "$Label exists but is not a symlink" -ForegroundColor Yellow
-            $needsSetup = $true
-        }
-    } else {
-        $needsSetup = $true
-    }
-
-    if (-not $needsSetup) {
-        return
-    }
-
-    if ((Test-Path $LinkPath) -and (Get-Item $LinkPath -Force).LinkType -ne "SymbolicLink") {
-        $backupPath = "$LinkPath.backup.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-        Copy-Item $LinkPath $backupPath
-        Write-Host "[OK] Backed up existing $Label to: $(Split-Path $backupPath -Leaf)" -ForegroundColor Yellow
-        Remove-Item $LinkPath -Force
-    }
-
-    New-Item -ItemType SymbolicLink -Path $LinkPath -Target $TargetPath -Force | Out-Null
-    Write-Host "[OK] $Label linked successfully" -ForegroundColor Green
-}
-
-if (Test-Path $dotfilesGitDir) {
-    Write-Host "Setting up git config..." -ForegroundColor Green
-    Set-DotfileSymlink -LinkPath "$env:USERPROFILE\.gitconfig" -TargetPath "$dotfilesGitDir\gitconfig" -Label "~/.gitconfig"
-    Set-DotfileSymlink -LinkPath "$env:USERPROFILE\.gitconfig-employer" -TargetPath "$dotfilesGitDir\gitconfig-employer" -Label "~/.gitconfig-employer"
-    Write-Host ""
-}
-
 # Tools: this script is already elevated, so the whole manifest installs here, including the
 # entries sync.ps1 is not allowed to install unwatched.
 Write-Host "Installing declared tools..." -ForegroundColor Green

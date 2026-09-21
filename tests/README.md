@@ -34,6 +34,8 @@ reason any of this is testable yet:
 | `ai/helpers/settings-reconcile.sh` | `reconcile_settings <direction> <target> <fragment>` takes both paths | #13 |
 | `powershell/output.ps1` | the result object is data, not console text | #14 |
 | `ai/secrets/check-encrypted.sh` | a pure function of a directory tree | #12 |
+| `powershell/managed-link.ps1` | three verbs, and both paths are arguments | #6 |
+| `ai/install.sh`'s `link` / `unlink_if_link` / `check_link` | the same contract in sh, extracted to a fixture rather than run | #6 |
 
 **Everything else is untestable on purpose, not by oversight.** `setup.ps1`, `sync.ps1`,
 `install-sync-task.ps1`, and `install-tools.ps1` / `deploy-secrets.ps1` without `-Check` read
@@ -80,3 +82,15 @@ set minus exceptions — a linter that is always red gets ignored.
 
 One behaviour per assertion, named so a failure reads as a sentence. If a test needs the real
 machine to pass, it is the wrong test.
+
+Two traps that have already cost time here:
+
+- **Pester's `TestDrive` is per file, not per test.** Without a `BeforeEach` handing each test
+  its own directory, a test sees the links the previous one left behind. `ManagedLink.Tests.ps1`
+  calls `New-WorkDir` for exactly this reason.
+- **POSIX sh has no `local`.** `ai/install.sh`'s `link()` and `check_link()` assign `src`, `dst`,
+  `backup` and `actual` in the *caller's* shell, so a test using those names as its own
+  variables gets silently corrupted. `managed-link.test.sh` uses `repo` and `saved`.
+
+And check your suite can fail before you trust it. Break the thing under test in a scratch copy,
+confirm the right assertions go red, restore. Every suite here has been through that.

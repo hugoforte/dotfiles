@@ -12,10 +12,11 @@ Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in tu
 - `rig.ps1`: rig (cross-repo work harness) launcher
 - `markdown.ps1`: `md-lint` wrapper around markdownlint-cli2
 - `output.ps1`: the reporting vocabulary and the result object the scripts return
+- `managed-link.ps1`: the one implementation of "point this path at that file in the repo" — `Set-ManagedLink`, `Test-ManagedLink`, `Remove-ManagedLink`
 - `tools.psd1`: the tools and programs a machine needs, declared
 - `install-tools.ps1`: installs what `tools.psd1` declares (`-Check` reports only)
 - `markdownlint.jsonc`: default markdownlint rules, used by `md-lint` when a repo has none of its own
-- `setup.ps1`: symlink/setup automation
+- `setup.ps1`: symlink/setup automation (`-Check` reports the managed links and changes nothing)
 - `sync.ps1`: `git pull --ff-only`, then `ai/install.sh`, then `install-tools.ps1` if `tools.psd1` changed, then `deploy-secrets.ps1` if the machine has opted in; logs to `%LOCALAPPDATA%\dotfiles\sync.log`
 - `deploy-secrets.ps1`: decrypts `ai/secrets/` and symlinks the files into every checkout that has the skill (`-Check` for report only); see `ai/secrets/README.md`
 - `install-sync-task.ps1`: registers the "Dotfiles Sync" scheduled task that runs `sync.ps1` at logon and every 4 hours (`-Uninstall` removes it)
@@ -25,16 +26,19 @@ Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in tu
 ```powershell
 cd <path-to-dotfiles>\powershell
 .\setup.ps1
+.\setup.ps1 -Check   # report the managed links and change nothing
 ```
 
 What it does, idempotently:
 
-- Re-launches itself elevated (symlinks need admin unless Developer Mode is on)
 - Uses the checkout it is run from; if run from elsewhere, clones or updates `%USERPROFILE%\dotfiles`
-- Symlinks `$PROFILE` and the all-hosts profile to `profile.ps1`, backing up any regular file it replaces
-- Symlinks `%USERPROFILE%\.aws\config` to `aws/config`
+- Links `$PROFILE`, the all-hosts profile, `%USERPROFILE%\.aws\config` and both gitconfigs at the repo, backing up any regular file it displaces
 - Installs every tool declared in `tools.psd1`, including those the scheduled task is not allowed to install unwatched
 - Offers to reload the profile
+
+`-Check` needs no elevation and does nothing else in the list above: it reports each managed link and exits non-zero if any would change.
+
+The elevation is **not** for the symlinks. `managed-link.ps1` uses `cmd /c mklink`, which honours Developer Mode and works unelevated — Windows PowerShell 5.1's `New-Item -ItemType SymbolicLink` does not, whatever Developer Mode says, which is why this script used to need admin. What the elevation earns now is `install-tools.ps1`: winget installs machine-wide only when elevated, and a deliberate, watched `setup.ps1` run is where that is wanted. `sync.ps1` runs the same installer unelevated and gets `--scope user`.
 
 ## Functions
 
@@ -43,7 +47,7 @@ What it does, idempotently:
 - `aws-profile [ProfileName]`
 - `aws-switch-profile`
 - `aws-switch-profiles`
-- `aws-setup-profile` (copies `aws/config` to `%USERPROFILE%\\.aws\\config`)
+- `aws-setup-profile` (links `%USERPROFILE%\\.aws\\config` at the repo's `aws/config`, the same link `setup.ps1` makes)
 - `aws-view-profile` (prints `%USERPROFILE%\\.aws\\config`)
 - `aws-goto-profile-path` (changes directory to `%USERPROFILE%\\.aws`)
 - `git-list-merged-branches`

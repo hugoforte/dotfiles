@@ -18,7 +18,7 @@ function list-functions {
     Write-Host ""
 
     Write-Host "aws-setup-profile" -ForegroundColor Green
-    Write-Host "  Copy repo aws/config to your ~/.aws/config"
+    Write-Host "  Link your ~/.aws/config to the repo's aws/config"
     Write-Host ""
 
     Write-Host "aws-view-profile" -ForegroundColor Green
