@@ -32,7 +32,15 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
    .\install-sync-task.ps1
    ```
 
-   `setup.ps1` elevates itself, links both PowerShell profiles and `~/.aws/config`, backs up any regular files it replaces, installs everything in [powershell/tools.psd1](powershell/tools.psd1), and offers to reload the profile. `install-sync-task.ps1` registers the "Dotfiles Sync" task (at logon and every 4 hours). Both are safe to re-run.
+   `setup.ps1` links both PowerShell profiles, `~/.aws/config` and both gitconfigs, backs up any real file it displaces, installs everything in [powershell/tools.psd1](powershell/tools.psd1), and offers to reload the profile. `install-sync-task.ps1` registers the "Dotfiles Sync" task (at logon and every 4 hours). Both are safe to re-run.
+
+   `setup.ps1` elevates itself, but **not for the symlinks** — those work unelevated once Developer Mode is on. It elevates so winget installs the manifest machine-wide; unelevated it would quietly fall back to `--scope user`. See [ADR 0002](docs/adr/0002-mklink-not-new-item.md).
+
+   To see what it would do without doing any of it:
+
+   ```powershell
+   .\setup.ps1 -Check
+   ```
 
 4. AI tooling, from Git Bash:
 
@@ -52,7 +60,7 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
 
 - Edit files in this repo, commit, push.
 - Other machines pull and re-link automatically via the scheduled task, or on demand with `dotfiles-sync` in PowerShell. Symlinked files pick up edits without re-running anything; new files need a re-link, which the sync does.
-- `./ai/install.sh --check` reports any link that is missing, replaced by a real file, or pointing elsewhere.
+- Every installer has a report-only mode that changes nothing and exits non-zero if anything is out of sync: `./ai/install.sh --check`, `.\powershell\setup.ps1 -Check`, `.\powershell\deploy-secrets.ps1 -Check` and `dotfiles-tools -Check`. Each reports links that are missing, replaced by a real file, or pointing elsewhere. They answer "is this machine in sync with the repo?" — not "is this code correct?", which is what `tests/` is for.
 - Tools are declared in [powershell/tools.psd1](powershell/tools.psd1). Add an entry, commit, push, and every machine installs it on its next sync — the sync only does this work when the manifest has actually changed. Entries marked `Unattended = $false` are skipped by the scheduled task and wait for `dotfiles-tools`; `dotfiles-tools -Check` reports what is missing without installing anything.
 
 ## Layout
@@ -61,5 +69,8 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
 - [aws/](aws/README.md): AWS CLI config
 - [ai/](ai/README.md): agent skills, Claude Code config, installer
 - [.github/](.github/instructions/README.md): Copilot instructions and reusable prompts
+- [tests/](tests/README.md): fixture tests for the parts that can be tested without touching the machine you are on; CI runs them on every pull request
+- [CONTEXT.md](CONTEXT.md): the glossary — what "managed", "drift", "checkout" and the rest mean here
+- [docs/adr/](docs/adr/): the decisions a reader would otherwise try to undo, and why
 - [docs/agents/](docs/agents/): issue tracker, triage labels and domain-doc conventions read by the engineering skills
 - [RELEASES.md](RELEASES.md): change log
