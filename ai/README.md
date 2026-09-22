@@ -47,15 +47,22 @@ A skill or agent deleted from the repo leaves a dangling symlink on every machin
 | Prefix | Count | Origin |
 |---|---|---|
 | `matt-*` | 24 | [mattpocock/skills](https://github.com/mattpocock/skills), engineering + productivity sets, MIT. Pinned commit in `licenses/mattpocock-skills-VERSION`. |
-| `review-pr` | 1 | Own. PR review workflow via `gh`. |
-| `resolve-pr-comments` | 1 | Own. Works a PR's review comments to zero: action, reply, resolve. |
-| `rig` | 1 | Own. Entry point to the [rig](https://github.com/hugoforte/rig) cross-repo work harness: where it lives, how to invoke it from any shell, which folder to start from. |
+| `hf-*` | 4 | Own. One per row below. |
+
+My own skills carry an `hf-` prefix, so a skill list says at a glance which ones this repo wrote and which came from somewhere else.
+
+| Skill | What it does |
+|---|---|
+| `hf-assign-devs-to-pr` | Asks which of the team should take a PR, then requests their review and assigns them via `gh`. Holds the roster of names and GitHub handles. |
+| `hf-resolve-pr-comments` | Works a PR's review comments to zero: action, reply, resolve. |
+| `hf-dotfiles-secrets` | The procedures for the encrypted skill secrets under `secrets/`. |
+| `hf-rig` | Finds the [rig](https://github.com/hugoforte/rig) cross-repo work harness and routes into it: how to invoke it from any shell, `rig doctor` for everything machine-specific, and which rig command answers which request. |
 
 Matt's skills are prefixed `matt-` (folder and `name:`), and their `/slash` cross-references were rewritten to match, so `/matt-triage`, `/matt-grill-with-docs`, and so on. Backticked mentions like "the `research` skill" were left as-is because the same words also name wayfinder ticket types.
 
 ### Adding a skill
 
-1. Put the folder under `ai/skills/<name>/` with a `SKILL.md` whose `name:` matches the folder.
+1. Put the folder under `ai/skills/<name>/` with a `SKILL.md` whose `name:` matches the folder. Own skills take an `hf-` prefix.
 2. `./ai/install.sh --skills-only`
 3. Commit and push. Other machines pick it up on their next sync.
 

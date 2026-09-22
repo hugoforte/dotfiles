@@ -1,5 +1,5 @@
 ---
-name: resolve-pr-comments
+name: hf-resolve-pr-comments
 description: Work through the review comments on a pull request — action the ones worth actioning, reply to every one, and resolve the threads. Use when asked to resolve, address, action or clear PR comments or review feedback.
 ---
 

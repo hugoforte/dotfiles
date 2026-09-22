@@ -1,5 +1,5 @@
 ---
-name: dotfiles-secrets
+name: hf-dotfiles-secrets
 description: Manage the encrypted skill secrets in the dotfiles repo. Use when a skill needs credentials on a new machine, a secret file must be added, updated or rotated, a machine must be added or removed as a recipient, or deploy-secrets.ps1 reports problems.
 ---
 
