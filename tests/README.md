@@ -26,8 +26,8 @@ It will not install it for you. Nothing in this repo installs something behind y
 
 ## What is covered, and why only this
 
-Three interfaces shipped recently that are functions of their arguments, which is the only
-reason any of this is testable yet:
+The interfaces that are functions of their arguments, which is the only reason any of this is
+testable yet:
 
 | Under test | Seam | Shipped in |
 | --- | --- | --- |
@@ -35,6 +35,7 @@ reason any of this is testable yet:
 | `powershell/output.ps1` | the result object is data, not console text | #14 |
 | `ai/secrets/check-encrypted.sh` | a pure function of a directory tree | #12 |
 | `powershell/managed-link.ps1` | three verbs, and both paths are arguments | #6 |
+| `powershell/git.ps1` | the merge verdict is a function of two refs, and `-Yes` opens the delete | #21 |
 | `ai/install.sh`'s `link` / `unlink_if_link` / `check_link` | the same contract in sh, extracted to a fixture rather than run | #6 |
 
 **Everything else is untestable on purpose, not by oversight.** `setup.ps1`, `sync.ps1`,

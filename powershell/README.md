@@ -50,8 +50,8 @@ The elevation is **not** for the symlinks. `managed-link.ps1` uses `cmd /c mklin
 - `aws-setup-profile` (links `%USERPROFILE%\\.aws\\config` at the repo's `aws/config`, the same link `setup.ps1` makes)
 - `aws-view-profile` (prints `%USERPROFILE%\\.aws\\config`)
 - `aws-goto-profile-path` (changes directory to `%USERPROFILE%\\.aws`)
-- `git-list-merged-branches`
-- `git-delete-merged-branches`
+- `git-list-merged-branches` (counts a squash merge as merged, which `git branch --merged` does not)
+- `git-delete-merged-branches [-Yes]` (force-deletes the squash-merged ones, because git refuses `branch -d` on them, and says so before asking)
 - `rig` (cross-repo work harness — see [hugoforte/rig](https://github.com/hugoforte/rig))
 - `rig-install [-Path <dir>] [-Email <address>] [-DataRepo <owner/name>]` (clones the tool, optionally its private data repo as `rig-data` beside it, and runs `rig init`; records a non-default path in `RIG_ROOT`)
 - `rig-goto-root`
@@ -82,3 +82,4 @@ Both languages use the same prefixes, in ASCII: neither `sync.log` nor the Windo
 - `profile.ps1` resolves symlink targets when loading `aws.ps1` and `git.ps1`
 - Fallback loader path: `%USERPROFILE%\dotfiles\powershell`
 - `rig` looks for a checkout at `RIG_ROOT`, `D:\\rig`, `C:\\rig`, then `%USERPROFILE%\\rig`; it prints install steps when none is found
+- The merged-branch functions judge a branch merged by content, not by ancestry. `git branch --merged` asks whether the branch tip is reachable from the target, which is false for every squash merge, so on a repo that squashes it reports nothing and merged branches accumulate. `Get-BranchMergeVerdict` returns `ancestor`, `squash` or `no`: ancestry first, then a comparison of the branch's net patch against every patch the target gained since the branch left it. The delete needs that distinction, because git refuses `branch -d` on a branch it cannot reach and those have to go with `-D`
