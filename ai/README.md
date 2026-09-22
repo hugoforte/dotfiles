@@ -47,12 +47,13 @@ A skill or agent deleted from the repo leaves a dangling symlink on every machin
 | Prefix | Count | Origin |
 |---|---|---|
 | `matt-*` | 24 | [mattpocock/skills](https://github.com/mattpocock/skills), engineering + productivity sets, MIT. Pinned commit in `licenses/mattpocock-skills-VERSION`. |
-| `hf-*` | 4 | Own. One per row below. |
+| `hf-*` | 5 | Own. One per row below. |
 
 My own skills carry an `hf-` prefix, so a skill list says at a glance which ones this repo wrote and which came from somewhere else.
 
 | Skill | What it does |
 |---|---|
+| `hf-adversarial-review` | Sets a subagent on a PR to find what is wrong with it, verifies the findings, fixes the real ones and pushes. Takes a rig work's PRs, or a single PR outside one. |
 | `hf-assign-devs-to-pr` | Asks which of the team should take a PR, then requests their review and assigns them via `gh`. Holds the roster of names and GitHub handles. |
 | `hf-resolve-pr-comments` | Works a PR's review comments to zero: action, reply, resolve. |
 | `hf-dotfiles-secrets` | The procedures for the encrypted skill secrets under `secrets/`. |

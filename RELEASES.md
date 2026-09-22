@@ -12,6 +12,7 @@
 - Vendored Matt Pocock's engineering and productivity skills as `matt-*` (25 skills, MIT, pinned in `ai/licenses/`)
 - `ai/install.sh` prunes stale skill and agent links: a component deleted from the repo used to leave a dangling symlink behind on every machine, which `--check` called clean because both loops only walked the repo side
 - Pruned two never-invoked skills: `matt-code-review` (Claude Code's built-in `/code-review` covers it) and `excalidraw-diagram`
+- `hf-adversarial-review` skill: a subagent reviews a PR under instructions to assume the diff is wrong, then the findings are verified against the code before anything is fixed — the reviewer is read-only and its output is a claim, not a fact, so an imagined bug costs a drop line in the report rather than a commit. It takes a rig work's PRs (asking which) or a single PR outside one, and runs unattended from that one question to the push
 - `hf-assign-devs-to-pr` skill: asks which of the team should take a PR, then requests review and assigns them; it holds the roster of names and GitHub handles, which nothing in a repo records
 - Own skills carry an `hf-` prefix (`hf-rig`, `hf-resolve-pr-comments`, `hf-dotfiles-secrets`), so a skill list separates what this repo wrote from what it vendored
 - `hf-resolve-pr-comments` skill: triages a PR's review comments, actions the ones worth actioning behind one approval gate, then replies in-thread and resolves
