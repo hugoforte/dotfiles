@@ -32,6 +32,7 @@ From Git Bash on Windows, or any POSIX shell:
 | `CLAUDE.md` | `ai/CLAUDE.md` | `~/.claude/CLAUDE.md` | symlinks |
 | Agents | `ai/agents/*.md` | `~/.claude/agents/` | symlinks |
 | Skills | `ai/skills/*/` | `~/.claude/skills/`, `~/.codex/skills/`, `~/.copilot/skills/` (the last two only when the tool dir exists) | symlinks |
+| rig skills | `<rig checkout>/skills/*/`, the checkout being `RIG_ROOT`, else `D:ig`, `C:ig`, `~/rig` | the same three skills directories | symlinks; a machine without rig links nothing and is not drifted |
 | Settings | `ai/claude/settings.json` | merged into `~/.claude/settings.json`, backup taken first | `jq` (`winget install jqlang.jq`) |
 
 Symlinks on Windows need Developer Mode (Settings > System > For developers) or an elevated shell. On Git Bash the script sets `MSYS=winsymlinks:nativestrict` so `ln -s` makes real symlinks instead of silently copying.
@@ -47,7 +48,7 @@ A skill or agent deleted from the repo leaves a dangling symlink on every machin
 | Prefix | Count | Origin |
 |---|---|---|
 | `matt-*` | 24 | [mattpocock/skills](https://github.com/mattpocock/skills), engineering + productivity sets, MIT. Pinned commit in `licenses/mattpocock-skills-VERSION`. |
-| `hf-*` | 5 | Own. One per row below. |
+| `hf-*` | 4 | Own. One per row below. |
 
 My own skills carry an `hf-` prefix, so a skill list says at a glance which ones this repo wrote and which came from somewhere else.
 
@@ -57,7 +58,6 @@ My own skills carry an `hf-` prefix, so a skill list says at a glance which ones
 | `hf-assign-devs-to-pr` | Asks which of the team should take a PR, then requests their review and assigns them via `gh`. Holds the roster of names and GitHub handles. |
 | `hf-resolve-pr-comments` | Works a PR's review comments to zero: action, reply, resolve. |
 | `hf-dotfiles-secrets` | The procedures for the encrypted skill secrets under `secrets/`. |
-| `hf-rig` | Finds the [rig](https://github.com/hugoforte/rig) cross-repo work harness and routes into it: how to invoke it from any shell, `rig doctor` for everything machine-specific, and which rig command answers which request. |
 
 Matt's skills are prefixed `matt-` (folder and `name:`), and their `/slash` cross-references were rewritten to match, so `/matt-triage`, `/matt-grill-with-docs`, and so on. Backticked mentions like "the `research` skill" were left as-is because the same words also name wayfinder ticket types.
 
@@ -79,6 +79,7 @@ Copy the wanted folders from `skills/engineering` and `skills/productivity` to `
 
 ### Not managed here
 
+- `rig` and `rig-*` skills: shipped by [rig](https://github.com/hugoforte/rig) under its checkout's `skills/`, and linked from there by `ai/install.sh` on every install. They move with `rig update`, not with this repo; `sync.ps1` picks the change up on its next run.
 - `twg` skills: installed by the TWG CLI installer next to its binary; per machine.
 - Work skills that live in an app repo (`app-db-query`, `payments-query`, `payment-vendor-sandbox`): the skill stays there; only its credential files are managed here, under `secrets/`.
 

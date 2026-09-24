@@ -55,7 +55,7 @@ A report-only run: it says what would change and changes nothing. Every installe
 _Avoid_: verify, validate, test
 
 **Component**:
-One unit `ai/install.sh` installs, checks and uninstalls: CLAUDE.md, agents, skills, settings, secrets. Each has an `install_`, `uninstall_` and `check_` of its own.
+One unit `ai/install.sh` installs, checks and uninstalls: CLAUDE.md, agents, skills, rig skills, settings, secrets. Each has an `install_`, `uninstall_` and `check_` of its own.
 _Avoid_: module, feature, part
 
 **Sync**:
@@ -85,6 +85,10 @@ _Avoid_: skill (unqualified), global skill
 **Project skill**:
 A skill owned by another repo, living in that checkout's `.claude/skills/<id>/`. This repo does not supply the skill, only its secrets.
 _Avoid_: skill (unqualified), local skill, app skill
+
+**rig skill**:
+A skill the rig checkout ships under its `skills/`, linked *out* by this repo exactly as a shipped skill is, but owned and versioned by rig. Present only on a machine that has a rig checkout.
+_Avoid_: skill (unqualified), external skill, vendored skill (that is `matt-*`, a copy this repo owns)
 
 ### Secrets
 

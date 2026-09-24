@@ -34,6 +34,26 @@ skill_target_dirs() {
     done
 }
 
+# The rig checkout this machine has, if any. RIG_ROOT names one outright and is
+# not fallen through: a RIG_ROOT that points nowhere is a misconfiguration to
+# report, not a reason to go looking. Otherwise the same places powershell/rig.ps1
+# looks, in the same order. Prints the root and returns 0, or returns 1.
+rig_root() {
+    if [ -n "$RIG_ROOT" ]; then
+        root="$RIG_ROOT"
+        case "$root" in
+            [A-Za-z]:*) command -v cygpath > /dev/null 2>&1 && root="$(cygpath -u "$root")" ;;
+        esac
+        [ -f "$root/bin/rig.mjs" ] && { echo "$root"; return 0; }
+        warning "RIG_ROOT=$RIG_ROOT has no bin/rig.mjs - no rig skills linked"
+        return 1
+    fi
+    for root in /d/rig /c/rig "$HOME/rig"; do
+        [ -f "$root/bin/rig.mjs" ] && { echo "$root"; return 0; }
+    done
+    return 1
+}
+
 # ---------------------------------------------------------------------------
 # Link primitives
 # ---------------------------------------------------------------------------
@@ -187,6 +207,49 @@ check_skills() {
     done
 }
 
+# rig ships its own agent skills under <checkout>/skills/ and links none of them;
+# this is the linker. Same targets and the same prune rules as the shipped skills,
+# with rig's skills/ as the source dir, so each prune touches only its own links.
+# A machine without rig has nothing to link and is not drifted.
+install_rig_skills() {
+    root="$(rig_root)" || { info "No rig checkout on this machine - no rig skills to link"; return 0; }
+    [ -d "$root/skills" ] || { info "rig at $root ships no skills yet - run rig update"; return 0; }
+    for target in $(skill_target_dirs); do
+        mkdir -p "$target"
+        for skill in "$root"/skills/*/; do
+            skill="${skill%/}"
+            [ -d "$skill" ] || continue
+            link "$skill" "$target/$(basename "$skill")"
+        done
+        prune_orphans "$target" "$root/skills"
+        success "Linked rig skills from $root into $target"
+    done
+}
+uninstall_rig_skills() {
+    root="$(rig_root)" || return 0
+    for target in $(skill_target_dirs); do
+        [ -d "$target" ] || continue
+        for skill in "$root"/skills/*/; do
+            skill="${skill%/}"
+            [ -d "$skill" ] || continue
+            unlink_if_link "$target/$(basename "$skill")"
+        done
+    done
+    success "Removed rig skill links"
+}
+check_rig_skills() {
+    root="$(rig_root)" || { info "No rig checkout on this machine - no rig skills expected"; return 0; }
+    [ -d "$root/skills" ] || return 0
+    for target in $(skill_target_dirs); do
+        for skill in "$root"/skills/*/; do
+            skill="${skill%/}"
+            [ -d "$skill" ] || continue
+            check_link "$skill" "$target/$(basename "$skill")"
+        done
+        check_orphans "$target" "$root/skills"
+    done
+}
+
 # Settings are merged, not linked: ~/.claude/settings.json also holds machine-local state.
 install_settings() {
     mkdir -p "$CLAUDE_DIR"
@@ -218,12 +281,14 @@ MODE=install
 INSTALL_CLAUDE_MD=true
 INSTALL_AGENTS=true
 INSTALL_SKILLS=true
+INSTALL_RIG_SKILLS=true
 INSTALL_SETTINGS=true
 
 disable_all() {
     INSTALL_CLAUDE_MD=false
     INSTALL_AGENTS=false
     INSTALL_SKILLS=false
+    INSTALL_RIG_SKILLS=false
     INSTALL_SETTINGS=false
 }
 
@@ -231,8 +296,8 @@ show_help() {
     echo "Usage: $0 [MODE] [COMPONENT FLAGS]"
     echo ""
     echo "Symlinks CLAUDE.md, agents and skills from this repo into ~/.claude (and skills"
-    echo "into ~/.codex and ~/.copilot when present), and merges ai/claude/settings.json"
-    echo "into ~/.claude/settings.json."
+    echo "into ~/.codex and ~/.copilot when present), links the skills the rig checkout"
+    echo "ships the same way, and merges ai/claude/settings.json into ~/.claude/settings.json."
     echo ""
     echo "Modes:"
     echo "  (default)           Install"
@@ -244,10 +309,12 @@ show_help() {
     echo "  --claude-md-only    Only CLAUDE.md"
     echo "  --agents-only       Only agent files"
     echo "  --skills-only       Only skills"
+    echo "  --rig-skills-only   Only the skills rig ships (RIG_ROOT, else D:/rig, C:/rig, ~/rig)"
     echo "  --settings-only     Only settings merge"
     echo "  --no-claude-md      Skip CLAUDE.md"
     echo "  --no-agents         Skip agents"
     echo "  --no-skills         Skip skills"
+    echo "  --no-rig-skills     Skip the skills rig ships"
     echo "  --no-settings       Skip settings merge"
     echo "  -h, --help          Show this help"
     echo ""
@@ -262,10 +329,12 @@ while [ $# -gt 0 ]; do
         --claude-md-only)   disable_all; INSTALL_CLAUDE_MD=true ;;
         --agents-only)      disable_all; INSTALL_AGENTS=true ;;
         --skills-only)      disable_all; INSTALL_SKILLS=true ;;
+        --rig-skills-only)  disable_all; INSTALL_RIG_SKILLS=true ;;
         --settings-only)    disable_all; INSTALL_SETTINGS=true ;;
         --no-claude-md)     INSTALL_CLAUDE_MD=false ;;
         --no-agents)        INSTALL_AGENTS=false ;;
         --no-skills)        INSTALL_SKILLS=false ;;
+        --no-rig-skills)    INSTALL_RIG_SKILLS=false ;;
         --no-settings)      INSTALL_SETTINGS=false ;;
         -h|--help)          show_help; exit 0 ;;
         *)                  echo "Unknown option: $1"; show_help; exit 1 ;;
@@ -291,6 +360,7 @@ esac
 [ "$INSTALL_CLAUDE_MD" = "true" ] && ${MODE}_claude_md
 [ "$INSTALL_AGENTS" = "true" ]    && ${MODE}_agents
 [ "$INSTALL_SKILLS" = "true" ]    && ${MODE}_skills
+[ "$INSTALL_RIG_SKILLS" = "true" ] && ${MODE}_rig_skills
 [ "$INSTALL_SETTINGS" = "true" ]  && ${MODE}_settings
 
 # Secrets under ai/secrets/ must never be committed in plaintext; verify on every check.
