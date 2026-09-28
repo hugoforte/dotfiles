@@ -50,6 +50,15 @@ A policy post replaces the whole policy, so always start from the current one. T
 - New users get the server's default policy, which grants every library. Set the policy straight after creating the user if access should be narrower.
 - Generate a password if none was given, and tell the user it once, in the reply. It is not stored anywhere else.
 
+## Backups and restore
+
+`POST /Backup/Create` with `{"Metadata":false,"Trickplay":false,"Subtitles":false,"Database":true}` writes a zip to `D:\Jellyfin\Server\data\backups\` and returns its path. It holds the database, config, libraries and API keys, but no artwork. The `hugoforte/media-backups` repo bundles one nightly, and restores it.
+
+- **Restore with `jellyfin.exe --datadir <dir> --restore-archive <zip>`**, with the service stopped, into a data folder that has booted once. On one that never has, it fails with `no such table`. Its first start is finished when the log says "Startup complete".
+- **`/health` says `Degraded` early in a first start**, while the database is still being created, so it doesn't mean done.
+- **When Jellyfin fails to start, a placeholder keeps answering `/System/Info/Public`** while everything else returns 503. Only `/health` saying `Healthy` means it is really up.
+- **The restored config names this box's folders and FFmpeg** (`D:\Jellyfin\transcodes`; `ffmpeg` on the PATH). A box without them won't start Jellyfin until they are fixed.
+
 ## Rules
 
 - Read freely. Change a user or setting only when the user asked for that change.

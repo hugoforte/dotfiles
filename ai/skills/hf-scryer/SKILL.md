@@ -72,6 +72,17 @@ Check the download client before blaming the release. qBittorrent's Web API answ
 
 Only when qBittorrent is connected and a torrent still has no peers is the release dead. Then `markTrackedDownloadFailed` is usually the answer: it fails the release so Scryer grabs a different one, where deleting it in qBittorrent alone lets Scryer grab the same dead release again. `skipReacquire: true` fails it without searching again. Failing a release does not remove the torrent from qBittorrent; delete it there with `POST /torrents/delete` (`hashes`, `deleteFiles=true`).
 
+## Backups and restore
+
+Scryer makes an encrypted backup daily at 03:00 into `%LOCALAPPDATA%\ScryerMedia\Scryer\backups`, encrypted with `SCRYER_BACKUP_KEY`. `{ backups { filename createdAt trigger status } }` lists them, and `createBackup(input: { password })` makes one now. The `hugoforte/media-backups` repo bundles the newest one nightly, and restores it.
+
+- **Its scheduler plans only when Scryer starts.** After turning auto-backups on, the next run is set at the next start; `autoBackupSettings { nextRunAt }` (UTC) says when.
+- **A restore only works on a Scryer that hasn't been set up.** On one that has, `inspectRestoreBundle` refuses with "restore is only available while setup is still incomplete". Restore into a fresh data folder.
+- **A fresh Scryer shows an "upgrading" page for a while** (every URL answers with it) while it migrates. Wait for it to go before calling the API.
+- **Unauthenticated calls on a fresh Scryer need the web client's proof.** `GET /authless-client` returns `{proof}`; send it as `x-scryer-web-client`, with that request's cookies.
+- **Uploads are GraphQL multipart** (`operations`, `map`, `0=@file`) with `GraphQL-Preflight: 1`.
+- **After `applyRestoreBundle`, Scryer respawns itself**, with the encryption key from the bundle, so stored credentials come back. The process you started is not the one left running.
+
 ## Rules
 
 - Read freely. Change a setting only when the user asked for that change.
