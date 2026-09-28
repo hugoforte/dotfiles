@@ -54,7 +54,7 @@ rm /tmp/plain.env
 sops decrypt ai/secrets/<skill>/.secrets.env | head -3     # sanity check, values visible
 ```
 
-Edit an existing file in place without a plaintext copy on disk:
+Edit an existing file in place without a plaintext copy on disk. In PowerShell, the profile sets `SOPS_EDITOR` to `code --wait`, so the file opens in VS Code and is re-encrypted when you close its tab:
 
 ```sh
 sops edit ai/secrets/<skill>/.secrets.env
