@@ -33,7 +33,7 @@ _Avoid_: installed file, real file (that means "not a symlink")
 ### The two kinds of managed thing
 
 **Managed link**:
-A target that is a symlink to a source. Five of them are `setup.ps1`'s; the rest are `ai/install.sh`'s. `powershell/managed-link.ps1` is the one implementation.
+A target that is a symlink to a source. Four of them are `setup.ps1`'s; the rest are `ai/install.sh`'s. `powershell/managed-link.ps1` is the one implementation.
 _Avoid_: symlink (that is the mechanism, not the concept), dotfile link
 
 **Managed key**:
@@ -76,6 +76,10 @@ _Avoid_: clone, workspace, project (unqualified)
 A directory on a machine whose immediate children are checkouts, listed in `machine.local.psd1`. Per machine and git-ignored, because it is a local layout, not a shared fact.
 _Avoid_: source root, projects directory, workspace
 
+**Overlay**:
+A private directory laid out like this repo's root, which the tooling reads from as well as from the repo: registries merge, `aws/config` comes from exactly one place, and each overlay's `git/gitconfig` is included. Listed per machine in `machine.local.psd1`, so no tracked file names one. An overlay is cut by audience (one person, or one employer), and one private repo may hold several.
+_Avoid_: private repo (a repo may hold several overlays), layer, plugin
+
 ### Skills
 
 **Shipped skill**:
@@ -93,7 +97,7 @@ _Avoid_: skill (unqualified), external skill, vendored skill (that is `matt-*`, 
 ### Secrets
 
 **Skill secret**:
-A credential a project skill needs, committed here encrypted and symlinked into every matching checkout. Plaintext never enters git, in this repo or the app repos.
+A credential a skill needs, committed encrypted here or in an overlay. A project skill's is symlinked into every matching checkout; a shipped skill's is only decrypted, and the skill reads it from `%USERPROFILE%\.agent-secrets\<id>\`. Plaintext never enters git, in this repo or the app repos.
 _Avoid_: credential, env file, secret (unqualified)
 
 **Recipient**:
@@ -101,11 +105,11 @@ An age public key that can decrypt the secrets. Every machine is one, via its SS
 _Avoid_: key holder, member
 
 **Marker**:
-The path, relative to a checkout root, whose presence identifies that checkout as using a given project skill. Paired with an expected origin so a same-named skill elsewhere is not matched.
+The path, relative to a checkout root, whose presence identifies that checkout as using a given project skill. Paired with an expected origin so a same-named skill elsewhere is not matched. A shipped skill's entry has neither.
 _Avoid_: detector, sentinel, probe
 
 **Registry**:
-`ai/secrets/registry.psd1`: the tracked declaration of every managed skill secret — its id, marker, expected origin and files.
+`ai/secrets/registry.psd1`, in the repo or an overlay: the declaration of every managed skill secret — its id, files, and for a project skill its marker and expected origin. Registries merge; an id may appear in only one.
 _Avoid_: manifest (that is the tools one), catalogue, index
 
 ### Tools

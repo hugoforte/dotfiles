@@ -81,7 +81,7 @@ Copy the wanted folders from `skills/engineering` and `skills/productivity` to `
 
 - `rig` and `rig-*` skills: shipped by [rig](https://github.com/hugoforte/rig) under its checkout's `skills/`, and linked from there by `ai/install.sh` on every install. They move with `rig update`, not with this repo; `sync.ps1` picks the change up on its next run.
 - `twg` skills: installed by the TWG CLI installer next to its binary; per machine.
-- Work skills that live in an app repo (`app-db-query`, `payments-query`, `payment-vendor-sandbox`): the skill stays there; only its credential files are managed here, under `secrets/`.
+- Project skills that live in an app repo: the skill stays there; only its credential files are managed, under `secrets/` here or in an overlay (see `secrets/README.md`).
 
 ## Settings
 

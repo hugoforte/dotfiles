@@ -77,5 +77,59 @@ for f in "$secrets"/*/* "$secrets"/*/.*; do
 done
 assert_eq "'.' and '..' never pass the -f test" "" "$leaked"
 
+printf '=== a directory argument ===\n'
+# An overlay's secrets live outside this tree; the argument points the audit
+# there and only there.
+overlay="$work/overlay"
+mkdir -p "$overlay/ai/secrets/skillC"
+printf 'API_KEY=hunter2\n' > "$overlay/ai/secrets/skillC/.secrets.env"
+arg_out="$(sh "$secrets/check-encrypted.sh" "$overlay/ai/secrets" 2>&1)"; arg_rc=$?
+printf '%s\n' "$arg_out" | sed 's/^/        /'
+assert_eq "audit of another directory fails on its plaintext secret" "1" "$arg_rc"
+case "$arg_out" in *"skillC/.secrets.env"*) arg_caught=y ;; *) arg_caught=n ;; esac
+assert_eq "names the plaintext secret in that directory" "y" "$arg_caught"
+case "$arg_out" in *"skillB"*) arg_own=y ;; *) arg_own=n ;; esac
+assert_eq "leaves its own directory out of it" "n" "$arg_own"
+
+printf '=== ai/install.sh --check audits each overlay ===\n'
+# install.sh derives ZSH from its own location and the home directories from
+# $HOME, so a repo tree whose own secrets are clean, with $HOME inside the temp
+# directory, isolates the overlay audit.
+case "$(uname -s)" in
+    MINGW*|MSYS*) MSYS="winsymlinks:nativestrict"; export MSYS ;;
+esac
+repo="$work/repo"
+mkdir -p "$repo/ai/helpers" "$repo/ai/secrets" "$repo/ai/skills/kept" "$work/home"
+cp "$REPO_ROOT/ai/install.sh" "$repo/ai/install.sh"
+cp "$REPO_ROOT/ai/helpers/output.sh" "$repo/ai/helpers/output.sh"
+cp "$REPO_ROOT/ai/helpers/settings-reconcile.sh" "$repo/ai/helpers/settings-reconcile.sh"
+cp "$REPO_ROOT/ai/secrets/check-encrypted.sh" "$repo/ai/secrets/check-encrypted.sh"
+printf -- '---\nname: kept\n---\n' > "$repo/ai/skills/kept/SKILL.md"
+HOME="$work/home"; export HOME
+sh "$repo/ai/install.sh" --skills-only > /dev/null 2>&1
+
+# Written the way a Windows machine writes it, drive letter and backslashes,
+# where cygpath can say what that is.
+overlay_path="$overlay"
+command -v cygpath > /dev/null 2>&1 && overlay_path="$(cygpath -w "$overlay")"
+printf "@{\n    SearchRoots = @('C:\\\\source')\n    Overlays = @(\n        '%s'\n    )\n}\n" "$overlay_path" \
+    > "$repo/ai/secrets/machine.local.psd1"
+
+check_out="$(sh "$repo/ai/install.sh" --check --skills-only 2>&1)"; check_rc=$?
+printf '%s\n' "$check_out" | sed 's/^/        /'
+assert_eq "check fails on a plaintext secret in a listed overlay" "1" "$check_rc"
+case "$check_out" in *"skillC/.secrets.env"*) check_caught=y ;; *) check_caught=n ;; esac
+assert_eq "check names the overlay's plaintext secret" "y" "$check_caught"
+
+printf '{"data":"x","sops":{"age":[]}}\n' > "$overlay/ai/secrets/skillC/.secrets.env"
+sh "$repo/ai/install.sh" --check --skills-only > /dev/null 2>&1; clean_rc=$?
+assert_eq "check passes once the overlay's secret is encrypted" "0" "$clean_rc"
+
+printf "@{ Overlays = @('%s') }\n" "$work/no-such-overlay" > "$repo/ai/secrets/machine.local.psd1"
+missing_out="$(sh "$repo/ai/install.sh" --check --skills-only 2>&1)"; missing_rc=$?
+assert_eq "check fails when a listed overlay does not exist" "1" "$missing_rc"
+case "$missing_out" in *"no-such-overlay"*) missing_named=y ;; *) missing_named=n ;; esac
+assert_eq "check names the missing overlay" "y" "$missing_named"
+
 printf '\n'
 assert_summary "check-encrypted"

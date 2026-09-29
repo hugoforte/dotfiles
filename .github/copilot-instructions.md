@@ -98,9 +98,9 @@ cd ai
 ## Configuration Setup
 
 - PowerShell setup links current-user profile and current-user-all-hosts profile to powershell/profile.ps1.
-- AWS setup links %USERPROFILE%\\.aws\\config to aws/config.
+- AWS setup links %USERPROFILE%\\.aws\\config to the aws/config of the repo or of one overlay (private directories listed in ai/secrets/machine.local.psd1).
 - AI setup links ~/.claude/CLAUDE.md, ~/.claude/agents/* and <tool>/skills/* and merges ai/claude/settings.json into ~/.claude/settings.json.
-- sync.ps1 (scheduled task "Dotfiles Sync") pulls fast-forward-only and re-runs ai/install.sh; it never commits or pushes.
+- sync.ps1 (scheduled task "Dotfiles Sync") pulls the repo and each overlay repo fast-forward-only, re-runs ai/install.sh, re-applies what the overlays supply, and deploys skill secrets; it never commits or pushes.
 
 ## Validation Steps
 

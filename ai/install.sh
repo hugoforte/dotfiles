@@ -54,6 +54,26 @@ rig_root() {
     return 1
 }
 
+# The overlay directories ai/secrets/machine.local.psd1 lists, one per line, in the order
+# listed. Reads the `Overlays = @( ... )` entry up to its closing parenthesis and takes each
+# single-quoted path from it. powershell/overlays.ps1 is the full reader; this is only enough
+# to find the directories to audit.
+overlay_dirs() {
+    local_psd1="$ZSH/ai/secrets/machine.local.psd1"
+    [ -f "$local_psd1" ] || return 0
+    awk '/^[[:space:]]*#/ { next }
+         /Overlays[[:space:]]*=/ { on = 1; sub(/.*Overlays[[:space:]]*=/, "") }
+         on { print }
+         on && /\)/ { exit }' "$local_psd1" |
+        grep -o "'[^']*'" | tr -d "'" |
+        while IFS= read -r dir; do
+            case "$dir" in
+                [A-Za-z]:*) command -v cygpath > /dev/null 2>&1 && dir="$(cygpath -u "$dir")" ;;
+            esac
+            echo "$dir"
+        done
+}
+
 # ---------------------------------------------------------------------------
 # Link primitives
 # ---------------------------------------------------------------------------
@@ -363,13 +383,28 @@ esac
 [ "$INSTALL_RIG_SKILLS" = "true" ] && ${MODE}_rig_skills
 [ "$INSTALL_SETTINGS" = "true" ]  && ${MODE}_settings
 
-# Secrets under ai/secrets/ must never be committed in plaintext; verify on every check.
+# Secrets under ai/secrets/, here and in every overlay, must never be committed in plaintext;
+# verify on every check.
 if [ "$MODE" = "check" ]; then
     if sh "$ZSH/ai/secrets/check-encrypted.sh"; then
         success "ai/secrets: all files encrypted"
     else
         CHECK_FAILED=1
     fi
+    # A here-document rather than a pipe, so CHECK_FAILED is set in this shell, not a subshell.
+    overlays="$(overlay_dirs)"
+    [ -n "$overlays" ] && while IFS= read -r overlay; do
+        if [ ! -d "$overlay" ]; then
+            error "overlay $overlay listed in ai/secrets/machine.local.psd1 does not exist"
+            CHECK_FAILED=1
+        elif sh "$ZSH/ai/secrets/check-encrypted.sh" "$overlay/ai/secrets"; then
+            success "$overlay/ai/secrets: all files encrypted"
+        else
+            CHECK_FAILED=1
+        fi
+    done <<EOF
+$overlays
+EOF
 fi
 
 echo ""

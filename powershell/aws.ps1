@@ -19,27 +19,36 @@ function aws-profile {
     }
 }
 
-# Points ~/.aws/config at the repo's aws/config, the same link setup.ps1 makes, so running this
-# after setup leaves the managed link in place instead of replacing it with a copy that goes stale.
+# Points ~/.aws/config at the aws/config in this repo or in one overlay, the same link setup.ps1
+# makes, so running this after setup leaves the managed link in place instead of replacing it
+# with a copy that goes stale.
 function aws-setup-profile {
     $repoRoot = Split-Path -Parent $PSScriptRoot
-    $sourceConfigPath = Join-Path $repoRoot "aws\config"
     $targetConfigPath = Join-Path (Join-Path $env:USERPROFILE ".aws") "config"
 
-    if (-not (Test-Path -LiteralPath $sourceConfigPath)) {
-        Write-Host "Source AWS config not found at: $sourceConfigPath" -ForegroundColor Red
-        return
+    # Loaded here, not at file scope: profile.ps1 dot-sources aws.ps1 into every shell, and a
+    # checkout without these modules beside it would then error on every shell start. The
+    # repo's rule is to dot-source helpers only after a path check (powershell.instructions.md).
+    foreach ($module in @("managed-link.ps1", "overlays.ps1")) {
+        $modulePath = Join-Path $PSScriptRoot $module
+        if (-not (Test-Path -LiteralPath $modulePath)) {
+            Write-Host "Cannot link AWS config: $modulePath not found" -ForegroundColor Red
+            return
+        }
+        . $modulePath
     }
 
-    # Loaded here, not at file scope: profile.ps1 dot-sources aws.ps1 into every shell, and a
-    # checkout without managed-link.ps1 beside it would then error on every shell start. The
-    # repo's rule is to dot-source helpers only after a path check (powershell.instructions.md).
-    $linkModule = Join-Path $PSScriptRoot "managed-link.ps1"
-    if (-not (Test-Path -LiteralPath $linkModule)) {
-        Write-Host "Cannot link AWS config: $linkModule not found" -ForegroundColor Red
+    try {
+        $overlays = Get-OverlayList -LocalPath (Join-Path $repoRoot "ai\secrets\machine.local.psd1")
+        $sourceConfigPath = Find-OverlayFile -Roots (@($repoRoot) + $overlays) -RelativePath "aws\config"
+    } catch {
+        Write-Host $_.Exception.Message -ForegroundColor Red
         return
     }
-    . $linkModule
+    if (-not $sourceConfigPath) {
+        Write-Host "No aws/config in $repoRoot or any overlay" -ForegroundColor Red
+        return
+    }
 
     try {
         $link = Set-ManagedLink -Path $targetConfigPath -Source $sourceConfigPath
@@ -57,7 +66,7 @@ function aws-setup-profile {
         Write-Host "Backed up existing AWS config to: $($link.BackupPath)" -ForegroundColor Yellow
     }
 
-    Write-Host "Linked AWS config to repo: $targetConfigPath -> $sourceConfigPath" -ForegroundColor Green
+    Write-Host "Linked AWS config: $targetConfigPath -> $sourceConfigPath" -ForegroundColor Green
     Write-Host "Run 'aws sso login' to authenticate." -ForegroundColor DarkGray
 }
 

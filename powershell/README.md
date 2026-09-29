@@ -13,12 +13,14 @@ Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in tu
 - `markdown.ps1`: `md-lint` wrapper around markdownlint-cli2
 - `output.ps1`: the reporting vocabulary and the result object the scripts return
 - `managed-link.ps1`: the one implementation of "point this path at that file in the repo" — `Set-ManagedLink`, `Test-ManagedLink`, `Remove-ManagedLink`
+- `overlays.ps1`: reads the overlays a machine lists in `ai/secrets/machine.local.psd1` and applies their rules: merged skill registries, one source for `aws/config`, the contents of `~/.gitconfig-overlays`
 - `tools.psd1`: the tools and programs a machine needs, declared
 - `install-tools.ps1`: installs what `tools.psd1` declares (`-Check` reports only)
 - `markdownlint.jsonc`: default markdownlint rules, used by `md-lint` when a repo has none of its own
 - `setup.ps1`: symlink/setup automation (`-Check` reports the managed links and changes nothing)
-- `sync.ps1`: `git pull --ff-only`, then `ai/install.sh`, then `install-tools.ps1` if `tools.psd1` changed, then `deploy-secrets.ps1` if the machine has opted in; logs to `%LOCALAPPDATA%\dotfiles\sync.log`
+- `sync.ps1`: `git pull --ff-only`, then `ai/install.sh`, then `install-tools.ps1` if `tools.psd1` changed, then each overlay repo pulled and what the overlays supply re-applied (`~/.gitconfig-overlays`, the `~/.aws/config` link, removal of links left dangling by files that moved out), then `deploy-secrets.ps1` if the machine has opted in; logs to `%LOCALAPPDATA%\dotfiles\sync.log`
 - `deploy-secrets.ps1`: decrypts `ai/secrets/` and symlinks the files into every checkout that has the skill (`-Check` for report only); see `ai/secrets/README.md`
+- `install-overlays.ps1`: puts this machine on an overlay repo (`-Repo owner/name`, optionally `-Only <overlay>`): clones or pulls it beside this checkout, lists its overlays in `ai/secrets/machine.local.psd1` after checking they do not clash with the repo, then runs `sync.ps1`
 - `install-sync-task.ps1`: registers the "Dotfiles Sync" scheduled task that runs `sync.ps1` at logon and every 4 hours (`-Uninstall` removes it)
 
 ## Setup
@@ -32,7 +34,8 @@ cd <path-to-dotfiles>\powershell
 What it does, idempotently:
 
 - Uses the checkout it is run from; if run from elsewhere, clones or updates `%USERPROFILE%\dotfiles`
-- Links `$PROFILE`, the all-hosts profile, `%USERPROFILE%\.aws\config` and both gitconfigs at the repo, backing up any regular file it displaces
+- Links `$PROFILE`, the all-hosts profile, `~/.gitconfig` and, when this repo or one overlay has an `aws/config`, `%USERPROFILE%\.aws\config`, backing up any regular file it displaces
+- Writes `~/.gitconfig-overlays`, which includes each overlay's `git/gitconfig`
 - Installs every tool declared in `tools.psd1`, including those the scheduled task is not allowed to install unwatched
 - Offers to reload the profile
 
@@ -47,7 +50,7 @@ The elevation is **not** for the symlinks. `managed-link.ps1` uses `cmd /c mklin
 - `aws-profile [ProfileName]`
 - `aws-switch-profile`
 - `aws-switch-profiles`
-- `aws-setup-profile` (links `%USERPROFILE%\\.aws\\config` at the repo's `aws/config`, the same link `setup.ps1` makes)
+- `aws-setup-profile` (links `%USERPROFILE%\\.aws\\config` at the `aws/config` in the repo or an overlay, the same link `setup.ps1` makes)
 - `aws-view-profile` (prints `%USERPROFILE%\\.aws\\config`)
 - `aws-goto-profile-path` (changes directory to `%USERPROFILE%\\.aws`)
 - `git-list-merged-branches` (counts a squash merge as merged, which `git branch --merged` does not)

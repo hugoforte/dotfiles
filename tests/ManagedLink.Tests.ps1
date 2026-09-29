@@ -322,3 +322,55 @@ Describe 'Remove-ManagedLink' {
         $r.Action | Should -Be 'Missing'
     }
 }
+
+Describe 'Remove-DanglingManagedLink' {
+
+    BeforeEach {
+        $work = New-WorkDir
+        $repo = Join-Path $work 'repo'
+        New-Item -ItemType Directory -Path $repo | Out-Null
+    }
+
+    It 'removes a link into the repo whose source was deleted' {
+        $src = New-SourceFile $repo
+        $dst = Join-Path $work 'link.txt'
+        Set-ManagedLink -Path $dst -Source $src | Out-Null
+        Remove-Item -LiteralPath $src
+
+        (Remove-DanglingManagedLink -Path $dst -Under $repo).Action | Should -Be 'Removed'
+        Test-Path -LiteralPath $dst | Should -BeFalse
+    }
+
+    It 'keeps a link into the repo that still resolves' {
+        $src = New-SourceFile $repo
+        $dst = Join-Path $work 'link.txt'
+        Set-ManagedLink -Path $dst -Source $src | Out-Null
+
+        (Remove-DanglingManagedLink -Path $dst -Under $repo).Action | Should -Be 'Kept'
+        Assert-LinkedTo -Path $dst -Source $src
+    }
+
+    It 'keeps a dangling link that points outside the repo, because it is not ours' {
+        $elsewhere = Join-Path $work 'elsewhere'
+        New-Item -ItemType Directory -Path $elsewhere | Out-Null
+        $src = New-SourceFile $elsewhere
+        $dst = Join-Path $work 'link.txt'
+        Set-ManagedLink -Path $dst -Source $src | Out-Null
+        Remove-Item -LiteralPath $src
+
+        (Remove-DanglingManagedLink -Path $dst -Under $repo).Action | Should -Be 'Kept'
+        (Get-Item -LiteralPath $dst -Force).LinkType | Should -Be 'SymbolicLink'
+    }
+
+    It 'keeps a real file' {
+        $dst = Join-Path $work 'real.txt'
+        Set-Content -LiteralPath $dst -Value 'precious' -NoNewline
+
+        (Remove-DanglingManagedLink -Path $dst -Under $repo).Action | Should -Be 'Kept'
+        (Get-Content -LiteralPath $dst -Raw) | Should -Be 'precious'
+    }
+
+    It 'is quietly fine when there is nothing there' {
+        (Remove-DanglingManagedLink -Path (Join-Path $work 'none') -Under $repo).Action | Should -Be 'Missing'
+    }
+}

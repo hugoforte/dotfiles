@@ -4,8 +4,10 @@
 #   deploy-secrets.ps1 -Check     report only; exit 1 if anything would change
 #   deploy-secrets.ps1 -PassThru  also return the result object, for a caller that reads it
 #
-# Reads ai/secrets/registry.psd1 (tracked) and ai/secrets/machine.local.psd1 (per machine, ignored).
+# Reads ai/secrets/machine.local.psd1 (per machine, ignored) and the ai/secrets/registry.psd1 of this
+# repo and of every overlay it lists (see overlays.ps1). Each skill decrypts from the root that registered it.
 # Decrypted files live in %USERPROFILE%\.agent-secrets\<skill>\ and are shared by all checkouts via symlinks.
+# An entry with no Marker belongs to a shipped skill, which reads its files from there and is never linked.
 # Idempotent. Never overwrites a real file without backing it up. A failed decrypt leaves the previous
 # decrypted copy in place.
 
@@ -19,10 +21,10 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "output.ps1")
 . (Join-Path $PSScriptRoot "managed-link.ps1")
+. (Join-Path $PSScriptRoot "overlays.ps1")
 
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $secretsDir = Join-Path $repoRoot "ai\secrets"
-$registryPath = Join-Path $secretsDir "registry.psd1"
 $localPath = Join-Path $secretsDir "machine.local.psd1"
 $secretsHome = Join-Path $env:USERPROFILE ".agent-secrets"
 
@@ -44,7 +46,13 @@ if (-not (Test-Path $localPath)) {
     Exit-WithResult $result 1
 }
 
-$registry = Import-PowerShellDataFile $registryPath
+try {
+    $overlays = Get-OverlayList -LocalPath $localPath
+    $skills = @(Get-MergedSkillRegistry -Roots (@($repoRoot) + $overlays))
+} catch {
+    Fail $_.Exception.Message
+    Exit-WithResult $result 1
+}
 $local = Import-PowerShellDataFile $localPath
 $roots = @($local.SearchRoots | Where-Object { Test-Path $_ })
 if ($roots.Count -eq 0) {
@@ -55,12 +63,12 @@ if ($roots.Count -eq 0) {
 # --- Phase 1: decrypt to %USERPROFILE%\.agent-secrets\<skill>\ -------------------------------------
 
 Say "Decrypting to $secretsHome" Cyan
-foreach ($skill in $registry.Skills) {
+foreach ($skill in $skills) {
     $outDir = Join-Path $secretsHome $skill.Id
     foreach ($file in $skill.Files) {
-        $encrypted = Join-Path (Join-Path $secretsDir $skill.Id) $file
+        $encrypted = Join-Path $skill.SecretsDir $file
         $decrypted = Join-Path $outDir $file
-        if (-not (Test-Path $encrypted)) { Warn "$($skill.Id)/$file missing from ai/secrets"; continue }
+        if (-not (Test-Path $encrypted)) { Warn "$($skill.Id)/$file missing from $($skill.SecretsDir)"; continue }
 
         $tmp = "$decrypted.tmp"
         if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir | Out-Null }
@@ -95,7 +103,8 @@ function Get-OriginUrl { param([string]$Dir)
 Say "" ; Say "Checkouts under: $($roots -join ', ')" Cyan
 foreach ($root in $roots) {
     foreach ($dir in Get-ChildItem -Path $root -Directory) {
-        foreach ($skill in $registry.Skills) {
+        foreach ($skill in $skills) {
+            if (-not $skill.Marker) { continue }
             $markerDir = Join-Path $dir.FullName $skill.Marker
             if (-not (Test-Path $markerDir -PathType Container)) { continue }
 

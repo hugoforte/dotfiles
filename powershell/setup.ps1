@@ -11,21 +11,33 @@ param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "managed-link.ps1")
+. (Join-Path $PSScriptRoot "overlays.ps1")
+
+# The overlays this machine lists; see overlays.ps1.
+function Get-SetupOverlays {
+    param([Parameter(Mandatory)][string]$RepoPath)
+    return @(Get-OverlayList -LocalPath "$RepoPath\ai\secrets\machine.local.psd1")
+}
 
 # Every managed link this script owns, in one list, so -Check and the apply path can never
 # disagree about what "set up" means.
 function Get-ManagedLinkPlan {
     param([Parameter(Mandatory)][string]$RepoPath)
 
+    # AWS config may come from this repo or from one overlay, never both.
+    $awsConfig = Find-OverlayFile -Roots (@($RepoPath) + (Get-SetupOverlays -RepoPath $RepoPath)) -RelativePath "aws\config"
+    if (-not $awsConfig) {
+        Write-Host "[--] AWS config: neither this repo nor an overlay has aws/config; skipped" -ForegroundColor DarkGray
+    }
+
     $plan = @(
         @{ Label = "PowerShell profile";           Path = $PROFILE;                                   Source = "$RepoPath\powershell\profile.ps1" }
         @{ Label = "PowerShell all-hosts profile"; Path = $PROFILE.CurrentUserAllHosts;               Source = "$RepoPath\powershell\profile.ps1" }
-        @{ Label = "AWS config";                   Path = "$env:USERPROFILE\.aws\config";             Source = "$RepoPath\aws\config" }
+        @{ Label = "AWS config";                   Path = "$env:USERPROFILE\.aws\config";             Source = $awsConfig }
         @{ Label = "~/.gitconfig";                 Path = "$env:USERPROFILE\.gitconfig";              Source = "$RepoPath\git\gitconfig" }
-        @{ Label = "~/.gitconfig-employer";     Path = "$env:USERPROFILE\.gitconfig-employer";  Source = "$RepoPath\git\gitconfig-employer" }
     )
     # A source the repo does not ship is not a link this machine is missing.
-    return @($plan | Where-Object { Test-Path -LiteralPath $_.Source })
+    return @($plan | Where-Object { $_.Source -and (Test-Path -LiteralPath $_.Source) })
 }
 
 # --- Check: report the managed links and change nothing ----------------------------------------
@@ -53,6 +65,14 @@ if ($Check) {
             Write-Host "[!!] $($entry.Label): $detail" -ForegroundColor Yellow
             Write-Host "     expected $($entry.Path) -> $($entry.Source)" -ForegroundColor DarkGray
         }
+    }
+
+    # ~/.gitconfig-overlays is generated rather than linked; see overlays.ps1.
+    if ((Update-GitOverlayInclude -Overlays (Get-SetupOverlays -RepoPath $repoPath) -Check) -eq 'AlreadyCorrect') {
+        Write-Host "[OK] ~/.gitconfig-overlays" -ForegroundColor Green
+    } else {
+        $wrong++
+        Write-Host "[!!] ~/.gitconfig-overlays: missing or out of date" -ForegroundColor Yellow
     }
 
     Write-Host ""
@@ -132,7 +152,7 @@ Write-Host ""
 
 # --- The managed links -------------------------------------------------------------------------
 #
-# Five links, one implementation. This used to be the same ~28-line probe/backup/link block
+# Four links, one implementation. This used to be the same ~28-line probe/backup/link block
 # written out four times - three inline and once as Set-DotfileSymlink, which was the
 # generalisation, defined below the copies that should have used it and called only for the
 # gitconfigs. All of it now lives in managed-link.ps1 (hugoforte/dotfiles#6).
@@ -167,6 +187,11 @@ foreach ($entry in (Get-ManagedLinkPlan -RepoPath $dotfilesPath)) {
 
 if ($linkedAws) {
     Write-Host "     Run 'aws sso login' to authenticate" -ForegroundColor DarkGray
+}
+
+switch (Update-GitOverlayInclude -Overlays (Get-SetupOverlays -RepoPath $dotfilesPath)) {
+    'AlreadyCorrect' { Write-Host "[OK] ~/.gitconfig-overlays already current" -ForegroundColor Green }
+    'Written'        { Write-Host "[OK] ~/.gitconfig-overlays written" -ForegroundColor Green }
 }
 Write-Host ""
 # Tools: this script is already elevated, so the whole manifest installs here, including the

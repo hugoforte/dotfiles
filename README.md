@@ -7,13 +7,14 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
 | Area | Source in repo | Installed to | Installer |
 |---|---|---|---|
 | PowerShell profile + helper functions | `powershell/` | `$PROFILE` and the all-hosts profile (symlinks) | `powershell/setup.ps1` |
-| AWS CLI profiles (SSO, no secrets) | `aws/config` | `%USERPROFILE%\.aws\config` (symlink) | `powershell/setup.ps1` |
-| Git identity, incl. per-org email overrides | `git/` | `~/.gitconfig`, `~/.gitconfig-employer` (symlinks) | `powershell/setup.ps1` |
+| AWS CLI profiles (SSO, no secrets) | an overlay's `aws/config` | `%USERPROFILE%\.aws\config` (symlink) | `powershell/setup.ps1`, `powershell/sync.ps1` |
+| Git identity | `git/` | `~/.gitconfig` (symlink) | `powershell/setup.ps1` |
+| Per-org git identities and other overlay git config | an overlay's `git/gitconfig` | included by `~/.gitconfig-overlays` (generated) | `powershell/setup.ps1`, `powershell/sync.ps1` |
 | Agent skills | `ai/skills/<name>/` | `~/.claude/skills`, `~/.codex/skills`, `~/.copilot/skills` (symlinks) | `ai/install.sh` |
 | Claude Code global instructions | `ai/CLAUDE.md` | `~/.claude/CLAUDE.md` (symlink) | `ai/install.sh` |
 | Claude Code sub-agents | `ai/agents/*.md` | `~/.claude/agents/` (symlinks) | `ai/install.sh` |
 | Claude Code settings (model, plugins, allowlist) | `ai/claude/settings.json` | merged into `~/.claude/settings.json` | `ai/install.sh` |
-| Skill secrets (encrypted with SOPS + age) | `ai/secrets/<skill>/` | `%USERPROFILE%\.agent-secrets\`, then symlinked into every checkout that has the skill | `powershell/deploy-secrets.ps1` |
+| Skill secrets (encrypted with SOPS + age) | `ai/secrets/<skill>/`, here or in an overlay | `%USERPROFILE%\.agent-secrets\`, then symlinked into every checkout that has the skill (shipped skills read them in place) | `powershell/deploy-secrets.ps1` |
 | Tools and programs a machine needs | `powershell/tools.psd1` | installed via winget and npm | `powershell/install-tools.ps1` |
 | Default markdownlint rules | `powershell/markdownlint.jsonc` | passed to `markdownlint-cli2` by the `md-lint` function | none (used in place) |
 | Automatic pull-and-relink | `powershell/sync.ps1` | Windows scheduled task "Dotfiles Sync" | `powershell/install-sync-task.ps1` |
@@ -32,7 +33,7 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
    .\install-sync-task.ps1
    ```
 
-   `setup.ps1` links both PowerShell profiles, `~/.aws/config` and both gitconfigs, backs up any real file it displaces, installs everything in [powershell/tools.psd1](powershell/tools.psd1), and offers to reload the profile. `install-sync-task.ps1` registers the "Dotfiles Sync" task (at logon and every 4 hours). Both are safe to re-run.
+   `setup.ps1` links both PowerShell profiles, `~/.aws/config` (when a source exists) and `~/.gitconfig`, writes `~/.gitconfig-overlays`, backs up any real file it displaces, installs everything in [powershell/tools.psd1](powershell/tools.psd1), and offers to reload the profile. `install-sync-task.ps1` registers the "Dotfiles Sync" task (at logon and every 4 hours). Both are safe to re-run.
 
    `setup.ps1` elevates itself, but **not for the symlinks** — those work unelevated once Developer Mode is on. It elevates so winget installs the manifest machine-wide; unelevated it would quietly fall back to `--scope user`. See [ADR 0002](docs/adr/0002-mklink-not-new-item.md).
 
@@ -49,12 +50,25 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
    ./ai/install.sh --check
    ```
 
-5. Skill secrets: register the machine as a recipient (see [ai/secrets/README.md](ai/secrets/README.md), "Add a machine"), then:
+5. Private configuration: register the machine as a SOPS recipient in each overlay (see [ai/secrets/README.md](ai/secrets/README.md), "Add a machine"), then add the overlay repo:
 
    ```powershell
-   Copy-Item ai\secrets\machine.local.psd1.example ai\secrets\machine.local.psd1
-   .\powershell\deploy-secrets.ps1
+   .\powershell\install-overlays.ps1 -Repo <owner>/<private-repo>
    ```
+
+   It clones the repo beside this one, lists its overlays in `ai\secrets\machine.local.psd1` (created from the example if missing; check its `SearchRoots`), and runs `sync.ps1` to apply them.
+
+## Private configuration: overlays
+
+This repo holds nothing private. Anything that is, such as employer AWS accounts, a work email, or skill secrets whose key names say too much, lives in an **overlay**: a directory in a private repo, laid out like this repo's root. A machine lists its overlays in the git-ignored `ai/secrets/machine.local.psd1`, so no tracked file here names one. One private repo may hold several overlays, one per audience, so an employer's overlay can later move to a repo the employer owns.
+
+What an overlay can supply, and how:
+
+- `ai/secrets/registry.psd1` and `ai/secrets/<skill>/`: merged with every other registry; a skill id may be registered only once.
+- `aws/config`: linked to `~/.aws/config`; only one source across this repo and all overlays.
+- `git/gitconfig`: included, in overlay order, by the generated `~/.gitconfig-overlays`.
+
+The sync task pulls each overlay repo and re-applies all three, so a change pushed to an overlay reaches every machine that lists it. `install-overlays.ps1` is idempotent; re-run it when an overlay repo gains an overlay.
 
 ## Keeping machines in sync
 
@@ -66,7 +80,7 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
 ## Layout
 
 - [powershell/](powershell/README.md): profile, setup, sync, AWS, Git and rig helper functions
-- [aws/](aws/README.md): AWS CLI config
+- [aws/](aws/README.md): how the AWS CLI config is supplied
 - [ai/](ai/README.md): agent skills, Claude Code config, installer
 - [.github/](.github/instructions/README.md): Copilot instructions and reusable prompts
 - [tests/](tests/README.md): fixture tests for the parts that can be tested without touching the machine you are on; CI runs them on every pull request

@@ -4,6 +4,7 @@
 #   Set-ManagedLink    -Path $PROFILE -Source "$repo\powershell\profile.ps1"
 #   Test-ManagedLink   -Path $PROFILE -Source "$repo\powershell\profile.ps1"
 #   Remove-ManagedLink -Path $PROFILE
+#   Remove-DanglingManagedLink -Path "$HOME\.gitconfig-old" -Under $repo
 #
 # Each returns a result object rather than printing one, so a caller decides what to say and
 # an exit code can be derived from outcomes (powershell/output.ps1, hugoforte/dotfiles#9).
@@ -169,4 +170,33 @@ function Remove-ManagedLink {
     # Remove-Item can recurse through the reparse point and take the target's contents with it.
     $item.Delete()
     return [pscustomobject]@{ Path = $Path; Action = 'Removed' }
+}
+
+# --- Prune ------------------------------------------------------------------------------------
+
+# Removes $Path when it is a symlink into $Under whose target no longer exists: a managed link
+# left behind after its source was deleted from the repo. A link that still resolves, a link
+# pointing anywhere else, and a real file are all kept.
+# Action is one of: Removed, Kept, Missing.
+function Remove-DanglingManagedLink {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Under
+    )
+
+    $item = Get-ManagedLinkItem $Path
+    if (-not $item) {
+        return [pscustomobject]@{ Path = $Path; Action = 'Missing' }
+    }
+
+    $target = Get-LinkTarget -Item $item
+    $prefix = $Under.TrimEnd('\') + '\'
+    $dangling = $target -and
+        $target.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -and
+        -not (Test-Path -LiteralPath $target)
+    if (-not $dangling) {
+        return [pscustomobject]@{ Path = $Path; Action = 'Kept' }
+    }
+
+    return Remove-ManagedLink -Path $Path
 }

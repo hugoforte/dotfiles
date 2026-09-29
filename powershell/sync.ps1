@@ -1,4 +1,5 @@
-# Pull the dotfiles repo and re-apply the AI tooling links.
+# Pull the dotfiles repo and its overlays, and re-apply the AI tooling links, what the overlays
+# supply, and the skill secrets.
 # Safe to run unattended: fast-forward only, never commits or pushes.
 # Used by the "Dotfiles Sync" scheduled task (see install-sync-task.ps1) and the dotfiles-sync function.
 
@@ -94,6 +95,49 @@ try {
     if ($toolsExit -ne 0) {
         Write-Log "install-tools.ps1 exited $toolsExit"
         exit 1
+    }
+
+    # Overlays (see overlays.ps1): pull each overlay repo, then bring what they supply in line, so
+    # a change pushed to an overlay reaches this machine without anyone re-running setup.ps1.
+    . (Join-Path $PSScriptRoot "managed-link.ps1")
+    . (Join-Path $PSScriptRoot "overlays.ps1")
+    try {
+        $overlays = Get-OverlayList -LocalPath (Join-Path $repoRoot "ai\secrets\machine.local.psd1")
+    } catch {
+        Write-Log $_.Exception.Message
+        exit 1
+    }
+    foreach ($overlayRepo in (Get-OverlayRepoRoots -Overlays $overlays)) {
+        $overlayPull = git -C $overlayRepo pull --ff-only 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            Write-Log "git pull failed in $overlayRepo`: $($overlayPull.Trim())"
+            exit 1
+        }
+        Write-Log "pulled $overlayRepo"
+    }
+    Write-Log "~/.gitconfig-overlays: $(Update-GitOverlayInclude -Overlays $overlays)"
+
+    # A link into this repo whose source the repo no longer ships is left over from a file that
+    # moved out, to an overlay or away entirely.
+    $awsConfigPath = "$env:USERPROFILE\.aws\config"
+    $leftovers = @(Get-ChildItem -LiteralPath $env:USERPROFILE -Filter ".gitconfig-*" -Force | ForEach-Object { $_.FullName }) + $awsConfigPath
+    foreach ($path in $leftovers) {
+        if ((Remove-DanglingManagedLink -Path $path -Under $repoRoot).Action -eq 'Removed') {
+            Write-Log "removed $path`: its source is no longer in the repo"
+        }
+    }
+
+    try {
+        $awsSource = Find-OverlayFile -Roots (@($repoRoot) + $overlays) -RelativePath "aws\config"
+    } catch {
+        Write-Log $_.Exception.Message
+        exit 1
+    }
+    if ($awsSource) {
+        $awsLink = Set-ManagedLink -Path $awsConfigPath -Source $awsSource
+        if ($awsLink.Action -ne 'AlreadyCorrect') { Write-Log "~/.aws/config -> $awsSource ($($awsLink.Action))" }
+    } elseif (-not (Test-Path -LiteralPath $awsConfigPath)) {
+        Write-Log "no aws/config in the repo or any overlay, and ~/.aws/config is absent; if this machine should have one, run install-overlays.ps1"
     }
 
     # Skill secrets: only on machines that have opted in with a machine.local.psd1

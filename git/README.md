@@ -1,22 +1,19 @@
 # Git Configuration
 
-Global git identity, symlinked to `~/.gitconfig` and `~/.gitconfig-employer` by `powershell/setup.ps1`.
+Global git identity, symlinked to `~/.gitconfig` by `powershell/setup.ps1`, which also writes `~/.gitconfig-overlays`.
 
 ## Files
 
-- `gitconfig` - the main `~/.gitconfig`: identity, core settings, difftool/mergetool, credential helper.
-- `gitconfig-employer` - `user.email` override for `employer` org repos, pulled in via a
-  `[includeIf "hasconfig:remote.*.url:https://github.com/employer/**"]` block in `gitconfig`.
-  Applies automatically based on the repo's remote URL, regardless of where it's checked out.
+- `gitconfig` - the main `~/.gitconfig`: identity, core settings, difftool/mergetool, credential helper. Its last line includes `~/.gitconfig-overlays`, so anything an overlay sets wins over it.
 
-## Adding another per-org identity
+## Overlays
 
-1. Add a new `gitconfig-<org>` file here with the `[user]` override.
-2. Add a matching `includeIf "hasconfig:remote.*.url:https://github.com/<org>/**"` block to `gitconfig`.
-3. Add the symlink for the new file in the "Git config" section of `powershell/setup.ps1`.
-4. Re-run `setup.ps1` on each machine (or wait for the next `dotfiles-sync`, once new-file linking is added there too).
+`~/.gitconfig-overlays` is generated, not linked: one `[include]` per overlay listed in `ai/secrets/machine.local.psd1` that ships a `git/gitconfig`, in the order listed. A machine with no overlays gets a file with only its header comment. Git ignores a missing include, so a machine that has not run `setup.ps1` or `sync.ps1` since is unaffected. `setup.ps1 -Check` reports the file as drift when it is missing or out of date, and `sync.ps1` rewrites it.
+
+## Adding a per-org identity
+
+Put it in an overlay, never here: an overlay's `git/gitconfig` holds an `includeIf "hasconfig:remote.*.url:https://github.com/<org>/**"` block whose `path` names a file beside it (a relative path resolves against the including file), and that file holds the `[user]` override. It applies on the next `sync.ps1` or `setup.ps1` run, based on each repo's remote URL, wherever the repo is checked out.
 
 ## Setup on New Machine
 
-`setup.ps1` creates symlinks from `~/.gitconfig` and `~/.gitconfig-employer` to the files in this
-directory, backing up any existing real files first. After that, edits made anywhere flow through git.
+`setup.ps1` creates the symlink from `~/.gitconfig` to `gitconfig`, backing up any existing real file first, and writes `~/.gitconfig-overlays`. After that, edits made anywhere flow through git.

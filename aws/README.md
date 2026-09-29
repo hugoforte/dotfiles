@@ -1,26 +1,23 @@
 # AWS Configuration
 
-AWS CLI config, symlinked to `~/.aws/config` by `powershell/setup.ps1`.
+The AWS CLI config (`~/.aws/config`) is not kept in this repo: it names accounts and roles, so it lives in an overlay (see [the README](../README.md#private-configuration-overlays)). `powershell/setup.ps1` and `sync.ps1` link `~/.aws/config` to the `aws/config` of this repo or of one overlay; two sources is an error, and none leaves the file alone.
 
 ## Files
 
-- `config` - AWS CLI configuration (profiles, SSO settings, regions). The only file managed here.
 - `credentials` - never committed (see `.gitignore`); SSO means it is not needed.
 
 ## SSO Authentication
 
-This configuration uses AWS SSO (Single Sign-On) for authentication. No static credentials are stored.
-
-The `config` file contains your SSO profile configurations and is safe to commit to a private repository.
+The configuration uses AWS SSO (Single Sign-On) for authentication. No static credentials are stored anywhere.
 
 ## Setup on New Machine
 
-When you run the setup script, it will automatically:
-1. Detect if `aws/config` exists in this repo
+When you run the setup script, or on the next sync, it will:
+1. Find the one `aws/config` among this repo and the machine's overlays
 2. Create the `~/.aws/` directory
-3. Create a symbolic link from `~/.aws/config` to this file
+3. Create a symbolic link from `~/.aws/config` to that file
 
-This means any changes you make to AWS profiles will automatically sync via git!
+Edits to the profiles then flow through the overlay's repo, and `sync.ps1` keeps the link pointing at whichever source the machine's overlays provide.
 
 **After setup:** Run `aws sso login` to authenticate with your SSO provider.
 
