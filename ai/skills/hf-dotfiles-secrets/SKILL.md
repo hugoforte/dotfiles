@@ -13,6 +13,7 @@ The procedures live in `ai/secrets/README.md` of the dotfiles repo. Read it firs
 - Never write plaintext into any git checkout. Temporary plaintext goes under `/tmp` and is removed in the same step.
 - Never copy a private key between machines. Each machine generates its own SSH key; only public keys travel.
 - Every change ends with `sh ai/secrets/check-encrypted.sh` passing and a commit.
+- This repo is public. A secret that belongs to an employer, a customer or anything else private goes in a private overlay, never here: SOPS leaves file names and key names in plaintext, and so does the registry.
 - A skill may be registered in an overlay rather than here: the machine's `machine.local.psd1` lists them. Work on an overlay's secret from inside that overlay, so its own `.sops.yaml` applies, and commit in the overlay's repo. The README's "Secrets in an overlay" has the details.
 
 ## Which section
