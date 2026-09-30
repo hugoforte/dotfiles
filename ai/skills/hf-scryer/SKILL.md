@@ -27,7 +27,7 @@ SCRYER_TOKEN=$(gql 'mutation($i: LoginInput!) { login(input: $i) { token } }' \
     | jq -r '.data.login.token')
 ```
 
-Shell state does not persist between tool calls, so repeat this block at the top of each command that needs it. Unauthenticated queries answer nothing useful, so signing in is also how to tell whether Scryer is up.
+Shell state does not persist between tool calls, so repeat this block at the top of each command that needs it. Unauthenticated queries answer nothing useful, so signing in is also how to tell whether Scryer is up: a failed connection means it is down. Quick repeated sign-ins are throttled, and then `login` answers with a `RATE_LIMITED` error and `retryAfterSeconds`, the token comes out as `null`, and every later query is refused; wait that long and sign in again.
 
 ## Finding the shape of anything
 
@@ -59,18 +59,20 @@ gql '{ __type(name: "UpdateSeedingProfileInput") { inputFields { name type { nam
 | Monitor a movie or series | `setTitleMonitored(input: { titleId, monitored: true })` |
 | Search now | `triggerAcquisitionSearch(input: { titleId, seasonNumber, wantedKind: MISSING })`, then poll `acquisitionSearchJob(id:)` for `grabbedCount`. One job runs at a time; a second is refused until the first finishes |
 | Change a quality profile | read `qualityProfileSettings`, send every profile back through `saveQualityProfileSettings` with `replaceExisting: false`, along with `globalProfileId`, `globalScoringPersona`, `categorySelections` and `categoryPersonaSelections` |
-| Disable an indexer | `updateIndexerConfig(input: { id, isEnabled: false })`, and in Prowlarr too (see `hf-prowlarr`) |
+| Disable an indexer | Disable it in Prowlarr (see `hf-prowlarr`). `updateIndexerConfig(input: { id, isEnabled: false })` here is a local override that survives Prowlarr syncs, so re-enabling one takes `isEnabled: true` here as well as Prowlarr's `enable` |
 | Search a title's releases | `searchReleases(input: { titleId, limit })` returns each result's `seeders`, `autoDecisionCode`, `qualityProfileDecision { releaseScore }`, `candidateToken` and `queueScope`. Without `season` it returns season packs across the series; `season` needs `episode` as well |
-| Grab a chosen release | `queueExistingTitleDownload(input: { titleId, candidateToken, sizeBytes, scope: { collection: <season id> } })`, with the token from a fresh search. `CONFLICT` means a download already holds that scope; `replaceInProgress: true` replaces it and removes those torrents |
-| Why a release was or wasn't grabbed | `titleAcquisitionDiagnostics(titleId:) { recentDecisions { releaseTitle decisionCode candidateScore explanationJson } }`; `explanationJson` names the indexer and carries the scoring log |
-| A title's history | `titleHistory(filter: { titleIds: [...], eventTypes: [GRABBED, IMPORT_SKIPPED], limit })`. Event types are uppercase enums; `dataJson` carries the indexer (`source_provider`), the skip reason, and `source_ref`, the torrent's hash |
+| Grab a chosen release | `queueExistingTitleDownload(input: { titleId, candidateToken, sizeBytes, scope: { collection: <season id> } })`, with the token and `sizeBytes` exactly as a fresh search returned them. The token fixes the scope, so the `scope` passed is only required, never used. `CONFLICT` means a download already holds that scope; `replaceInProgress: true` replaces it, removing those torrents and leaving their files on disk |
+| Why a release was or wasn't grabbed | `titleAcquisitionDiagnostics(titleId:) { recentDecisions { releaseTitle decisionCode candidateScore explanationJson } }`; `explanationJson` names the indexer (`candidate.source`) and carries the scoring log |
+| A title's history | `titleHistory(filter: { titleIds: [...], eventTypes: [GRABBED, IMPORT_SKIPPED], limit }) { items { eventType sourceTitle sourceProvider downloadId sourceRef skipReason dataJson } }`. Event types go in as uppercase enums and come back lowercase (`grabbed`). The torrent's hash is `downloadId` on grabs and `sourceRef` on imports |
 | Download history | `downloadHistory(limit: 50, offset:) { hasMore items {...} }`, 50 rows a page at most, and it stops at 500 |
 
-Season packs of compact x265 encodes (about 8 GB a season) score as "very small for 1080p" and lose to single episodes unless the profile's `scoringOverrides { preferCompactEncodes }` is on; the Series (1080p) profile has it on.
+Season packs of compact x265 encodes (about 8 GB a season) score as "very small for 1080p" and lose to single episodes unless the profile's `criteria { scoringOverrides { preferCompactEncodes } }` is on; the Series (1080p) profile has it on.
 
 qBittorrent tags every torrent Scryer sends it with `scryer-title-<id>`, which is the quickest way from a stuck torrent to its title.
 
-## Downloads stuck at "Downloading metadata"
+## Stuck, stalled or fake downloads
+
+The **Stalled Downloads** scheduled task fails stalled and fake Scryer torrents on its own at 06:00 and 18:00 (`watchdog/Remove-StalledDownloads.ps1` in the `hugoforte/media-backups` repo, whose README gives the rules). Read its newest log, `%LOCALAPPDATA%\media-backups\logs\stalled-*.log`, before acting by hand; `-WhatIf` shows what it would do now.
 
 Check the download client before blaming the release. qBittorrent's Web API answers on `http://127.0.0.1:8081/api/v2` without a password from this machine:
 
@@ -80,24 +82,25 @@ Check the download client before blaming the release. qBittorrent's Web API answ
 
 Only when qBittorrent is connected and a torrent still has no peers is the release dead. Then `markTrackedDownloadFailed` is usually the answer: it fails the release so Scryer grabs a different one, where deleting it in qBittorrent alone lets Scryer grab the same dead release again. `skipReacquire: true` fails it without searching again. Failing a release does not remove the torrent from qBittorrent; delete it there with `POST /torrents/delete` (`hashes`, `deleteFiles=true`).
 
-The **Stalled Downloads** scheduled task does this on its own at 06:00 and 18:00, for stalled and fake Scryer torrents alike (`watchdog/Remove-StalledDownloads.ps1` in the `hugoforte/media-backups` repo, whose README gives the rules). Read its newest log, `%LOCALAPPDATA%\media-backups\logs\stalled-*.log`, before failing a torrent by hand; `-WhatIf` shows what it would do now.
-
 ## Torrents left behind in qBittorrent
 
-Scryer removes a torrent from qBittorrent only after importing it and seeding it to its profile's goal. A torrent whose import was skipped stays for good, stopped once qBittorrent's seeding limit runs out. The `IMPORT_SKIPPED` events in `titleHistory` name each one, by `source_ref` (the hash) and `skipReason`:
+Scryer removes a torrent from qBittorrent only after importing it and seeding it to its profile's goal. A torrent whose import was skipped stays for good, stopped once qBittorrent's seeding limit runs out. The `IMPORT_SKIPPED` events in `titleHistory` name each one, by `sourceRef` (the hash) and `skipReason`, and `dataJson`'s `reason` says why in words:
 
-- **`no_video_files`** is usually a **fake**: an executable named like the episode. qBittorrent's excluded file names keep executables from downloading, and the task above removes fakes, so one lingering here means one of those has lapsed. `GET /torrents/files?hash=` shows what it holds.
-- **`already_imported`** or **`policy_mismatch`** is usually a season pack whose episodes were partly in the library already.
+- **`no_video_files`** is usually a **fake**: an executable named like the episode. qBittorrent's excluded file names keep the executable from downloading, and the task above removes the torrent at its next run, so a fake younger than that run is expected. `GET /torrents/files?hash=` shows what it holds. Safe to delete.
+- **`already_imported`**: the library already holds an identical file. Safe to delete.
+- **`policy_mismatch`**: the file contradicts what the release advertised (a "2160p" that is 1440p), so it was never imported and may be the only copy. So is anything with no `skipReason`. The user decides.
 
-Deleting these with their files loses nothing: an import copies into the library rather than hardlinking. Confirm first.
+Imports hardlink into the library where they can, so deleting a torrent's files leaves the library copy intact but frees little space. Confirm before deleting.
 
 ## Upgrading Scryer
 
-- **Install the new release over the old one; never uninstall.** Since 0.21.2, uninstalling deletes `%LOCALAPPDATA%\ScryerMedia\Scryer` and the Credential Manager entry holding the key its stored passwords are encrypted with, so going back a version means reinstalling the old one and restoring a backup. Use the release's `scryer-windows-x86_64-winget.msi`, checked against its `scryer-checksums.txt`.
-- **Take a restore point first.** Run `createBackup`, then the `media-backups` backup task, whose bundle takes the newest Scryer backup file; otherwise it holds the 03:00 one, from before any change made since.
-- **The first start migrates the database**, which can take minutes and grows it.
-- **Start Scryer detached from your shell**, or it stops when your command does: `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '"C:\Program Files\Scryer Media\Scryer\scryer-tray.exe" --login-start' }`.
-- **Afterwards, update Scryer's pin** in `media-backups`' `setup/packages.psd1`, since a restore installs the pinned version.
+Install the new release over the old one; never uninstall. Since 0.21.2, uninstalling deletes `%LOCALAPPDATA%\ScryerMedia\Scryer` (all but a non-empty `backups` folder) and the Credential Manager entry holding the key its stored passwords are encrypted with, so going back a version means reinstalling the old one and restoring a backup. In order:
+
+1. **Take a restore point.** Run `createBackup(input: { password: <SCRYER_BACKUP_KEY> })`, the backup key, which the restore asks for, never the login password. Then run the `media-backups` backup task, whose bundle takes the newest Scryer backup file; otherwise it holds the 03:00 one, from before any change made since.
+2. **Install** the release's `scryer-windows-x86_64-winget.msi`, checked against its `scryer-checksums.txt`.
+3. **Start Scryer detached from your shell**, or it stops when your command does: `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '"C:\Program Files\Scryer Media\Scryer\scryer-tray.exe" --login-start' }`.
+4. **Wait for the migration.** The first start migrates the database, which can take minutes and grows it; sign in to tell when it is done.
+5. **Update Scryer's pin**, its `Version` and `Url` together, in `media-backups`' `setup/packages.psd1`, since a restore installs the pinned version.
 
 ## Backups and restore
 
