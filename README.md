@@ -69,7 +69,7 @@ What an overlay can supply, and how:
 - `aws/config`: linked to `~/.aws/config`; only one source across this repo and all overlays.
 - `git/gitconfig`: included, in overlay order, by the generated `~/.gitconfig-overlays`.
 
-The sync task pulls each overlay repo and re-applies all of these, so a change pushed to an overlay reaches every machine that lists it. `install-overlays.ps1` is idempotent; re-run it when an overlay repo gains an overlay.
+The sync task pulls each overlay repo and re-applies all of these, so a change pushed to an overlay reaches every machine that lists it. Skills are linked by `ai/install.sh`, which the sync runs before it pulls the overlays, so an overlay's skill change lands one sync later. `install-overlays.ps1` is idempotent; re-run it when an overlay repo gains an overlay.
 
 ## Keeping machines in sync
 

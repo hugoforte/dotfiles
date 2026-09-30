@@ -80,12 +80,16 @@ mkdir -p "$second/ai/skills/own" "$second/ai/skills/late"
 printf -- '---\nname: own\n---\n' > "$second/ai/skills/own/SKILL.md"
 printf -- '---\nname: late\n---\n' > "$second/ai/skills/late/SKILL.md"
 
-overlays; rc=$?
-assert_eq "install fails on a name this repo already ships" "1" "$rc"
+# Install warns rather than failing, so a clash cannot stop the sync that runs it; the warning
+# goes to stdout, the stream sync.ps1 can log. --check is what fails.
+out="$(sh "$repo/ai/install.sh" --overlay-skills-only 2> /dev/null)"; rc=$?
+assert_eq "install carries on past a name this repo already ships" "0" "$rc"
+case "$out" in *"$second/ai/skills/own not linked"*) named=y ;; *) named=n ;; esac
+assert_eq "and says on stdout which skill it refused" "y" "$named"
 assert_eq "and leaves this repo's link where it points" "$repo/ai/skills/own" "$(readlink "$home/.claude/skills/own")"
 assert_eq "and still links the overlay's other new skills" "y" "$(is_link "$home/.claude/skills/late")"
 out="$(check)"; rc=$?
-assert_eq "--check fails on it too" "1" "$rc"
+assert_eq "--check fails on it" "1" "$rc"
 case "$out" in *"$second/ai/skills/own"*) named=y ;; *) named=n ;; esac
 assert_eq "--check names the refused skill" "y" "$named"
 rm -rf "$second/ai/skills/own"
@@ -94,16 +98,19 @@ rm -rf "$second/ai/skills/own"
 mkdir -p "$second/ai/skills/private-thing"
 printf -- '---\nname: private-thing\n---\n' > "$second/ai/skills/private-thing/SKILL.md"
 
-overlays; rc=$?
-assert_eq "install fails on a name an earlier overlay ships" "1" "$rc"
-assert_eq "and the earlier overlay keeps the link" "$first/ai/skills/private-thing" "$(readlink "$home/.claude/skills/private-thing")"
+overlays
+assert_eq "an earlier overlay keeps a name a later one also ships" "$first/ai/skills/private-thing" "$(readlink "$home/.claude/skills/private-thing")"
+out="$(check)"; rc=$?
+assert_eq "--check fails on that clash" "1" "$rc"
 rm -rf "$second/ai/skills/private-thing"
 
 # The same name in another case: one link on NTFS, so the same refusal.
 mkdir -p "$second/ai/skills/Private-Thing"
 printf -- '---\nname: Private-Thing\n---\n' > "$second/ai/skills/Private-Thing/SKILL.md"
-overlays; rc=$?
-assert_eq "install fails on a name an earlier overlay ships in another case" "1" "$rc"
+overlays
+assert_eq "the earlier overlay keeps a name a later one ships in another case" "$first/ai/skills/private-thing" "$(readlink "$home/.claude/skills/private-thing")"
+out="$(check)"; rc=$?
+assert_eq "--check fails on a clash in another case" "1" "$rc"
 rm -rf "$second/ai/skills/Private-Thing"
 
 # A name rig already ships.
@@ -113,9 +120,10 @@ mkdir -p "$rig/bin" "$rig/skills/rigged" "$second/ai/skills/rigged"
 printf -- '---\nname: rigged\n---\n' > "$rig/skills/rigged/SKILL.md"
 printf -- '---\nname: rigged\n---\n' > "$second/ai/skills/rigged/SKILL.md"
 RIG_ROOT="$rig"; export RIG_ROOT
-overlays; rc=$?
-assert_eq "install fails on a name rig already ships" "1" "$rc"
-assert_eq "and links nothing under that name" "n" "$(is_link "$home/.claude/skills/rigged")"
+overlays
+assert_eq "a name rig already ships is not linked from an overlay" "n" "$(is_link "$home/.claude/skills/rigged")"
+out="$(check)"; rc=$?
+assert_eq "--check fails on a name rig already ships" "1" "$rc"
 rm -rf "$second/ai/skills/rigged"
 RIG_ROOT="$work/no-rig"; export RIG_ROOT
 
@@ -123,6 +131,19 @@ overlays --uninstall
 assert_eq "--uninstall removes the first overlay's links" "n" "$(is_link "$home/.claude/skills/private-thing")"
 assert_eq "and the second overlay's" "n" "$(is_link "$home/.claude/skills/other")"
 assert_eq "and not this repo's" "y" "$(is_link "$home/.claude/skills/own")"
+
+# An overlay listed with a trailing separator, which the PowerShell reader accepts.
+printf "@{\n    Overlays = @(\n        '%s'\n    )\n}\n" "$(win "$first")\\" > "$repo/ai/secrets/machine.local.psd1"
+overlays
+assert_eq "a trailing separator still gives the overlay's own path" "$first/ai/skills/private-thing" "$(readlink "$home/.claude/skills/private-thing")"
+out="$(check)"; rc=$?
+assert_eq "--check is clean with a trailing separator" "0" "$rc"
+mkdir -p "$first/ai/skills/brief"
+printf -- '---\nname: brief\n---\n' > "$first/ai/skills/brief/SKILL.md"
+overlays
+rm -rf "$first/ai/skills/brief"
+overlays
+assert_eq "and the prune still finds a dropped skill's link" "n" "$(is_link "$home/.claude/skills/brief")"
 
 # A machine with no overlays: nothing linked, nothing drifted.
 rm -f "$repo/ai/secrets/machine.local.psd1"

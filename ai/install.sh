@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Installs the AI tooling in this repo into the agents' home directories by symlink.
-# Components: CLAUDE.md, agents, skills, settings. See --help.
+# Components: CLAUDE.md, agents, skills, rig skills, overlay skills, settings. See --help.
 
 # Derive repo root from script location (works regardless of where repo is cloned)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -72,7 +72,9 @@ overlay_dirs() {
             case "$dir" in
                 [A-Za-z]:*) command -v cygpath > /dev/null 2>&1 && dir="$(cygpath -u "$dir")" ;;
             esac
-            echo "$dir"
+            # A trailing separator would make every link source path differ from what readlink
+            # reports, so --check would see drift forever and the prune would never match.
+            echo "${dir%/}"
         done
 }
 
@@ -276,7 +278,8 @@ check_rig_skills() {
 # private cannot live in this public repo. Same targets and the same prune rules, with each
 # overlay's ai/skills as a source dir. The link is named after the skill, so a name shipped
 # from two places would have one silently replace the other; a name this repo, rig or an
-# earlier overlay already ships is refused and fails the run instead.
+# earlier overlay already ships is not linked. Install warns and carries on, so one clash cannot
+# stop the sync that runs it; --check fails on it.
 
 # overlay_skills: one line per overlay skill, in overlay order: its directory, a tab, and
 # the directory already shipping that name, or nothing when the name is free. Names compare
@@ -308,12 +311,12 @@ overlay_skills() {
     done
 }
 
-# report_overlay_skill_clashes <overlay_skills output>: name each refused skill; false if any.
+# report_overlay_skill_clashes <overlay_skills output>: warn about each refused skill; false if any.
 report_overlay_skill_clashes() {
     clashed=0
     while IFS="$TAB" read -r skill clash; do
         [ -n "$clash" ] || continue
-        error "$skill not linked: $clash already ships a skill with that name"
+        warning "$skill not linked: $clash already ships a skill with that name"
         clashed=1
     done <<EOF
 $1
@@ -334,7 +337,7 @@ EOF
 
 install_overlay_skills() {
     skills="$(overlay_skills)"
-    report_overlay_skill_clashes "$skills" || INSTALL_FAILED=1
+    report_overlay_skill_clashes "$skills" || :
     for target in $(skill_target_dirs); do
         mkdir -p "$target"
         while IFS="$TAB" read -r skill clash; do
@@ -408,7 +411,6 @@ INSTALL_SKILLS=true
 INSTALL_RIG_SKILLS=true
 INSTALL_OVERLAY_SKILLS=true
 INSTALL_SETTINGS=true
-INSTALL_FAILED=0
 
 disable_all() {
     INSTALL_CLAUDE_MD=false
@@ -522,13 +524,7 @@ fi
 
 echo ""
 case $MODE in
-    install)
-        if [ "$INSTALL_FAILED" = "1" ]; then
-            error "Done, with the errors above"
-            exit 1
-        fi
-        success "Done"
-        ;;
+    install)   success "Done" ;;
     uninstall) success "Done" ;;
     export)    success "Done" ;;
     check)

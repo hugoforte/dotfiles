@@ -73,27 +73,6 @@ try {
         Write-Log "updated $($before.Substring(0,7)) -> $($after.Substring(0,7))"
     }
 
-    # Overlays (see overlays.ps1): pull each overlay repo, then bring what they supply in line, so
-    # a change pushed to an overlay reaches this machine without anyone re-running setup.ps1.
-    # Pulled before ai/install.sh, which links the skills overlays ship: a skill-name clash
-    # fails install.sh, and the fix pushed to an overlay must still be able to arrive.
-    . (Join-Path $PSScriptRoot "managed-link.ps1")
-    . (Join-Path $PSScriptRoot "overlays.ps1")
-    try {
-        $overlays = Get-OverlayList -LocalPath (Join-Path $repoRoot "ai\secrets\machine.local.psd1")
-    } catch {
-        Write-Log $_.Exception.Message
-        exit 1
-    }
-    foreach ($overlayRepo in (Get-OverlayRepoRoots -Overlays $overlays)) {
-        $overlayPull = git -C $overlayRepo pull --ff-only 2>&1 | Out-String
-        if ($LASTEXITCODE -ne 0) {
-            Write-Log "git pull failed in $overlayRepo`: $($overlayPull.Trim())"
-            exit 1
-        }
-        Write-Log "pulled $overlayRepo"
-    }
-
     $sh = Find-Sh
     if (-not $sh) {
         Write-Log "sh.exe (Git Bash) not found; skipping ai/install.sh"
@@ -118,6 +97,24 @@ try {
         exit 1
     }
 
+    # Overlays (see overlays.ps1): pull each overlay repo, then bring what they supply in line, so
+    # a change pushed to an overlay reaches this machine without anyone re-running setup.ps1.
+    . (Join-Path $PSScriptRoot "managed-link.ps1")
+    . (Join-Path $PSScriptRoot "overlays.ps1")
+    try {
+        $overlays = Get-OverlayList -LocalPath (Join-Path $repoRoot "ai\secrets\machine.local.psd1")
+    } catch {
+        Write-Log $_.Exception.Message
+        exit 1
+    }
+    foreach ($overlayRepo in (Get-OverlayRepoRoots -Overlays $overlays)) {
+        $overlayPull = git -C $overlayRepo pull --ff-only 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            Write-Log "git pull failed in $overlayRepo`: $($overlayPull.Trim())"
+            exit 1
+        }
+        Write-Log "pulled $overlayRepo"
+    }
     Write-Log "~/.gitconfig-overlays: $(Update-GitOverlayInclude -Overlays $overlays)"
 
     # A link into this repo whose source the repo no longer ships is left over from a file that
