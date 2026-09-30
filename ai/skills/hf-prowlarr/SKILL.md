@@ -5,7 +5,7 @@ description: Inspect and administer Hugo's Prowlarr indexer manager on hugo-medi
 
 # Prowlarr
 
-Prowlarr runs on the home media server, reachable only over Tailscale, at the `PROWLARR_URL` in its secrets file (below). It owns the indexers and syncs them to Scryer, which shows them as Prowlarr-managed. An indexer fix usually belongs here, not in Scryer.
+Prowlarr runs on the home media server, reachable only over Tailscale, at the `PROWLARR_URL` in its secrets file (below). It owns the indexers and syncs them to Scryer, which shows them as Prowlarr-managed. An indexer fix usually belongs here, not in Scryer. Disabling one takes both: Scryer keeps its own copy of each indexer with its own `isEnabled` (see `hf-scryer`), and Prowlarr's `enable` is set here with a `PUT`.
 
 ## Credentials
 
