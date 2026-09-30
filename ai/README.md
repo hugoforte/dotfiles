@@ -32,7 +32,8 @@ From Git Bash on Windows, or any POSIX shell:
 | `CLAUDE.md` | `ai/CLAUDE.md` | `~/.claude/CLAUDE.md` | symlinks |
 | Agents | `ai/agents/*.md` | `~/.claude/agents/` | symlinks |
 | Skills | `ai/skills/*/` | `~/.claude/skills/`, `~/.codex/skills/`, `~/.copilot/skills/` (the last two only when the tool dir exists) | symlinks |
-| rig skills | `<rig checkout>/skills/*/`, the checkout being `RIG_ROOT`, else `D:ig`, `C:ig`, `~/rig` | the same three skills directories | symlinks; a machine without rig links nothing and is not drifted |
+| rig skills | `<rig checkout>/skills/*/`, the checkout being `RIG_ROOT`, else `D:\rig`, `C:\rig`, `~/rig` | the same three skills directories | symlinks; a machine without rig links nothing and is not drifted |
+| Overlay skills | `<overlay>/ai/skills/*/`, for each overlay in `ai/secrets/machine.local.psd1` | the same three skills directories | symlinks; a name this repo, rig or an earlier overlay already ships is not linked and fails the run |
 | Settings | `ai/claude/settings.json` | merged into `~/.claude/settings.json`, backup taken first | `jq` (`winget install jqlang.jq`) |
 
 Symlinks on Windows need Developer Mode (Settings > System > For developers) or an elevated shell. On Git Bash the script sets `MSYS=winsymlinks:nativestrict` so `ln -s` makes real symlinks instead of silently copying.
