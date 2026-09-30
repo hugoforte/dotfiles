@@ -54,6 +54,10 @@
            Source = 'npm'
            Note = 'Bruno API client CLI' }
 
+        @{ Id = '@playwright/cli'
+           Source = 'npm'
+           Note = 'Browser automation any agent can drive from a shell (playwright-cli); skills that need a browser use it rather than one agent''s own browser tool' }
+
         # rig is deliberately absent: it is an `npm link` of a local checkout, not an install.
         # Installing it from the registry would silently replace the checkout you develop in.
 

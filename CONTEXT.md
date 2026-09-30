@@ -55,7 +55,7 @@ A report-only run: it says what would change and changes nothing. Every installe
 _Avoid_: verify, validate, test
 
 **Component**:
-One unit `ai/install.sh` installs, checks and uninstalls: CLAUDE.md, agents, skills, rig skills, settings, secrets. Each has an `install_`, `uninstall_` and `check_` of its own.
+One unit `ai/install.sh` installs, checks and uninstalls: CLAUDE.md, agents, skills, rig skills, overlay skills, settings, secrets. Each has an `install_`, `uninstall_` and `check_` of its own.
 _Avoid_: module, feature, part
 
 **Sync**:
@@ -77,7 +77,7 @@ A directory on a machine whose immediate children are checkouts, listed in `mach
 _Avoid_: source root, projects directory, workspace
 
 **Overlay**:
-A private directory laid out like this repo's root, which the tooling reads from as well as from the repo: registries merge, `aws/config` comes from exactly one place, and each overlay's `git/gitconfig` is included. Listed per machine in `machine.local.psd1`, so no tracked file names one. An overlay is cut by audience (one person, or one employer), and one private repo may hold several.
+A private directory laid out like this repo's root, which the tooling reads from as well as from the repo: registries merge, `aws/config` comes from exactly one place, each overlay's `git/gitconfig` is included, and its `ai/skills/` are linked beside this repo's. Listed per machine in `machine.local.psd1`, so no tracked file names one. An overlay is cut by audience (one person, or one employer), and one private repo may hold several.
 _Avoid_: private repo (a repo may hold several overlays), layer, plugin
 
 ### Skills
@@ -93,6 +93,10 @@ _Avoid_: skill (unqualified), local skill, app skill
 **rig skill**:
 A skill the rig checkout ships under its `skills/`, linked *out* by this repo exactly as a shipped skill is, but owned and versioned by rig. Present only on a machine that has a rig checkout.
 _Avoid_: skill (unqualified), external skill, vendored skill (that is `matt-*`, a copy this repo owns)
+
+**Overlay skill**:
+A skill an overlay ships under its `ai/skills/`, linked *out* exactly as a shipped skill is, for a skill whose text names something private. A skill name is linked from one place only: a name this repo, rig or an earlier overlay already ships is not linked.
+_Avoid_: skill (unqualified), private skill
 
 ### Secrets
 

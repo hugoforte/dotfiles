@@ -115,8 +115,9 @@ if ((@($existing) -join "`n") -eq ($overlays -join "`n")) {
 }
 
 # --- Apply ----------------------------------------------------------------------------------------
-# sync.ps1 is the one applier: it pulls the overlays, writes ~/.gitconfig-overlays, links
-# ~/.aws/config, removes links left behind by files that moved out, and deploys the secrets.
+# sync.ps1 is the one applier: it links their skills (through ai/install.sh), pulls the overlays,
+# writes ~/.gitconfig-overlays, links ~/.aws/config, removes links left behind by files that
+# moved out, and deploys the secrets.
 
 Say ""
 Say "Running sync.ps1 to apply them" Cyan

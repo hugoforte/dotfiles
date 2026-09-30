@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Installs the AI tooling in this repo into the agents' home directories by symlink.
-# Components: CLAUDE.md, agents, skills, settings. See --help.
+# Components: CLAUDE.md, agents, skills, rig skills, overlay skills, settings. See --help.
 
 # Derive repo root from script location (works regardless of where repo is cloned)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -24,6 +24,8 @@ SETTINGS_FRAGMENT="$ZSH/ai/claude/settings.json"
 # Skill directories: every ai/skills/<name>/ is linked into each of these.
 # ~/.claude/skills is always used; the others only when their tool directory exists.
 SKILL_TARGETS="$HOME/.claude/skills $HOME/.codex/skills $HOME/.copilot/skills"
+
+TAB="$(printf '\t')"
 
 skill_target_dirs() {
     for target in $SKILL_TARGETS; do
@@ -70,7 +72,9 @@ overlay_dirs() {
             case "$dir" in
                 [A-Za-z]:*) command -v cygpath > /dev/null 2>&1 && dir="$(cygpath -u "$dir")" ;;
             esac
-            echo "$dir"
+            # A trailing separator would make every link source path differ from what readlink
+            # reports, so --check would see drift forever and the prune would never match.
+            echo "${dir%/}"
         done
 }
 
@@ -270,6 +274,109 @@ check_rig_skills() {
     done
 }
 
+# Overlays ship skills too, under <overlay>/ai/skills/*/: a skill whose text names something
+# private cannot live in this public repo. Same targets and the same prune rules, with each
+# overlay's ai/skills as a source dir. The link is named after the skill, so a name shipped
+# from two places would have one silently replace the other; a name this repo, rig or an
+# earlier overlay already ships is not linked. Install warns and carries on, so one clash cannot
+# stop the sync that runs it; --check fails on it.
+
+# overlay_skills: one line per overlay skill, in overlay order: its directory, a tab, and
+# the directory already shipping that name, or nothing when the name is free. Names compare
+# without case, as they do on the NTFS the links live on.
+overlay_skills() {
+    rig_skills=""
+    root="$(rig_root)" && rig_skills="$root/skills"
+    seen=""
+    overlay_dirs | while IFS= read -r overlay; do
+        for skill in "$overlay"/ai/skills/*/; do
+            skill="${skill%/}"
+            [ -d "$skill" ] || continue
+            name="$(basename "$skill")"
+            key="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
+            clash=""
+            if [ -d "$ZSH/ai/skills/$name" ]; then
+                clash="$ZSH/ai/skills/$name"
+            elif [ -n "$rig_skills" ] && [ -d "$rig_skills/$name" ]; then
+                clash="$rig_skills/$name"
+            else
+                # "/" cannot appear in a skill name, so it ends the key unambiguously.
+                case "$seen" in
+                    *"$TAB$key/"*) clash="${seen#*"$TAB$key/"}"; clash="${clash%%"$TAB"*}" ;;
+                esac
+            fi
+            [ -z "$clash" ] && seen="$seen$TAB$key/$skill$TAB"
+            printf '%s\t%s\n' "$skill" "$clash"
+        done
+    done
+}
+
+# report_overlay_skill_clashes <overlay_skills output>: warn about each refused skill; false if any.
+report_overlay_skill_clashes() {
+    clashed=0
+    while IFS="$TAB" read -r skill clash; do
+        [ -n "$clash" ] || continue
+        warning "$skill not linked: $clash already ships a skill with that name"
+        clashed=1
+    done <<EOF
+$1
+EOF
+    [ "$clashed" = "0" ]
+}
+
+# each_overlay_orphans <dir> <prune_orphans|check_orphans>: run it against every overlay.
+each_overlay_orphans() {
+    overlays="$(overlay_dirs)"
+    [ -n "$overlays" ] || return 0
+    while IFS= read -r overlay; do
+        "$2" "$1" "$overlay/ai/skills"
+    done <<EOF
+$overlays
+EOF
+}
+
+install_overlay_skills() {
+    skills="$(overlay_skills)"
+    report_overlay_skill_clashes "$skills" || :
+    for target in $(skill_target_dirs); do
+        mkdir -p "$target"
+        while IFS="$TAB" read -r skill clash; do
+            [ -n "$skill" ] && [ -z "$clash" ] || continue
+            link "$skill" "$target/$(basename "$skill")"
+        done <<EOF
+$skills
+EOF
+        each_overlay_orphans "$target" prune_orphans
+        if [ -n "$skills" ]; then success "Linked overlay skills into $target"; fi
+    done
+}
+uninstall_overlay_skills() {
+    skills="$(overlay_skills)"
+    for target in $(skill_target_dirs); do
+        [ -d "$target" ] || continue
+        while IFS="$TAB" read -r skill clash; do
+            [ -n "$skill" ] && [ -z "$clash" ] || continue
+            unlink_if_link "$target/$(basename "$skill")"
+        done <<EOF
+$skills
+EOF
+    done
+    success "Removed overlay skill links"
+}
+check_overlay_skills() {
+    skills="$(overlay_skills)"
+    report_overlay_skill_clashes "$skills" || CHECK_FAILED=1
+    for target in $(skill_target_dirs); do
+        while IFS="$TAB" read -r skill clash; do
+            [ -n "$skill" ] && [ -z "$clash" ] || continue
+            check_link "$skill" "$target/$(basename "$skill")"
+        done <<EOF
+$skills
+EOF
+        each_overlay_orphans "$target" check_orphans
+    done
+}
+
 # Settings are merged, not linked: ~/.claude/settings.json also holds machine-local state.
 install_settings() {
     mkdir -p "$CLAUDE_DIR"
@@ -302,6 +409,7 @@ INSTALL_CLAUDE_MD=true
 INSTALL_AGENTS=true
 INSTALL_SKILLS=true
 INSTALL_RIG_SKILLS=true
+INSTALL_OVERLAY_SKILLS=true
 INSTALL_SETTINGS=true
 
 disable_all() {
@@ -309,6 +417,7 @@ disable_all() {
     INSTALL_AGENTS=false
     INSTALL_SKILLS=false
     INSTALL_RIG_SKILLS=false
+    INSTALL_OVERLAY_SKILLS=false
     INSTALL_SETTINGS=false
 }
 
@@ -317,47 +426,52 @@ show_help() {
     echo ""
     echo "Symlinks CLAUDE.md, agents and skills from this repo into ~/.claude (and skills"
     echo "into ~/.codex and ~/.copilot when present), links the skills the rig checkout"
-    echo "ships the same way, and merges ai/claude/settings.json into ~/.claude/settings.json."
+    echo "ships and the skills each overlay in ai/secrets/machine.local.psd1 ships the same way,"
+    echo "and merges ai/claude/settings.json into ~/.claude/settings.json."
     echo ""
     echo "Modes:"
-    echo "  (default)           Install"
-    echo "  --check             Report link drift without changing anything (exit 1 on drift)"
-    echo "  --uninstall         Remove the symlinks"
-    echo "  --settings-export   Copy the managed settings keys from ~/.claude/settings.json back into the repo"
+    echo "  (default)              Install"
+    echo "  --check                Report link drift without changing anything (exit 1 on drift)"
+    echo "  --uninstall            Remove the symlinks"
+    echo "  --settings-export      Copy the managed settings keys from ~/.claude/settings.json back into the repo"
     echo ""
     echo "Component flags:"
-    echo "  --claude-md-only    Only CLAUDE.md"
-    echo "  --agents-only       Only agent files"
-    echo "  --skills-only       Only skills"
-    echo "  --rig-skills-only   Only the skills rig ships (RIG_ROOT, else D:/rig, C:/rig, ~/rig)"
-    echo "  --settings-only     Only settings merge"
-    echo "  --no-claude-md      Skip CLAUDE.md"
-    echo "  --no-agents         Skip agents"
-    echo "  --no-skills         Skip skills"
-    echo "  --no-rig-skills     Skip the skills rig ships"
-    echo "  --no-settings       Skip settings merge"
-    echo "  -h, --help          Show this help"
+    echo "  --claude-md-only       Only CLAUDE.md"
+    echo "  --agents-only          Only agent files"
+    echo "  --skills-only          Only skills"
+    echo "  --rig-skills-only      Only the skills rig ships (RIG_ROOT, else D:/rig, C:/rig, ~/rig)"
+    echo "  --overlay-skills-only  Only the skills overlays ship (<overlay>/ai/skills/)"
+    echo "  --settings-only        Only settings merge"
+    echo "  --no-claude-md         Skip CLAUDE.md"
+    echo "  --no-agents            Skip agents"
+    echo "  --no-skills            Skip skills"
+    echo "  --no-rig-skills        Skip the skills rig ships"
+    echo "  --no-overlay-skills    Skip the skills overlays ship"
+    echo "  --no-settings          Skip settings merge"
+    echo "  -h, --help             Show this help"
     echo ""
     echo "Needs: Windows Developer Mode or an elevated shell for symlinks; jq for settings."
 }
 
 while [ $# -gt 0 ]; do
     case $1 in
-        --uninstall)        MODE=uninstall ;;
-        --check)            MODE=check ;;
-        --settings-export)  MODE=export; disable_all; INSTALL_SETTINGS=true ;;
-        --claude-md-only)   disable_all; INSTALL_CLAUDE_MD=true ;;
-        --agents-only)      disable_all; INSTALL_AGENTS=true ;;
-        --skills-only)      disable_all; INSTALL_SKILLS=true ;;
-        --rig-skills-only)  disable_all; INSTALL_RIG_SKILLS=true ;;
-        --settings-only)    disable_all; INSTALL_SETTINGS=true ;;
-        --no-claude-md)     INSTALL_CLAUDE_MD=false ;;
-        --no-agents)        INSTALL_AGENTS=false ;;
-        --no-skills)        INSTALL_SKILLS=false ;;
-        --no-rig-skills)    INSTALL_RIG_SKILLS=false ;;
-        --no-settings)      INSTALL_SETTINGS=false ;;
-        -h|--help)          show_help; exit 0 ;;
-        *)                  echo "Unknown option: $1"; show_help; exit 1 ;;
+        --uninstall)           MODE=uninstall ;;
+        --check)               MODE=check ;;
+        --settings-export)     MODE=export; disable_all; INSTALL_SETTINGS=true ;;
+        --claude-md-only)      disable_all; INSTALL_CLAUDE_MD=true ;;
+        --agents-only)         disable_all; INSTALL_AGENTS=true ;;
+        --skills-only)         disable_all; INSTALL_SKILLS=true ;;
+        --rig-skills-only)     disable_all; INSTALL_RIG_SKILLS=true ;;
+        --overlay-skills-only) disable_all; INSTALL_OVERLAY_SKILLS=true ;;
+        --settings-only)       disable_all; INSTALL_SETTINGS=true ;;
+        --no-claude-md)        INSTALL_CLAUDE_MD=false ;;
+        --no-agents)           INSTALL_AGENTS=false ;;
+        --no-skills)           INSTALL_SKILLS=false ;;
+        --no-rig-skills)       INSTALL_RIG_SKILLS=false ;;
+        --no-overlay-skills)   INSTALL_OVERLAY_SKILLS=false ;;
+        --no-settings)         INSTALL_SETTINGS=false ;;
+        -h|--help)             show_help; exit 0 ;;
+        *)                     echo "Unknown option: $1"; show_help; exit 1 ;;
     esac
     shift
 done
@@ -381,6 +495,7 @@ esac
 [ "$INSTALL_AGENTS" = "true" ]    && ${MODE}_agents
 [ "$INSTALL_SKILLS" = "true" ]    && ${MODE}_skills
 [ "$INSTALL_RIG_SKILLS" = "true" ] && ${MODE}_rig_skills
+[ "$INSTALL_OVERLAY_SKILLS" = "true" ] && ${MODE}_overlay_skills
 [ "$INSTALL_SETTINGS" = "true" ]  && ${MODE}_settings
 
 # Secrets under ai/secrets/, here and in every overlay, must never be committed in plaintext;

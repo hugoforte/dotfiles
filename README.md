@@ -10,7 +10,7 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
 | AWS CLI profiles (SSO, no secrets) | an overlay's `aws/config` | `%USERPROFILE%\.aws\config` (symlink) | `powershell/setup.ps1`, `powershell/sync.ps1` |
 | Git identity | `git/` | `~/.gitconfig` (symlink) | `powershell/setup.ps1` |
 | Per-org git identities and other overlay git config | an overlay's `git/gitconfig` | included by `~/.gitconfig-overlays` (generated) | `powershell/setup.ps1`, `powershell/sync.ps1` |
-| Agent skills | `ai/skills/<name>/` | `~/.claude/skills`, `~/.codex/skills`, `~/.copilot/skills` (symlinks) | `ai/install.sh` |
+| Agent skills | `ai/skills/<name>/`, here or in an overlay | `~/.claude/skills`, `~/.codex/skills`, `~/.copilot/skills` (symlinks) | `ai/install.sh` |
 | Claude Code global instructions | `ai/CLAUDE.md` | `~/.claude/CLAUDE.md` (symlink) | `ai/install.sh` |
 | Claude Code sub-agents | `ai/agents/*.md` | `~/.claude/agents/` (symlinks) | `ai/install.sh` |
 | Claude Code settings (model, plugins, allowlist) | `ai/claude/settings.json` | merged into `~/.claude/settings.json` | `ai/install.sh` |
@@ -65,10 +65,11 @@ This repo holds nothing private. Anything that is, such as employer AWS accounts
 What an overlay can supply, and how:
 
 - `ai/secrets/registry.psd1` and `ai/secrets/<skill>/`: merged with every other registry; a skill id may be registered only once.
+- `ai/skills/<name>/`: linked beside this repo's skills by `ai/install.sh`, for a skill whose text names something private; a skill name may be shipped from only one place.
 - `aws/config`: linked to `~/.aws/config`; only one source across this repo and all overlays.
 - `git/gitconfig`: included, in overlay order, by the generated `~/.gitconfig-overlays`.
 
-The sync task pulls each overlay repo and re-applies all three, so a change pushed to an overlay reaches every machine that lists it. `install-overlays.ps1` is idempotent; re-run it when an overlay repo gains an overlay.
+The sync task pulls each overlay repo and re-applies all of these, so a change pushed to an overlay reaches every machine that lists it. Skills are linked by `ai/install.sh`, which the sync runs before it pulls the overlays, so an overlay's skill change lands one sync later. `install-overlays.ps1` is idempotent; re-run it when an overlay repo gains an overlay.
 
 ## Keeping machines in sync
 
