@@ -126,9 +126,11 @@ if (Test-Path $markdownHelpersPath) {
     Write-Host "WARNING: Could not find markdown.ps1 at $markdownHelpersPath" -ForegroundColor Yellow
 }
 
-# sops falls back to vim or nano, which exist only inside Git Bash.
-if (-not $env:SOPS_EDITOR -and (Get-Command code -ErrorAction SilentlyContinue)) {
-    $env:SOPS_EDITOR = "code --wait"
+# sops falls back to vim or nano, which exist only inside Git Bash. Notepad rather than
+# `code --wait`: it blocks until closed in every terminal, including ones embedded in other
+# apps where VS Code cannot be launched, and sops re-encrypts when the editor exits.
+if (-not $env:SOPS_EDITOR) {
+    $env:SOPS_EDITOR = "notepad"
 }
 
 $dotfilesSyncScript = Join-Path $profileScriptRoot "sync.ps1"
