@@ -22,7 +22,7 @@ It ends with a prompt for a fresh session. That prompt is what the new thread re
 Inside a rig work, take the title's parts from `rig status`:
 
 - **Key**: the first entry on its `tickets` line. A GitHub issue (`owner/repo#N`) is written as `repo#N`. A work with no ticket uses its id, the first word of `rig status`.
-- **Description**: the work's title, cut to about five words. It must not end in a number, because a trailing number is read as the count.
+- **Description**: the work's title, cut to about five words, leading with the product when the work is about one (`IM unable to add product`). It must not end in a number, because a trailing number is read as the count.
 
 ```bash
 node ~/.claude/skills/hf-t3-handoff/t3.mjs continue --prompt-file <file> --key <key> --description "<description>" --dry-run
