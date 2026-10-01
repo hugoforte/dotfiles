@@ -34,7 +34,15 @@ Describe 'Invoke-Native' {
         (Invoke-Native no-such-command-here arg).Ok | Should -BeFalse
     }
 
+    It 'is not Ok for a function, which sets no exit code of its own' {
+        function fake-native { 'fake' }
+        $null = Invoke-Native cmd /c 'exit 0'
+        (Invoke-Native fake-native).Ok | Should -BeFalse
+    }
+
     It 'passes the command its own flags, -C included' {
-        (Invoke-Native git -C $PSScriptRoot rev-parse --is-inside-work-tree).Output | Should -Be 'true'
+        $repo = Join-Path $TestDrive 'repo'
+        git init -q $repo
+        (Invoke-Native git -C $repo rev-parse --is-inside-work-tree).Output | Should -Be 'true'
     }
 }

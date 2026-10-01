@@ -6,14 +6,17 @@
 #   if (-not $pull.Ok) { ... $pull.Output ... }
 #
 # No param block, on purpose: a declared parameter would capture the command's own flags, so
-# `git -C <path>` would bind -C to it.
+# `git -C <path>` would bind -C to it. PowerShell still consumes a bare `--` before the
+# command sees it, so a caller that needs one passes it quoted: '--'.
 function Invoke-Native {
     $command = $args[0]
     # @(...) because a lone argument would otherwise be a string, which @splatting passes a
     # character at a time.
     $arguments = @($args | Select-Object -Skip 1)
-    if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
-        return [pscustomobject]@{ Ok = $false; ExitCode = $null; Output = "$command not found" }
+    # Application only: a function, alias or script sets no $LASTEXITCODE, so the verdict would
+    # be whatever the previous native command left behind.
+    if (-not (Get-Command $command -CommandType Application -ErrorAction SilentlyContinue)) {
+        return [pscustomobject]@{ Ok = $false; ExitCode = $null; Output = "$command is not a program on PATH" }
     }
     $ErrorActionPreference = "Continue"
     # A stderr line arrives as an ErrorRecord, which Out-String would render with its position
