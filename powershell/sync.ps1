@@ -108,11 +108,15 @@ try {
         Write-Log $_.Exception.Message
         exit 1
     }
+    # A failed overlay pull leaves that overlay as it was, which the steps below can still apply;
+    # stopping here would leave the links and secrets stale until someone read this log.
+    $overlayPullFailed = $false
     foreach ($overlayRepo in (Get-OverlayRepoRoots -Overlays $overlays)) {
         $overlayPull = Invoke-Native git -C $overlayRepo pull --ff-only
         if (-not $overlayPull.Ok) {
             Write-Log "git pull failed in $overlayRepo`: $($overlayPull.Output)"
-            exit 1
+            $overlayPullFailed = $true
+            continue
         }
         Write-Log "pulled $overlayRepo"
     }
@@ -153,10 +157,15 @@ try {
     } else {
         Write-Log "deploy-secrets.ps1 skipped (no ai/secrets/machine.local.psd1)"
     }
+
+    if ($overlayPullFailed) {
+        Write-Log "sync finished, but an overlay repo could not be pulled (above)"
+        exit 1
+    }
 }
 catch {
     # Anything not foreseen above would otherwise end the run with nothing in sync.log.
-    Write-Log "sync failed: $($_.Exception.Message)"
+    Write-Log "sync failed at $($_.InvocationInfo.ScriptName):$($_.InvocationInfo.ScriptLineNumber): $($_.Exception.Message)"
     exit 1
 }
 finally {
