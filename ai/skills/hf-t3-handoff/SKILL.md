@@ -11,6 +11,20 @@ A handoff, then a new T3 Code thread that picks it up, then this thread archived
 
 Threads of a rig work are titled `RIG - [KEY] Short description`, and each handoff counts up: `… Short description 1`, then `… 2`. A thread whose title is not in that form yet is renamed to it before it is archived.
 
+## What it needs
+
+- **rig**, set up, with its `rig-handoff` skill linked into `~/.claude/skills`.
+- **T3 Code**, installed and running, with this skill run from a Claude thread in it.
+- **Node 22.13 or later**, which can read T3's database to find the current thread.
+
+## 0. Check the setup
+
+```bash
+node ~/.claude/skills/hf-t3-handoff/t3.mjs check
+```
+
+It checks each requirement and prints `ok` or `FAIL`. Every failure comes with the command or step that fixes it. If any line fails, show the user the output as it is, offer to run the fixes that are commands, and stop: nothing has been committed or written yet. Do not start the handoff with a requirement missing, because a handoff that cannot open its new thread leaves the user to paste the prompt by hand.
+
 ## 1. Write the handoff
 
 Follow the `rig-handoff` skill: read `~/.claude/skills/rig-handoff/SKILL.md` and do all of it, with this skill's arguments as the next session's focus. It covers both cases, inside a rig work and outside one, and it stops for the user where it says to. If it stopped, stop here too.
@@ -30,9 +44,9 @@ node ~/.claude/skills/hf-t3-handoff/t3.mjs continue --prompt-file <file> --key <
 
 When the thread's title is already standard, the script keeps its key and description and ignores these two. Outside a rig work, leave both out: the title then counts up as it is, so "Foo" becomes "Foo 2".
 
-The dry run names the thread it would start, any rename, and the thread it would archive. If either looks wrong, stop and tell the user. If the dry run is right, run the same command without `--dry-run`. This is the last tool call. Once the old thread is archived its session may stop, so anything you run after it can be cut off partway.
+The dry run names the thread it would start, any rename, and the thread it would archive. If any of it looks wrong, stop and tell the user. If the dry run is right, run the same command without `--dry-run`. This is the last tool call. Once the old thread is archived its session may stop, so anything you run after it can be cut off partway.
 
-The script finds this thread through `CLAUDE_CODE_SESSION_ID`. If it says it cannot, ask the user for the thread id and pass `--thread <id>`.
+If the script fails, it prints the problem and its fix the same way `check` does.
 
 ## 3. Report
 
