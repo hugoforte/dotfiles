@@ -10,6 +10,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "output.ps1")
+. (Join-Path $PSScriptRoot "native.ps1")
 
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $logDir = Join-Path $env:LOCALAPPDATA "dotfiles"
@@ -61,9 +62,9 @@ try {
     }
 
     $before = git rev-parse HEAD
-    $pullOutput = git pull --ff-only 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) {
-        Write-Log "git pull failed: $($pullOutput.Trim())"
+    $pull = Invoke-Native git pull --ff-only
+    if (-not $pull.Ok) {
+        Write-Log "git pull failed: $($pull.Output)"
         exit 1
     }
     $after = git rev-parse HEAD
@@ -80,9 +81,9 @@ try {
     }
 
     # install.sh colours its output; the escape sequences are noise in a log file.
-    $installOutput = Remove-AnsiEscape (& $sh "$repoRoot/ai/install.sh" 2>&1 | Out-String)
-    if ($LASTEXITCODE -ne 0) {
-        Write-Log "ai/install.sh failed:`n$($installOutput.Trim())"
+    $install = Invoke-Native $sh "$repoRoot/ai/install.sh"
+    if (-not $install.Ok) {
+        Write-Log "ai/install.sh failed:`n$(Remove-AnsiEscape $install.Output)"
         exit 1
     }
     Write-Log "ai/install.sh ok"
@@ -108,9 +109,9 @@ try {
         exit 1
     }
     foreach ($overlayRepo in (Get-OverlayRepoRoots -Overlays $overlays)) {
-        $overlayPull = git -C $overlayRepo pull --ff-only 2>&1 | Out-String
-        if ($LASTEXITCODE -ne 0) {
-            Write-Log "git pull failed in $overlayRepo`: $($overlayPull.Trim())"
+        $overlayPull = Invoke-Native git -C $overlayRepo pull --ff-only
+        if (-not $overlayPull.Ok) {
+            Write-Log "git pull failed in $overlayRepo`: $($overlayPull.Output)"
             exit 1
         }
         Write-Log "pulled $overlayRepo"
@@ -152,6 +153,11 @@ try {
     } else {
         Write-Log "deploy-secrets.ps1 skipped (no ai/secrets/machine.local.psd1)"
     }
+}
+catch {
+    # Anything not foreseen above would otherwise end the run with nothing in sync.log.
+    Write-Log "sync failed: $($_.Exception.Message)"
+    exit 1
 }
 finally {
     Pop-Location

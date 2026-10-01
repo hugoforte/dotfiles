@@ -14,6 +14,7 @@ Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in tu
 - `output.ps1`: the reporting vocabulary and the result object the scripts return
 - `managed-link.ps1`: the one implementation of "point this path at that file in the repo" — `Set-ManagedLink`, `Test-ManagedLink`, `Remove-ManagedLink`
 - `overlays.ps1`: reads the overlays a machine lists in `ai/secrets/machine.local.psd1` and applies their rules: merged skill registries, one source for `aws/config`, the contents of `~/.gitconfig-overlays`
+- `native.ps1`: `Invoke-Native`, which runs a native command and judges it by its exit code, because Windows PowerShell 5.1 under `$ErrorActionPreference = "Stop"` turns any line it writes to stderr - git's progress, say - into a terminating error
 - `tools.psd1`: the tools and programs a machine needs, declared
 - `install-tools.ps1`: installs what `tools.psd1` declares (`-Check` reports only)
 - `markdownlint.jsonc`: default markdownlint rules, used by `md-lint` when a repo has none of its own

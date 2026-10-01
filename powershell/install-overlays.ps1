@@ -19,23 +19,16 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "output.ps1")
 . (Join-Path $PSScriptRoot "overlays.ps1")
+. (Join-Path $PSScriptRoot "native.ps1")
 
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $localPath = Join-Path $repoRoot "ai\secrets\machine.local.psd1"
 $result = New-ScriptResult -Name "install-overlays.ps1"
 
-# Native git writes progress to stderr, which PowerShell 5.1 turns into a terminating error
-# under 'Stop'; run it here and judge it by its exit code.
-function Invoke-Git {
-    $ErrorActionPreference = "Continue"
-    $output = & git @args 2>&1 | Out-String
-    return [pscustomobject]@{ Ok = ($LASTEXITCODE -eq 0); Output = $output.Trim() }
-}
-
 # --- This checkout first --------------------------------------------------------------------------
 # An overlay holds what this repo used to; the check below would fail against a stale checkout.
 
-$pull = Invoke-Git -C $repoRoot pull --ff-only
+$pull = Invoke-Native git -C $repoRoot pull --ff-only
 if (-not $pull.Ok) {
     Fail "git pull in $repoRoot failed: $($pull.Output)"
     Exit-WithResult $result 1
@@ -50,7 +43,7 @@ if (-not $Path) { $Path = Join-Path (Split-Path $repoRoot -Parent) $name }
 $Path = [IO.Path]::GetFullPath($Path)
 
 if (Test-Path -LiteralPath (Join-Path $Path ".git")) {
-    $overlayPull = Invoke-Git -C $Path pull --ff-only
+    $overlayPull = Invoke-Native git -C $Path pull --ff-only
     if (-not $overlayPull.Ok) {
         Fail "git pull in $Path failed: $($overlayPull.Output)"
         Exit-WithResult $result 1
@@ -60,7 +53,7 @@ if (Test-Path -LiteralPath (Join-Path $Path ".git")) {
     Fail "$Path exists and is not a git checkout; pass -Path to clone somewhere else"
     Exit-WithResult $result 1
 } else {
-    $clone = Invoke-Git clone $url $Path
+    $clone = Invoke-Native git clone $url $Path
     if (-not $clone.Ok) {
         Fail "git clone $url failed: $($clone.Output)"
         Exit-WithResult $result 1

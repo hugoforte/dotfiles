@@ -38,6 +38,7 @@ testable yet:
 | `powershell/git.ps1` | the merge verdict is a function of two refs, and `-Yes` opens the delete | #21 |
 | `ai/install.sh`'s `link` / `unlink_if_link` / `check_link` | the same contract in sh, extracted to a fixture rather than run | #6 |
 | `ai/skills/hf-t3-handoff/t3.mjs`'s `handoffTitles` | exported, and the script only acts when run directly | #14 |
+| `powershell/native.ps1` | the command is an argument, and the verdict is the exit code | #PR |
 
 **Everything else is untestable on purpose, not by oversight.** `setup.ps1`, `sync.ps1`,
 `install-sync-task.ps1`, and `install-tools.ps1` / `deploy-secrets.ps1` without `-Check` read
