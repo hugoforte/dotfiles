@@ -12,11 +12,12 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 module="$REPO_ROOT/ai/skills/hf-t3-handoff/t3.mjs"
 
 next_title() {
-    T3_MODULE="$module" node --input-type=module -e "
+    # Both go through the environment: with no argv[1] the module only exports.
+    T3_MODULE="$module" T3_TITLE="$1" node --input-type=module -e "
         import { pathToFileURL } from 'node:url';
         const { nextTitle } = await import(pathToFileURL(process.env.T3_MODULE).href);
-        console.log(nextTitle(process.argv[1]));
-    " "$1"
+        console.log(nextTitle(process.env.T3_TITLE));
+    "
 }
 
 assert_eq "an unnumbered title gains a 2" "RIG - Automate Handoff 2" "$(next_title 'RIG - Automate Handoff')"

@@ -11,10 +11,10 @@
 
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const T3_HOME = process.env.T3CODE_HOME ?? join(homedir(), '.t3');
 const TURN_START_TIMEOUT_MS = 60_000;
@@ -159,7 +159,8 @@ async function continueThread(flags) {
     await call('POST', '/api/orchestration/dispatch', { type: 'thread.archive', commandId: randomUUID(), threadId: currentId });
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Skills are installed as symlinks, so compare real paths: argv[1] is the link.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
     const { command, flags } = parseArgs(process.argv.slice(2));
     if (command !== 'continue') fail('usage: t3.mjs continue --prompt-file <path> [--thread <id>] [--dry-run]');
     await continueThread(flags);
