@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-// Continues the current T3 Code thread in a new one: creates "<title> N+1" in the
-// same project, branch and model, sends it the prompt, waits for its turn to
-// start, then archives the current thread.
+// Continues the current T3 Code thread in a new one: creates the next thread in
+// the same project, branch and model, sends it the prompt, waits for its turn to
+// start, then archives the current thread (renamed first when it was not yet
+// standard; see handoffTitles).
 //
-//   node t3.mjs continue --prompt-file <path> [--thread <id>] [--dry-run]
+//   node t3.mjs continue --prompt-file <path> [--key <key> --description <text>]
+//                        [--thread <id>] [--dry-run]
 //
 // It drives the local T3 Code server's HTTP API, which is what T3's own web
 // client uses. That API is internal to an alpha app, so every call checks its
@@ -19,10 +21,28 @@ import { fileURLToPath } from 'node:url';
 const T3_HOME = process.env.T3CODE_HOME ?? join(homedir(), '.t3');
 const TURN_START_TIMEOUT_MS = 60_000;
 
-/** "Foo" becomes "Foo 2", and "Foo 2" becomes "Foo 3". */
-export function nextTitle(title) {
-    const numbered = /^(.*\S)\s+(\d+)$/.exec(title.trim());
-    return numbered ? `${numbered[1]} ${Number(numbered[2]) + 1}` : `${title.trim()} 2`;
+const STANDARD_TITLE = /^RIG - \[([^\]]+)\] (.*?\S)(?: (\d+))?$/;
+
+/**
+ * The titles a handoff gives the current thread and the next one. A standard
+ * title, "RIG - [KEY] Description" with an optional count, counts up and stays
+ * as it is: "… Description" continues as "… Description 1", then "… 2". Any
+ * other title is renamed to the standard form when a work is given, and the
+ * next thread is "… 1"; with no work, "Foo" continues as "Foo 2".
+ */
+export function handoffTitles(currentTitle, work) {
+    const title = currentTitle.trim();
+    const standard = STANDARD_TITLE.exec(title);
+    if (standard) {
+        const [, key, description, count] = standard;
+        return { next: `RIG - [${key}] ${description} ${count ? Number(count) + 1 : 1}` };
+    }
+    if (work) {
+        const rename = `RIG - [${work.key}] ${work.description}`;
+        return { rename, next: `${rename} 1` };
+    }
+    const numbered = /^(.*\S)\s+(\d+)$/.exec(title);
+    return { next: numbered ? `${numbered[1]} ${Number(numbered[2]) + 1}` : `${title} 2` };
 }
 
 function fail(message) {
@@ -38,8 +58,11 @@ function parseArgs(argv) {
         if (arg === '--dry-run') flags.dryRun = true;
         else if (arg === '--prompt-file') flags.promptFile = rest[++i];
         else if (arg === '--thread') flags.thread = rest[++i];
+        else if (arg === '--key') flags.key = rest[++i]?.trim();
+        else if (arg === '--description') flags.description = rest[++i]?.trim();
         else fail(`unknown argument ${arg}`);
     }
+    if (!flags.key !== !flags.description) fail('--key and --description go together');
     return { command, flags };
 }
 
@@ -116,7 +139,8 @@ async function continueThread(flags) {
     if (current.archivedAt) fail(`thread "${current.title}" is already archived`);
 
     const newId = randomUUID();
-    const title = nextTitle(current.title);
+    const { rename, next: title } = handoffTitles(current.title, flags.key && { key: flags.key, description: flags.description });
+    const archivedTitle = rename ?? current.title;
     const createdAt = new Date().toISOString();
     const create = {
         type: 'thread.create',
@@ -142,7 +166,8 @@ async function continueThread(flags) {
     };
 
     if (flags.dryRun) {
-        console.log(`Would start "${title}" (${current.branch ?? current.worktreePath ?? 'project checkout'}, ${current.modelSelection.model}) and archive "${current.title}".`);
+        const renaming = rename ? `rename "${current.title}" to "${rename}", ` : '';
+        console.log(`Would start "${title}" (${current.branch ?? current.worktreePath ?? 'project checkout'}, ${current.modelSelection.model}), ${renaming}and archive "${archivedTitle}".`);
         return;
     }
 
@@ -155,13 +180,16 @@ async function continueThread(flags) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
-    console.log(`Started "${title}" (${newId}). Archiving "${current.title}".`);
+    if (rename) {
+        await call('POST', '/api/orchestration/dispatch', { type: 'thread.meta.update', commandId: randomUUID(), threadId: currentId, title: rename });
+    }
+    console.log(`Started "${title}" (${newId}). Archiving "${archivedTitle}".`);
     await call('POST', '/api/orchestration/dispatch', { type: 'thread.archive', commandId: randomUUID(), threadId: currentId });
 }
 
 // Skills are installed as symlinks, so compare real paths: argv[1] is the link.
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
     const { command, flags } = parseArgs(process.argv.slice(2));
-    if (command !== 'continue') fail('usage: t3.mjs continue --prompt-file <path> [--thread <id>] [--dry-run]');
+    if (command !== 'continue') fail('usage: t3.mjs continue --prompt-file <path> [--key <key> --description <text>] [--thread <id>] [--dry-run]');
     await continueThread(flags);
 }
