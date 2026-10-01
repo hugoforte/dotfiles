@@ -21,6 +21,7 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "output.ps1")
 . (Join-Path $PSScriptRoot "managed-link.ps1")
+. (Join-Path $PSScriptRoot "native.ps1")
 . (Join-Path $PSScriptRoot "overlays.ps1")
 
 $repoRoot = Split-Path $PSScriptRoot -Parent
@@ -72,8 +73,8 @@ foreach ($skill in $skills) {
 
         $tmp = "$decrypted.tmp"
         if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir | Out-Null }
-        & sops decrypt --output $tmp $encrypted 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $tmp)) {
+        $decrypt = Invoke-Native sops decrypt --output $tmp $encrypted
+        if (-not $decrypt.Ok -or -not (Test-Path $tmp)) {
             Remove-Item $tmp -ErrorAction SilentlyContinue
             Warn "$($skill.Id)/$file failed to decrypt (is this machine a recipient in .sops.yaml?)"
             continue

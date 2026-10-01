@@ -25,6 +25,8 @@
 # setup.ps1 still self-elevates, but for a different reason: it runs install-tools.ps1, and
 # winget installs at machine scope only when elevated. That is what the elevation earns.
 
+. (Join-Path $PSScriptRoot "native.ps1")
+
 $script:ManagedLinkBackupFormat = 'yyyyMMdd_HHmmss'
 
 # The target of a link, as one string. PowerShell 5.1 hands Target back as a collection for
@@ -99,9 +101,9 @@ function New-SymlinkViaMklink {
         [Parameter(Mandatory)][string]$Path,
         [Parameter(Mandatory)][string]$Source
     )
-    $out = cmd /c mklink "`"$Path`"" "`"$Source`"" 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $Path)) {
-        throw "mklink failed for $Path -> $Source (enable Developer Mode or run elevated): $($out.Trim())"
+    $mklink = Invoke-Native cmd /c mklink "`"$Path`"" "`"$Source`""
+    if (-not $mklink.Ok -or -not (Test-Path -LiteralPath $Path)) {
+        throw "mklink failed for $Path -> $Source (enable Developer Mode or run elevated): $($mklink.Output)"
     }
 }
 

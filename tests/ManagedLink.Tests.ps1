@@ -213,6 +213,18 @@ Describe 'Set-ManagedLink' {
     }
 }
 
+Describe 'New-SymlinkViaMklink' {
+    # mklink reports a refusal on stderr, which under 'Stop' used to throw first, so the throw
+    # that names the path and the remedy was never reached.
+    It 'names the path and the remedy when mklink refuses, even under Stop' {
+        $ErrorActionPreference = 'Stop'
+        $root = New-WorkDir
+        $source = New-SourceFile $root
+        $path = New-SourceFile $root -Name 'in-the-way.txt'
+        { New-SymlinkViaMklink -Path $path -Source $source } | Should -Throw "mklink failed for $path*"
+    }
+}
+
 Describe 'Test-ManagedLink' {
 
     BeforeEach { $work = New-WorkDir }
