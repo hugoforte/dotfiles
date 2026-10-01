@@ -14,11 +14,12 @@ Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in tu
 - `output.ps1`: the reporting vocabulary and the result object the scripts return
 - `managed-link.ps1`: the one implementation of "point this path at that file in the repo" — `Set-ManagedLink`, `Test-ManagedLink`, `Remove-ManagedLink`
 - `overlays.ps1`: reads the overlays a machine lists in `ai/secrets/machine.local.psd1` and applies their rules: merged skill registries, one source for `aws/config`, the contents of `~/.gitconfig-overlays`
+- `native.ps1`: `Invoke-Native`, which runs a native command and judges it by its exit code, because Windows PowerShell 5.1 under `$ErrorActionPreference = "Stop"` turns any line it writes to stderr — git's progress, say — into a terminating error
 - `tools.psd1`: the tools and programs a machine needs, declared
 - `install-tools.ps1`: installs what `tools.psd1` declares (`-Check` reports only)
 - `markdownlint.jsonc`: default markdownlint rules, used by `md-lint` when a repo has none of its own
 - `setup.ps1`: symlink/setup automation (`-Check` reports the managed links and changes nothing)
-- `sync.ps1`: `git pull --ff-only`, then `ai/install.sh`, then `install-tools.ps1` if `tools.psd1` changed, then each overlay repo pulled and what the overlays supply re-applied (`~/.gitconfig-overlays`, the `~/.aws/config` link, removal of links left dangling by files that moved out), then `deploy-secrets.ps1` if the machine has opted in; logs to `%LOCALAPPDATA%\dotfiles\sync.log`
+- `sync.ps1`: `git pull --ff-only`, then `ai/install.sh`, then `install-tools.ps1` if `tools.psd1` changed, then each overlay repo pulled and what the overlays supply re-applied (`~/.gitconfig-overlays`, the `~/.aws/config` link, removal of links left dangling by files that moved out), then `deploy-secrets.ps1` if the machine has opted in (an overlay repo that fails to pull is logged, the rest still runs, and the run exits 1); logs to `%LOCALAPPDATA%\dotfiles\sync.log`
 - `deploy-secrets.ps1`: decrypts `ai/secrets/` and symlinks the files into every checkout that has the skill (`-Check` for report only); see `ai/secrets/README.md`
 - `install-overlays.ps1`: puts this machine on an overlay repo (`-Repo owner/name`, optionally `-Only <overlay>`): clones or pulls it beside this checkout, lists its overlays in `ai/secrets/machine.local.psd1` after checking they do not clash with the repo, then runs `sync.ps1`
 - `install-sync-task.ps1`: registers the "Dotfiles Sync" scheduled task that runs `sync.ps1` at logon and every 4 hours (`-Uninstall` removes it)
