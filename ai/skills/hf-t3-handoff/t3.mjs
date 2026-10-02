@@ -130,7 +130,11 @@ function mintToken() {
             stdio: ['ignore', 'pipe', 'pipe'],
         });
     } catch (error) {
-        throw new Problem(`T3's auth session issue failed: ${String(error.stderr || error.message).trim().slice(0, 300)}`, fix);
+        // error.message opens with the long command line, so prefer what the command said; when it never
+        // started, it said nothing and error.message is all there is.
+        const exit = error.status ?? error.signal ?? error.code;
+        const said = [error.stderr, error.stdout].map((text) => String(text ?? '').trim()).filter(Boolean).join('\n') || error.message;
+        throw new Problem(`T3's auth session issue failed (exit ${exit}): ${said.slice(0, 500)}`, fix);
     }
     const token = out.includes('{') ? JSON.parse(out.slice(out.indexOf('{'))).token : undefined;
     if (!token) throw new Problem('T3\'s auth session issue printed no token', fix);
