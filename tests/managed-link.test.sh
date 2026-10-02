@@ -6,6 +6,8 @@
 # file at a managed path is backed up and then linked, a symlink is replaced outright, and a
 # check reports without touching anything. powershell/managed-link.ps1 is the other half, and
 # tests/ManagedLink.Tests.ps1 covers it; the assertions here are deliberately the same shape.
+# One difference: unlink_managed removes only a link to the source it is given, where
+# Remove-ManagedLink removes any symlink at the path.
 #
 # ai/install.sh is a script, not a library - sourcing it would install into ~/.claude. The
 # link primitives are sed'd out into a fixture and sourced from there instead. The extraction

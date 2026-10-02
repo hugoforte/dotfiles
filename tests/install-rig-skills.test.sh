@@ -78,9 +78,24 @@ printf -- '---\nname: rig\n---\n' > "$rig/skills/rig/SKILL.md"
 rigs
 assert_eq "and links it again once rig ships it again" "y" "$(is_link "$home/.claude/skills/rig")"
 
+# rig drops a skill between the last install and the teardown.
+mkdir -p "$rig/skills/rig-dropped"
+printf -- '---\nname: rig-dropped\n---\n' > "$rig/skills/rig-dropped/SKILL.md"
+rigs
+rm -rf "$rig/skills/rig-dropped"
+
 rigs --uninstall
 assert_eq "--uninstall removes rig's links" "n" "$(is_link "$home/.claude/skills/rig")"
+assert_eq "and the stale link of a skill rig dropped" "n" "$(is_link "$home/.claude/skills/rig-dropped")"
 assert_eq "and not this repo's" "y" "$(is_link "$home/.claude/skills/own")"
+
+# RIG_ROOT written with a trailing separator names the same checkout.
+RIG_ROOT="$rig/"; export RIG_ROOT
+rigs
+assert_eq "a trailing separator on RIG_ROOT still gives the checkout's own path" "$rig/skills/rig" "$(readlink "$home/.claude/skills/rig")"
+rigs --uninstall
+assert_eq "and --uninstall removes the link it made" "n" "$(is_link "$home/.claude/skills/rig")"
+RIG_ROOT="$rig"; export RIG_ROOT
 
 # A machine with no rig at all: nothing linked, nothing drifted.
 RIG_ROOT="$work/nowhere"; export RIG_ROOT

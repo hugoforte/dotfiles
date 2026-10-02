@@ -82,26 +82,48 @@ assert_eq "--check is clean once the stale link is gone" "0" "$rc"
 # leaves a stale link that --uninstall must take too, and a link someone pointed elsewhere at a
 # name the repo ships is theirs, not ours.
 mkdir -p "$repo/ai/skills/dropped" "$repo/ai/skills/repointed" "$work/theirs"
-printf -- '---
-name: dropped
----
-' > "$repo/ai/skills/dropped/SKILL.md"
-printf -- '---
-name: repointed
----
-' > "$repo/ai/skills/repointed/SKILL.md"
+printf -- '---\nname: dropped\n---\n' > "$repo/ai/skills/dropped/SKILL.md"
+printf -- '---\nname: repointed\n---\n' > "$repo/ai/skills/repointed/SKILL.md"
 install
 rm -rf "$repo/ai/skills/dropped"
 rm -f "$home/.claude/skills/repointed"
 ln -s "$work/theirs" "$home/.claude/skills/repointed"
 
-sh "$repo/ai/install.sh" --uninstall --skills-only > /dev/null 2>&1
+out="$(sh "$repo/ai/install.sh" --uninstall --skills-only 2>&1)"
 if [ -L "$home/.claude/skills/kept" ]; then still=y; else still=n; fi
 assert_eq "--uninstall removes a link to a skill the repo ships" "n" "$still"
 if [ -L "$home/.claude/skills/dropped" ]; then still=y; else still=n; fi
 assert_eq "--uninstall removes the stale link of a skill the repo dropped" "n" "$still"
 assert_eq "--uninstall leaves a link someone pointed elsewhere at a managed name" "$work/theirs" "$(readlink "$home/.claude/skills/repointed")"
+case "$out" in *"skills/repointed -> $work/theirs"*"left in place"*) named=y ;; *) named=n ;; esac
+assert_eq "--uninstall says which link it left in place" "y" "$named"
 if [ -L "$home/.claude/skills/foreign" ]; then foreign=y; else foreign=n; fi
 assert_eq "--uninstall leaves a dangling link into somewhere else alone" "y" "$foreign"
+rm -f "$home/.claude/skills/repointed"
+
+# The same teardown rules hold for CLAUDE.md and the agents.
+printf 'guidelines\n' > "$repo/ai/CLAUDE.md"
+printf -- '---\nname: dropped-agent\n---\n' > "$repo/ai/agents/dropped-agent.md"
+sh "$repo/ai/install.sh" --claude-md-only > /dev/null 2>&1
+sh "$repo/ai/install.sh" --agents-only > /dev/null 2>&1
+rm -f "$repo/ai/agents/dropped-agent.md" "$home/.claude/CLAUDE.md"
+ln -s "$work/theirs" "$home/.claude/CLAUDE.md"
+sh "$repo/ai/install.sh" --uninstall --claude-md-only > /dev/null 2>&1
+sh "$repo/ai/install.sh" --uninstall --agents-only > /dev/null 2>&1
+assert_eq "--uninstall leaves a CLAUDE.md link someone pointed elsewhere" "$work/theirs" "$(readlink "$home/.claude/CLAUDE.md")"
+if [ -L "$home/.claude/agents/dropped-agent.md" ]; then still=y; else still=n; fi
+assert_eq "--uninstall removes the stale link of an agent the repo dropped" "n" "$still"
+rm -f "$home/.claude/CLAUDE.md"
+
+# NTFS does not care how a path is capitalised, and Git Bash keeps whatever capitals it was
+# given, so the run that links and the run that removes can spell the same checkout two ways.
+case "$(uname -s)" in
+    MINGW*|MSYS*)
+        install
+        sh "$work/REPO/ai/install.sh" --uninstall --skills-only > /dev/null 2>&1
+        if [ -L "$home/.claude/skills/kept" ]; then still=y; else still=n; fi
+        assert_eq "--uninstall removes a link made through a differently capitalised path" "n" "$still"
+        ;;
+esac
 
 assert_summary "install.sh orphan pruning"
