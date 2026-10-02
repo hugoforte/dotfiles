@@ -7,6 +7,7 @@
 #   aws/config                                    at most one source across repo and overlays
 #   git/gitconfig                                 a fragment; every overlay's is included
 #   ai/skills/<name>/                             skills, linked by ai/install.sh; a name ships from one place
+#   bruno/<collection>/                           Bruno collections, linked into ~/bruno by ai/install.sh; a name ships from one place
 
 # The overlay directories listed in a machine.local.psd1. No file, or no Overlays key, is no
 # overlays. A listed directory that does not exist is an error: silently skipping it would
