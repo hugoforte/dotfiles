@@ -90,9 +90,32 @@ out="$(check)"; rc=$?
 assert_eq "--check fails on a clash in another case" "1" "$rc"
 rm -rf "$second/bruno/Account-Takeover"
 
+# Teardown undoes only what install did: a collection the overlay dropped since the last install
+# leaves a stale link that --uninstall must take too, and a link someone pointed elsewhere at a
+# name an overlay ships is theirs, not ours.
+mkdir -p "$first/bruno/dropped" "$second/bruno/repointed" "$first/bruno/shared" "$work/theirs"
+printf '{\n  "type": "collection"\n}\n' > "$first/bruno/dropped/bruno.json"
+printf '{\n  "type": "collection"\n}\n' > "$second/bruno/repointed/bruno.json"
+printf '{\n  "type": "collection"\n}\n' > "$first/bruno/shared/bruno.json"
+bruno
+rm -rf "$first/bruno/dropped"
+rm -f "$home/bruno/repointed"
+ln -s "$work/theirs" "$home/bruno/repointed"
+
+# A name both overlays ship, linked from the first and then the order swapped: the link install
+# made now belongs to the refused entry, and is still install's to take.
+mkdir -p "$second/bruno/shared"
+printf '{\n  "type": "collection"\n}\n' > "$second/bruno/shared/bruno.json"
+printf "@{\n    Overlays = @(\n        '%s'\n        '%s'\n    )\n}\n" "$(win "$second")" "$(win "$first")" \
+    > "$repo/ai/secrets/machine.local.psd1"
+
 bruno --uninstall
 assert_eq "--uninstall removes the first overlay's links" "n" "$(is_link "$home/bruno/account-takeover")"
 assert_eq "and the second overlay's" "n" "$(is_link "$home/bruno/other")"
+assert_eq "and the stale link of a collection the overlay dropped" "n" "$(is_link "$home/bruno/dropped")"
+assert_eq "and a link install made to a name now refused as a clash" "n" "$(is_link "$home/bruno/shared")"
+assert_eq "but not a link someone pointed elsewhere at a managed name" "$work/theirs" "$(readlink "$home/bruno/repointed")"
+rm -f "$home/bruno/repointed"
 
 # A machine with no overlays: nothing linked, nothing drifted, and no empty ~/bruno created.
 rm -f "$repo/ai/secrets/machine.local.psd1"

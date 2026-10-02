@@ -1,11 +1,13 @@
 #!/bin/sh
 
-# Fixture suite for the managed link in ai/install.sh: link, unlink_if_link, check_link.
+# Fixture suite for the managed link in ai/install.sh: link, unlink_managed, check_link.
 #
 # These three hold the sh half of the cross-language policy in hugoforte/dotfiles#6: a real
 # file at a managed path is backed up and then linked, a symlink is replaced outright, and a
 # check reports without touching anything. powershell/managed-link.ps1 is the other half, and
 # tests/ManagedLink.Tests.ps1 covers it; the assertions here are deliberately the same shape.
+# One difference: unlink_managed removes only a link to the source it is given, where
+# Remove-ManagedLink removes any symlink at the path.
 #
 # ai/install.sh is a script, not a library - sourcing it would install into ~/.claude. The
 # link primitives are sed'd out into a fixture and sourced from there instead. The extraction
@@ -97,7 +99,7 @@ fixture="$work/link-primitives.sh"
     sed -n '/^# Link primitives$/,/^# Components:/p' "$REPO_ROOT/ai/install.sh"
 } > "$fixture"
 
-found="$(grep -cE '^(link|unlink_if_link|check_link)\(\) \{' "$fixture")"
+found="$(grep -cE '^(link|unlink_managed|check_link)\(\) \{' "$fixture")"
 assert_eq "the extraction found all three link primitives" "3" "$found"
 
 # Without its end marker sed would run to EOF and the fixture would carry the installer's
@@ -180,21 +182,27 @@ if link "$repo/CLAUDE.md" "$chained" > /dev/null; then took=y; else took=n; fi
 assert_eq "a caller's 'link … && success' branch runs after a backup" "y" "$took"
 
 # ---------------------------------------------------------------------------
-# unlink_if_link
+# unlink_managed
 # ---------------------------------------------------------------------------
 
-printf '=== unlink_if_link ===\n'
+printf '=== unlink_managed ===\n'
 
 doomed="$home/doomed.md"
 ln -s "$repo/CLAUDE.md" "$doomed"
-unlink_if_link "$doomed"
-assert_eq "unlink_if_link removes a symlink" "n" "$(exists_yn "$doomed")"
+unlink_managed "$repo/CLAUDE.md" "$doomed"
+assert_eq "unlink_managed removes a symlink to the source" "n" "$(exists_yn "$doomed")"
 assert_eq "... and leaves the source it pointed at" "from the repo" "$(cat "$repo/CLAUDE.md")"
+
+theirs="$home/theirs.md"
+ln -s "$repo/other.md" "$theirs"
+unlink_managed "$repo/CLAUDE.md" "$theirs"
+assert_eq "unlink_managed leaves a symlink someone pointed elsewhere" "$repo/other.md" "$(readlink "$theirs")"
+rm -f "$theirs"
 
 precious="$home/precious.md"
 printf 'not yours to delete\n' > "$precious"
-unlink_if_link "$precious"
-assert_eq "unlink_if_link leaves a real file where it is" "y" "$(exists_yn "$precious")"
+unlink_managed "$repo/CLAUDE.md" "$precious"
+assert_eq "unlink_managed leaves a real file where it is" "y" "$(exists_yn "$precious")"
 assert_eq "... with its content untouched" "not yours to delete" "$(cat "$precious")"
 
 # ---------------------------------------------------------------------------

@@ -36,7 +36,7 @@ testable yet:
 | `ai/secrets/check-encrypted.sh` | a pure function of a directory tree | #12 |
 | `powershell/managed-link.ps1` | three verbs, and both paths are arguments | #6 |
 | `powershell/git.ps1` | the merge verdict is a function of two refs, and `-Yes` opens the delete | #21 |
-| `ai/install.sh`'s `link` / `unlink_if_link` / `check_link` | the same contract in sh, extracted to a fixture rather than run | #6 |
+| `ai/install.sh`'s `link` / `unlink_managed` / `check_link` | the same contract in sh, extracted to a fixture rather than run | #6 |
 | `ai/skills/hf-t3-handoff/t3.mjs`'s `handoffTitles` | exported, and the script only acts when run directly | #14 |
 | `powershell/native.ps1` | the command is an argument, and the verdict is the exit code | #15 |
 

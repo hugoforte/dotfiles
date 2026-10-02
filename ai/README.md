@@ -23,7 +23,7 @@ From Git Bash on Windows, or any POSIX shell:
 ```sh
 ./ai/install.sh              # install everything
 ./ai/install.sh --check      # report drift, change nothing (exit 1 on drift)
-./ai/install.sh --uninstall  # remove the symlinks
+./ai/install.sh --uninstall  # remove the symlinks to what it links now, and dangling ones into its sources
 ./ai/install.sh --help       # component flags: --skills-only, --no-settings, ...
 ```
 

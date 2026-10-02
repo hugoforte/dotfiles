@@ -127,10 +127,32 @@ assert_eq "--check fails on a name rig already ships" "1" "$rc"
 rm -rf "$second/ai/skills/rigged"
 RIG_ROOT="$work/no-rig"; export RIG_ROOT
 
+# A link someone pointed elsewhere at a name an overlay ships is theirs, and a skill the overlay
+# dropped since the last install leaves a stale link teardown must take too.
+mkdir -p "$first/ai/skills/dropped" "$first/ai/skills/shared" "$work/theirs"
+printf -- '---\nname: dropped\n---\n' > "$first/ai/skills/dropped/SKILL.md"
+printf -- '---\nname: shared\n---\n' > "$first/ai/skills/shared/SKILL.md"
+overlays
+rm -rf "$first/ai/skills/dropped"
+rm -f "$home/.claude/skills/late"
+ln -s "$work/theirs" "$home/.claude/skills/late"
+
+# A name both overlays ship, linked from the first and then the order swapped: the link install
+# made now belongs to the refused entry, and is still install's to take.
+mkdir -p "$second/ai/skills/shared"
+printf -- '---\nname: shared\n---\n' > "$second/ai/skills/shared/SKILL.md"
+printf "@{\n    Overlays = @(\n        '%s'\n        '%s'\n    )\n}\n" "$(win "$second")" "$(win "$first")" \
+    > "$repo/ai/secrets/machine.local.psd1"
+
 overlays --uninstall
 assert_eq "--uninstall removes the first overlay's links" "n" "$(is_link "$home/.claude/skills/private-thing")"
 assert_eq "and the second overlay's" "n" "$(is_link "$home/.claude/skills/other")"
 assert_eq "and not this repo's" "y" "$(is_link "$home/.claude/skills/own")"
+assert_eq "and the stale link of a skill the overlay dropped" "n" "$(is_link "$home/.claude/skills/dropped")"
+assert_eq "and a link install made to a name now refused as a clash" "n" "$(is_link "$home/.claude/skills/shared")"
+rm -rf "$second/ai/skills/shared"
+assert_eq "but not a link someone pointed elsewhere at a managed name" "$work/theirs" "$(readlink "$home/.claude/skills/late")"
+rm -f "$home/.claude/skills/late"
 
 # An overlay listed with a trailing separator, which the PowerShell reader accepts.
 printf "@{\n    Overlays = @(\n        '%s'\n    )\n}\n" "$(win "$first")\\" > "$repo/ai/secrets/machine.local.psd1"

@@ -14,8 +14,11 @@ export ZSH="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # On Git Bash (MSYS), `ln -s` silently copies unless native symlinks are enabled.
 # Native symlinks need Windows Developer Mode or an elevated shell.
+# NTFS ignores case in a path, and Git Bash keeps whatever capitals a path was typed with, so
+# there two spellings of one checkout must compare equal.
+FOLD_PATH_CASE=false
 case "$(uname -s)" in
-    MINGW*|MSYS*) export MSYS="winsymlinks:nativestrict" ;;
+    MINGW*|MSYS*) export MSYS="winsymlinks:nativestrict"; FOLD_PATH_CASE=true ;;
 esac
 
 CLAUDE_DIR="$HOME/.claude"
@@ -52,6 +55,8 @@ rig_root() {
         case "$root" in
             [A-Za-z]:*) command -v cygpath > /dev/null 2>&1 && root="$(cygpath -u "$root")" ;;
         esac
+        # A trailing separator would never match what readlink reports; see overlay_dirs.
+        root="${root%/}"
         [ -f "$root/bin/rig.mjs" ] && { echo "$root"; return 0; }
         warning "RIG_ROOT=$RIG_ROOT has no bin/rig.mjs - no rig skills linked"
         return 1
@@ -108,10 +113,29 @@ link() {
     ln -s "$src" "$dst"
 }
 
-# unlink_if_link <dst>: remove only if it is a symlink
-unlink_if_link() {
-    if [ -L "$1" ]; then
-        rm -f "$1"
+# same_path <a> <b>: true when both spell the same path (without case on Windows)
+same_path() {
+    if [ "$FOLD_PATH_CASE" = "true" ]; then
+        [ "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')" ]
+    else
+        [ "$1" = "$2" ]
+    fi
+}
+
+# is_link_to <src> <dst>: true when dst is a symlink to src
+is_link_to() {
+    [ -L "$2" ] && same_path "$(readlink "$2")" "$1"
+}
+
+# unlink_managed <src> <dst>: remove dst only if it is a symlink to src. A link someone pointed
+# elsewhere at the same name is theirs: it is left in place, said, and the call returns 1.
+unlink_managed() {
+    [ -L "$2" ] || return 0
+    if is_link_to "$1" "$2"; then
+        rm -f "$2"
+    else
+        warning "$2 -> $(readlink "$2") (expected $1), left in place"
+        return 1
     fi
 }
 
@@ -180,7 +204,7 @@ install_claude_md() {
     link "$ZSH/ai/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md" && success "Linked CLAUDE.md"
 }
 uninstall_claude_md() {
-    unlink_if_link "$CLAUDE_DIR/CLAUDE.md" && success "Removed CLAUDE.md link"
+    unlink_managed "$ZSH/ai/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md" && success "Removed CLAUDE.md link"
 }
 check_claude_md() {
     check_link "$ZSH/ai/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
@@ -196,8 +220,9 @@ install_agents() {
 }
 uninstall_agents() {
     for agent in "$ZSH"/ai/agents/*.md; do
-        unlink_if_link "$CLAUDE_DIR/agents/$(basename "$agent")"
+        unlink_managed "$agent" "$CLAUDE_DIR/agents/$(basename "$agent")"
     done
+    prune_orphans "$CLAUDE_DIR/agents" "$ZSH/ai/agents"
     success "Removed agent links"
 }
 check_agents() {
@@ -222,8 +247,10 @@ uninstall_skills() {
     for target in $(skill_target_dirs); do
         [ -d "$target" ] || continue
         for skill in "$ZSH"/ai/skills/*/; do
-            unlink_if_link "$target/$(basename "$skill")"
+            skill="${skill%/}"
+            unlink_managed "$skill" "$target/$(basename "$skill")"
         done
+        prune_orphans "$target" "$ZSH/ai/skills"
     done
     success "Removed skill links"
 }
@@ -262,8 +289,9 @@ uninstall_rig_skills() {
         for skill in "$root"/skills/*/; do
             skill="${skill%/}"
             [ -d "$skill" ] || continue
-            unlink_if_link "$target/$(basename "$skill")"
+            unlink_managed "$skill" "$target/$(basename "$skill")"
         done
+        prune_orphans "$target" "$root/skills"
     done
     success "Removed rig skill links"
 }
@@ -364,11 +392,15 @@ uninstall_overlay_skills() {
     for target in $(skill_target_dirs); do
         [ -d "$target" ] || continue
         while IFS="$TAB" read -r skill clash; do
-            [ -n "$skill" ] && [ -z "$clash" ] || continue
-            unlink_if_link "$target/$(basename "$skill")"
+            [ -n "$skill" ] || continue
+            # A refused name may still hold a link install made before the overlays were
+            # reordered; it is ours only if it points here.
+            [ -z "$clash" ] || is_link_to "$skill" "$target/$(basename "$skill")" || continue
+            unlink_managed "$skill" "$target/$(basename "$skill")"
         done <<EOF
 $skills
 EOF
+        each_overlay_orphans "$target" prune_orphans
     done
     success "Removed overlay skill links"
 }
@@ -447,11 +479,15 @@ uninstall_bruno() {
     colls="$(overlay_bruno)"
     [ -d "$BRUNO_DIR" ] || { success "Removed overlay Bruno collection links"; return 0; }
     while IFS="$TAB" read -r coll clash; do
-        [ -n "$coll" ] && [ -z "$clash" ] || continue
-        unlink_if_link "$BRUNO_DIR/$(basename "$coll")"
+        [ -n "$coll" ] || continue
+        # A refused name may still hold a link install made before the overlays were reordered;
+        # it is ours only if it points here.
+        [ -z "$clash" ] || is_link_to "$coll" "$BRUNO_DIR/$(basename "$coll")" || continue
+        unlink_managed "$coll" "$BRUNO_DIR/$(basename "$coll")"
     done <<EOF
 $colls
 EOF
+    each_overlay_orphans "$BRUNO_DIR" prune_orphans bruno
     success "Removed overlay Bruno collection links"
 }
 check_bruno() {
@@ -524,7 +560,8 @@ show_help() {
     echo "Modes:"
     echo "  (default)              Install"
     echo "  --check                Report link drift without changing anything (exit 1 on drift)"
-    echo "  --uninstall            Remove the symlinks"
+    echo "  --uninstall            Remove the symlinks to what is listed now, and dangling ones into its"
+    echo "                         sources; a link pointed elsewhere is left in place and named"
     echo "  --settings-export      Copy the managed settings keys from ~/.claude/settings.json back into the repo"
     echo ""
     echo "Component flags:"
