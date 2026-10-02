@@ -1,7 +1,8 @@
 #!/bin/sh
 
 # Installs the AI tooling in this repo into the agents' home directories by symlink.
-# Components: CLAUDE.md, agents, skills, rig skills, overlay skills, settings. See --help.
+# Components: CLAUDE.md, agents, skills, rig skills, overlay skills, Bruno collections, settings.
+# See --help.
 
 # Derive repo root from script location (works regardless of where repo is cloned)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -20,6 +21,11 @@ esac
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 SETTINGS_FRAGMENT="$ZSH/ai/claude/settings.json"
+
+# Overlays ship Bruno collections too, under <overlay>/bruno/<collection>/, each linked into
+# this one home so Bruno opens them all from one place. No collection lives in this public repo;
+# the content is private, the mechanism is not.
+BRUNO_DIR="$HOME/bruno"
 
 # Skill directories: every ai/skills/<name>/ is linked into each of these.
 # ~/.claude/skills is always used; the others only when their tool directory exists.
@@ -324,12 +330,15 @@ EOF
     [ "$clashed" = "0" ]
 }
 
-# each_overlay_orphans <dir> <prune_orphans|check_orphans>: run it against every overlay.
+# each_overlay_orphans <dir> <prune_orphans|check_orphans> [subpath]: run it against every
+# overlay. <subpath> is the directory within each overlay that sources the links, ai/skills by
+# default; the Bruno component passes bruno.
 each_overlay_orphans() {
+    subpath="${3:-ai/skills}"
     overlays="$(overlay_dirs)"
     [ -n "$overlays" ] || return 0
     while IFS= read -r overlay; do
-        "$2" "$1" "$overlay/ai/skills"
+        "$2" "$1" "$overlay/$subpath"
     done <<EOF
 $overlays
 EOF
@@ -377,6 +386,86 @@ EOF
     done
 }
 
+# Overlays ship Bruno collections under <overlay>/bruno/<collection>/, linked into ~/bruno so
+# the Bruno app opens every overlay's collections from one home. The link is named after the
+# collection, so a name shipped from two overlays would have one silently replace the other; the
+# earlier overlay in the list keeps the name, the later is refused. Install warns and carries on,
+# so one clash cannot stop the sync that runs it; --check fails on it. No collection lives in this
+# public repo, so there is nothing of this repo's own to link beside them.
+
+# overlay_bruno: one line per overlay Bruno collection, in overlay order: its directory, a tab,
+# and the directory of an earlier overlay already shipping that name, or nothing when the name is
+# free. Names compare without case, as they do on the NTFS the links live on.
+overlay_bruno() {
+    seen=""
+    overlay_dirs | while IFS= read -r overlay; do
+        for coll in "$overlay"/bruno/*/; do
+            coll="${coll%/}"
+            [ -d "$coll" ] || continue
+            name="$(basename "$coll")"
+            key="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
+            clash=""
+            # "/" cannot appear in a collection name, so it ends the key unambiguously.
+            case "$seen" in
+                *"$TAB$key/"*) clash="${seen#*"$TAB$key/"}"; clash="${clash%%"$TAB"*}" ;;
+            esac
+            [ -z "$clash" ] && seen="$seen$TAB$key/$coll$TAB"
+            printf '%s\t%s\n' "$coll" "$clash"
+        done
+    done
+}
+
+# report_overlay_bruno_clashes <overlay_bruno output>: warn about each refused collection; false
+# if any.
+report_overlay_bruno_clashes() {
+    clashed=0
+    while IFS="$TAB" read -r coll clash; do
+        [ -n "$clash" ] || continue
+        warning "$coll not linked: $clash already ships a Bruno collection with that name"
+        clashed=1
+    done <<EOF
+$1
+EOF
+    [ "$clashed" = "0" ]
+}
+
+install_bruno() {
+    colls="$(overlay_bruno)"
+    report_overlay_bruno_clashes "$colls" || :
+    [ -n "$colls" ] && mkdir -p "$BRUNO_DIR"
+    while IFS="$TAB" read -r coll clash; do
+        [ -n "$coll" ] && [ -z "$clash" ] || continue
+        link "$coll" "$BRUNO_DIR/$(basename "$coll")"
+    done <<EOF
+$colls
+EOF
+    each_overlay_orphans "$BRUNO_DIR" prune_orphans bruno
+    [ -n "$colls" ] && success "Linked overlay Bruno collections into $BRUNO_DIR"
+    return 0
+}
+uninstall_bruno() {
+    colls="$(overlay_bruno)"
+    [ -d "$BRUNO_DIR" ] || { success "Removed overlay Bruno collection links"; return 0; }
+    while IFS="$TAB" read -r coll clash; do
+        [ -n "$coll" ] && [ -z "$clash" ] || continue
+        unlink_if_link "$BRUNO_DIR/$(basename "$coll")"
+    done <<EOF
+$colls
+EOF
+    success "Removed overlay Bruno collection links"
+}
+check_bruno() {
+    colls="$(overlay_bruno)"
+    report_overlay_bruno_clashes "$colls" || CHECK_FAILED=1
+    while IFS="$TAB" read -r coll clash; do
+        [ -n "$coll" ] && [ -z "$clash" ] || continue
+        check_link "$coll" "$BRUNO_DIR/$(basename "$coll")"
+    done <<EOF
+$colls
+EOF
+    each_overlay_orphans "$BRUNO_DIR" check_orphans bruno
+}
+
 # Settings are merged, not linked: ~/.claude/settings.json also holds machine-local state.
 install_settings() {
     mkdir -p "$CLAUDE_DIR"
@@ -410,6 +499,7 @@ INSTALL_AGENTS=true
 INSTALL_SKILLS=true
 INSTALL_RIG_SKILLS=true
 INSTALL_OVERLAY_SKILLS=true
+INSTALL_BRUNO=true
 INSTALL_SETTINGS=true
 
 disable_all() {
@@ -418,6 +508,7 @@ disable_all() {
     INSTALL_SKILLS=false
     INSTALL_RIG_SKILLS=false
     INSTALL_OVERLAY_SKILLS=false
+    INSTALL_BRUNO=false
     INSTALL_SETTINGS=false
 }
 
@@ -427,7 +518,8 @@ show_help() {
     echo "Symlinks CLAUDE.md, agents and skills from this repo into ~/.claude (and skills"
     echo "into ~/.codex and ~/.copilot when present), links the skills the rig checkout"
     echo "ships and the skills each overlay in ai/secrets/machine.local.psd1 ships the same way,"
-    echo "and merges ai/claude/settings.json into ~/.claude/settings.json."
+    echo "links each overlay's Bruno collections (<overlay>/bruno/) into ~/bruno, and merges"
+    echo "ai/claude/settings.json into ~/.claude/settings.json."
     echo ""
     echo "Modes:"
     echo "  (default)              Install"
@@ -441,12 +533,14 @@ show_help() {
     echo "  --skills-only          Only skills"
     echo "  --rig-skills-only      Only the skills rig ships (RIG_ROOT, else D:/rig, C:/rig, ~/rig)"
     echo "  --overlay-skills-only  Only the skills overlays ship (<overlay>/ai/skills/)"
+    echo "  --bruno-only           Only the Bruno collections overlays ship (<overlay>/bruno/)"
     echo "  --settings-only        Only settings merge"
     echo "  --no-claude-md         Skip CLAUDE.md"
     echo "  --no-agents            Skip agents"
     echo "  --no-skills            Skip skills"
     echo "  --no-rig-skills        Skip the skills rig ships"
     echo "  --no-overlay-skills    Skip the skills overlays ship"
+    echo "  --no-bruno             Skip the Bruno collections overlays ship"
     echo "  --no-settings          Skip settings merge"
     echo "  -h, --help             Show this help"
     echo ""
@@ -463,12 +557,14 @@ while [ $# -gt 0 ]; do
         --skills-only)         disable_all; INSTALL_SKILLS=true ;;
         --rig-skills-only)     disable_all; INSTALL_RIG_SKILLS=true ;;
         --overlay-skills-only) disable_all; INSTALL_OVERLAY_SKILLS=true ;;
+        --bruno-only)          disable_all; INSTALL_BRUNO=true ;;
         --settings-only)       disable_all; INSTALL_SETTINGS=true ;;
         --no-claude-md)        INSTALL_CLAUDE_MD=false ;;
         --no-agents)           INSTALL_AGENTS=false ;;
         --no-skills)           INSTALL_SKILLS=false ;;
         --no-rig-skills)       INSTALL_RIG_SKILLS=false ;;
         --no-overlay-skills)   INSTALL_OVERLAY_SKILLS=false ;;
+        --no-bruno)            INSTALL_BRUNO=false ;;
         --no-settings)         INSTALL_SETTINGS=false ;;
         -h|--help)             show_help; exit 0 ;;
         *)                     echo "Unknown option: $1"; show_help; exit 1 ;;
@@ -496,6 +592,7 @@ esac
 [ "$INSTALL_SKILLS" = "true" ]    && ${MODE}_skills
 [ "$INSTALL_RIG_SKILLS" = "true" ] && ${MODE}_rig_skills
 [ "$INSTALL_OVERLAY_SKILLS" = "true" ] && ${MODE}_overlay_skills
+[ "$INSTALL_BRUNO" = "true" ]     && ${MODE}_bruno
 [ "$INSTALL_SETTINGS" = "true" ]  && ${MODE}_settings
 
 # Secrets under ai/secrets/, here and in every overlay, must never be committed in plaintext;

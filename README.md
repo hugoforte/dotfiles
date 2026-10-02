@@ -11,6 +11,7 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
 | Git identity | `git/` | `~/.gitconfig` (symlink) | `powershell/setup.ps1` |
 | Per-org git identities and other overlay git config | an overlay's `git/gitconfig` | included by `~/.gitconfig-overlays` (generated) | `powershell/setup.ps1`, `powershell/sync.ps1` |
 | Agent skills | `ai/skills/<name>/`, here or in an overlay | `~/.claude/skills`, `~/.codex/skills`, `~/.copilot/skills` (symlinks) | `ai/install.sh` |
+| Bruno API collections | an overlay's `bruno/<collection>/` | `~/bruno/<collection>` (symlinks) | `ai/install.sh` |
 | Claude Code global instructions | `ai/CLAUDE.md` | `~/.claude/CLAUDE.md` (symlink) | `ai/install.sh` |
 | Claude Code sub-agents | `ai/agents/*.md` | `~/.claude/agents/` (symlinks) | `ai/install.sh` |
 | Claude Code settings (model, plugins, allowlist) | `ai/claude/settings.json` | merged into `~/.claude/settings.json` | `ai/install.sh` |
@@ -66,6 +67,7 @@ What an overlay can supply, and how:
 
 - `ai/secrets/registry.psd1` and `ai/secrets/<skill>/`: merged with every other registry; a skill id may be registered only once.
 - `ai/skills/<name>/`: linked beside this repo's skills by `ai/install.sh`, for a skill whose text names something private; a skill name may be shipped from only one place.
+- `bruno/<collection>/`: linked into `~/bruno` by `ai/install.sh`, so Bruno opens every overlay's collections from one home; a collection name may be shipped from only one place.
 - `aws/config`: linked to `~/.aws/config`; only one source across this repo and all overlays.
 - `git/gitconfig`: included, in overlay order, by the generated `~/.gitconfig-overlays`.
 
