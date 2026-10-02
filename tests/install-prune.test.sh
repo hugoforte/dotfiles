@@ -78,4 +78,30 @@ assert_eq "a dangling link into somewhere else is left alone" "y" "$foreign"
 out="$(check)"; rc=$?
 assert_eq "--check is clean once the stale link is gone" "0" "$rc"
 
+# Teardown undoes only what install did. A skill dropped from the repo since the last install
+# leaves a stale link that --uninstall must take too, and a link someone pointed elsewhere at a
+# name the repo ships is theirs, not ours.
+mkdir -p "$repo/ai/skills/dropped" "$repo/ai/skills/repointed" "$work/theirs"
+printf -- '---
+name: dropped
+---
+' > "$repo/ai/skills/dropped/SKILL.md"
+printf -- '---
+name: repointed
+---
+' > "$repo/ai/skills/repointed/SKILL.md"
+install
+rm -rf "$repo/ai/skills/dropped"
+rm -f "$home/.claude/skills/repointed"
+ln -s "$work/theirs" "$home/.claude/skills/repointed"
+
+sh "$repo/ai/install.sh" --uninstall --skills-only > /dev/null 2>&1
+if [ -L "$home/.claude/skills/kept" ]; then still=y; else still=n; fi
+assert_eq "--uninstall removes a link to a skill the repo ships" "n" "$still"
+if [ -L "$home/.claude/skills/dropped" ]; then still=y; else still=n; fi
+assert_eq "--uninstall removes the stale link of a skill the repo dropped" "n" "$still"
+assert_eq "--uninstall leaves a link someone pointed elsewhere at a managed name" "$work/theirs" "$(readlink "$home/.claude/skills/repointed")"
+if [ -L "$home/.claude/skills/foreign" ]; then foreign=y; else foreign=n; fi
+assert_eq "--uninstall leaves a dangling link into somewhere else alone" "y" "$foreign"
+
 assert_summary "install.sh orphan pruning"

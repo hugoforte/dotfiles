@@ -108,10 +108,11 @@ link() {
     ln -s "$src" "$dst"
 }
 
-# unlink_if_link <dst>: remove only if it is a symlink
-unlink_if_link() {
-    if [ -L "$1" ]; then
-        rm -f "$1"
+# unlink_managed <src> <dst>: remove dst only if it is a symlink to src. A link someone pointed
+# elsewhere at the same name is theirs, the same rule check_link and the prune follow.
+unlink_managed() {
+    if [ -L "$2" ] && [ "$(readlink "$2")" = "$1" ]; then
+        rm -f "$2"
     fi
 }
 
@@ -180,7 +181,7 @@ install_claude_md() {
     link "$ZSH/ai/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md" && success "Linked CLAUDE.md"
 }
 uninstall_claude_md() {
-    unlink_if_link "$CLAUDE_DIR/CLAUDE.md" && success "Removed CLAUDE.md link"
+    unlink_managed "$ZSH/ai/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md" && success "Removed CLAUDE.md link"
 }
 check_claude_md() {
     check_link "$ZSH/ai/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
@@ -196,8 +197,9 @@ install_agents() {
 }
 uninstall_agents() {
     for agent in "$ZSH"/ai/agents/*.md; do
-        unlink_if_link "$CLAUDE_DIR/agents/$(basename "$agent")"
+        unlink_managed "$agent" "$CLAUDE_DIR/agents/$(basename "$agent")"
     done
+    prune_orphans "$CLAUDE_DIR/agents" "$ZSH/ai/agents"
     success "Removed agent links"
 }
 check_agents() {
@@ -222,8 +224,10 @@ uninstall_skills() {
     for target in $(skill_target_dirs); do
         [ -d "$target" ] || continue
         for skill in "$ZSH"/ai/skills/*/; do
-            unlink_if_link "$target/$(basename "$skill")"
+            skill="${skill%/}"
+            unlink_managed "$skill" "$target/$(basename "$skill")"
         done
+        prune_orphans "$target" "$ZSH/ai/skills"
     done
     success "Removed skill links"
 }
@@ -262,8 +266,9 @@ uninstall_rig_skills() {
         for skill in "$root"/skills/*/; do
             skill="${skill%/}"
             [ -d "$skill" ] || continue
-            unlink_if_link "$target/$(basename "$skill")"
+            unlink_managed "$skill" "$target/$(basename "$skill")"
         done
+        prune_orphans "$target" "$root/skills"
     done
     success "Removed rig skill links"
 }
@@ -365,10 +370,11 @@ uninstall_overlay_skills() {
         [ -d "$target" ] || continue
         while IFS="$TAB" read -r skill clash; do
             [ -n "$skill" ] && [ -z "$clash" ] || continue
-            unlink_if_link "$target/$(basename "$skill")"
+            unlink_managed "$skill" "$target/$(basename "$skill")"
         done <<EOF
 $skills
 EOF
+        each_overlay_orphans "$target" prune_orphans
     done
     success "Removed overlay skill links"
 }
@@ -448,10 +454,11 @@ uninstall_bruno() {
     [ -d "$BRUNO_DIR" ] || { success "Removed overlay Bruno collection links"; return 0; }
     while IFS="$TAB" read -r coll clash; do
         [ -n "$coll" ] && [ -z "$clash" ] || continue
-        unlink_if_link "$BRUNO_DIR/$(basename "$coll")"
+        unlink_managed "$coll" "$BRUNO_DIR/$(basename "$coll")"
     done <<EOF
 $colls
 EOF
+    each_overlay_orphans "$BRUNO_DIR" prune_orphans bruno
     success "Removed overlay Bruno collection links"
 }
 check_bruno() {
@@ -524,7 +531,7 @@ show_help() {
     echo "Modes:"
     echo "  (default)              Install"
     echo "  --check                Report link drift without changing anything (exit 1 on drift)"
-    echo "  --uninstall            Remove the symlinks"
+    echo "  --uninstall            Remove the symlinks this installs, and its stale ones; leave links pointed elsewhere"
     echo "  --settings-export      Copy the managed settings keys from ~/.claude/settings.json back into the repo"
     echo ""
     echo "Component flags:"
