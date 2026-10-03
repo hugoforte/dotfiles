@@ -2,7 +2,7 @@
 
 PowerShell profile, helper functions, and the setup script that symlinks them into place.
 
-Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in turn loads `aws.ps1`, `git.ps1`, `rig.ps1` and `markdown.ps1`. Run `list-functions` in a new shell to confirm. The other files below are run, or dot-sourced, by the scripts that need them — not by the profile.
+Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in turn loads `aws.ps1`, `git.ps1` and `rig.ps1`. Run `list-functions` in a new shell to confirm. The other files below are run, or dot-sourced, by the scripts that need them — not by the profile.
 
 ## Files
 
@@ -10,16 +10,16 @@ Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in tu
 - `aws.ps1`: AWS helper functions
 - `git.ps1`: Git helper functions
 - `rig.ps1`: rig (cross-repo work harness) launcher
-- `markdown.ps1`: `md-lint` wrapper around markdownlint-cli2
 - `output.ps1`: the reporting vocabulary and the result object the scripts return
 - `managed-link.ps1`: the one implementation of "point this path at that file in the repo" — `Set-ManagedLink`, `Test-ManagedLink`, `Remove-ManagedLink`
 - `overlays.ps1`: reads the overlays a machine lists in `ai/secrets/machine.local.psd1` and applies their rules: merged skill registries, one source for `aws/config`, the contents of `~/.gitconfig-overlays`
 - `native.ps1`: `Invoke-Native`, which runs a native command and judges it by its exit code, because Windows PowerShell 5.1 under `$ErrorActionPreference = "Stop"` turns any line it writes to stderr — git's progress, say — into a terminating error
 - `tools.psd1`: the tools and programs a machine needs, declared
 - `install-tools.ps1`: installs what `tools.psd1` declares (`-Check` reports only)
-- `markdownlint.jsonc`: default markdownlint rules, used by `md-lint` when a repo has none of its own
+- `markdownlint.jsonc`: default markdownlint rules, used by `bin/md-lint` when a repo has none of its own
+- `user-path.ps1`: `Add-UserPathEntry`, which puts the repo's `bin/` on the user PATH for `setup.ps1` and `sync.ps1`
 - `setup.ps1`: symlink/setup automation (`-Check` reports the managed links and changes nothing)
-- `sync.ps1`: `git pull --ff-only`, then `ai/install.sh`, then `install-tools.ps1` if `tools.psd1` changed, then each overlay repo pulled and what the overlays supply re-applied (`~/.gitconfig-overlays`, the `~/.aws/config` link, removal of links left dangling by files that moved out), then `deploy-secrets.ps1` if the machine has opted in (an overlay repo that fails to pull is logged, the rest still runs, and the run exits 1); logs to `%LOCALAPPDATA%\dotfiles\sync.log`
+- `sync.ps1`: `git pull --ff-only`, then `ai/install.sh`, then `bin/` on the user PATH, then `install-tools.ps1` if `tools.psd1` changed, then each overlay repo pulled and what the overlays supply re-applied (`~/.gitconfig-overlays`, the `~/.aws/config` link, removal of links left dangling by files that moved out), then `deploy-secrets.ps1` if the machine has opted in (an overlay repo that fails to pull is logged, the rest still runs, and the run exits 1); logs to `%LOCALAPPDATA%\dotfiles\sync.log`
 - `deploy-secrets.ps1`: decrypts `ai/secrets/` and symlinks the files into every checkout that has the skill (`-Check` for report only); see `ai/secrets/README.md`
 - `install-overlays.ps1`: puts this machine on an overlay repo (`-Repo owner/name`, optionally `-Only <overlay>`): clones or pulls it beside this checkout, lists its overlays in `ai/secrets/machine.local.psd1` after checking they do not clash with the repo, then runs `sync.ps1`
 - `install-sync-task.ps1`: registers the "Dotfiles Sync" scheduled task that runs `sync.ps1` at logon and every 4 hours (`-Uninstall` removes it)
@@ -37,10 +37,11 @@ What it does, idempotently:
 - Uses the checkout it is run from; if run from elsewhere, clones or updates `%USERPROFILE%\dotfiles`
 - Links `$PROFILE`, the all-hosts profile, `~/.gitconfig` and, when this repo or one overlay has an `aws/config`, `%USERPROFILE%\.aws\config`, backing up any regular file it displaces
 - Writes `~/.gitconfig-overlays`, which includes each overlay's `git/gitconfig`
+- Puts the repo's `bin/` on the user PATH, so `md-lint` runs in every shell, agents' included
 - Installs every tool declared in `tools.psd1`, including those the scheduled task is not allowed to install unwatched
 - Offers to reload the profile
 
-`-Check` needs no elevation and does nothing else in the list above: it reports each managed link and exits non-zero if any would change.
+`-Check` needs no elevation and does nothing else in the list above: it reports each managed link and whether `bin/` is on the user PATH, and exits non-zero if anything would change.
 
 The elevation is **not** for the symlinks. `managed-link.ps1` uses `cmd /c mklink`, which honours Developer Mode and works unelevated — Windows PowerShell 5.1's `New-Item -ItemType SymbolicLink` does not, whatever Developer Mode says, which is why this script used to need admin. What the elevation earns now is `install-tools.ps1`: winget installs machine-wide only when elevated, and a deliberate, watched `setup.ps1` run is where that is wanted. `sync.ps1` runs the same installer unelevated and gets `--scope user`.
 
@@ -61,7 +62,6 @@ The elevation is **not** for the symlinks. `managed-link.ps1` uses `cmd /c mklin
 - `rig-goto-root`
 - `dotfiles-sync` (runs `sync.ps1` in the foreground)
 - `dotfiles-tools [-Check]` (runs `install-tools.ps1`; `-Check` reports what is missing and installs nothing)
-- `md-lint [args]` (markdownlint-cli2 with the dotfiles default rules, unless the current directory ships its own config)
 
 ## Reporting
 

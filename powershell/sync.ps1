@@ -88,6 +88,11 @@ try {
     }
     Write-Log "ai/install.sh ok"
 
+    # bin/ on the user PATH, so a machine set up before bin/ existed picks it up without setup.ps1.
+    . (Join-Path $PSScriptRoot "user-path.ps1")
+    $binPath = Join-Path $repoRoot "bin"
+    if ((Add-UserPathEntry -Directory $binPath) -eq 'Added') { Write-Log "added $binPath to the user PATH" }
+
     # Tools: only when tools.psd1 has changed since the last successful run, and only the
     # entries marked safe to install unwatched - this task must never raise a UAC prompt.
     $toolsResult = & (Join-Path $PSScriptRoot "install-tools.ps1") -IfChanged -Unattended -Quiet -PassThru

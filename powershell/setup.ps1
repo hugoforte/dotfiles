@@ -12,6 +12,7 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "managed-link.ps1")
 . (Join-Path $PSScriptRoot "overlays.ps1")
+. (Join-Path $PSScriptRoot "user-path.ps1")
 
 # The overlays this machine lists; see overlays.ps1.
 function Get-SetupOverlays {
@@ -75,12 +76,20 @@ if ($Check) {
         Write-Host "[!!] ~/.gitconfig-overlays: missing or out of date" -ForegroundColor Yellow
     }
 
+    $binPath = Join-Path $repoPath "bin"
+    if ((Add-UserPathEntry -Directory $binPath -Check) -eq 'AlreadyPresent') {
+        Write-Host "[OK] $binPath on the user PATH" -ForegroundColor Green
+    } else {
+        $wrong++
+        Write-Host "[!!] $binPath is not on the user PATH" -ForegroundColor Yellow
+    }
+
     Write-Host ""
     if ($wrong -gt 0) {
-        Write-Host "$wrong link(s) would change. Run setup.ps1 to apply." -ForegroundColor Yellow
+        Write-Host "$wrong item(s) would change. Run setup.ps1 to apply." -ForegroundColor Yellow
         exit 1
     }
-    Write-Host "Every managed link is in place." -ForegroundColor Green
+    Write-Host "Every managed link is in place, and bin/ is on the user PATH." -ForegroundColor Green
     exit 0
 }
 
@@ -192,6 +201,13 @@ if ($linkedAws) {
 switch (Update-GitOverlayInclude -Overlays (Get-SetupOverlays -RepoPath $dotfilesPath)) {
     'AlreadyCorrect' { Write-Host "[OK] ~/.gitconfig-overlays already current" -ForegroundColor Green }
     'Written'        { Write-Host "[OK] ~/.gitconfig-overlays written" -ForegroundColor Green }
+}
+
+# bin/ holds the commands agents need too, so it goes on PATH rather than in the profile.
+$binPath = Join-Path $dotfilesPath "bin"
+switch (Add-UserPathEntry -Directory $binPath) {
+    'AlreadyPresent' { Write-Host "[OK] $binPath already on the user PATH" -ForegroundColor Green }
+    'Added'          { Write-Host "[OK] $binPath added to the user PATH; open a new shell to pick it up" -ForegroundColor Green }
 }
 Write-Host ""
 # Tools: this script is already elevated, so the whole manifest installs here, including the
