@@ -2,13 +2,16 @@
 // Continues the current T3 Code thread in a new one: creates the next thread in
 // the same project, branch and model, sends it the prompt, waits for its turn to
 // start, then archives the current thread (renamed first when it was not yet
-// standard; see handoffTitles).
+// standard; see handoffTitles). With --to, the next thread starts on another
+// computer's T3 Code server instead, in its project for the same repository.
 //
-//   node t3.mjs check
-//   node t3.mjs continue --prompt-file <path> [--key <key> --description <text>]
-//                        [--thread <id>] [--dry-run]
+//   node t3.mjs check [--to <computer>]
+//   node t3.mjs continue --prompt-file <path> [--to <computer>]
+//                        [--key <key> --description <text>] [--thread <id>] [--dry-run]
+//   node t3.mjs token [--ttl <ttl>]
 //
 // `check` lists everything the handoff needs and how to fix what is missing.
+// `token` prints this computer's entry for another computer's COMPUTERS_FILE.
 //
 // It drives the local T3 Code server's HTTP API, which is what T3's own web
 // client uses. That API is internal to an alpha app, so every call checks its
@@ -17,15 +20,23 @@
 import { execFileSync, execSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, hostname } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const T3_HOME = process.env.T3CODE_HOME ?? join(homedir(), '.t3');
 const T3_EXE = process.env.T3_EXE ?? join(process.env.LOCALAPPDATA ?? '', 'Programs', 't3code', 'T3 Code (Alpha).exe');
 const RIG_HANDOFF_SKILL = join(homedir(), '.claude', 'skills', 'rig-handoff', 'SKILL.md');
+// The computers --to can name, each with the origin of its T3 Code server and a token for it:
+// { "<name>": { "origin": "http://<host>:3773", "token": "<token>" } }
+const COMPUTERS_FILE = join(homedir(), '.agent-secrets', 'hf-t3-handoff', 'computers.local.json');
 const TURN_START_TIMEOUT_MS = 60_000;
-const USAGE = 'usage: t3.mjs check\n       t3.mjs continue --prompt-file <path> [--key <key> --description <text>] [--thread <id>] [--dry-run]';
+const PROBE_TIMEOUT_MS = 10_000;
+const USAGE = [
+    'usage: t3.mjs check [--to <computer>]',
+    '       t3.mjs continue --prompt-file <path> [--to <computer>] [--key <key> --description <text>] [--thread <id>] [--dry-run]',
+    '       t3.mjs token [--ttl <ttl>]',
+].join('\n');
 
 const STANDARD_TITLE = /^RIG - \[([^\]]+)\] (.*?\S)(?: (\d+))?$/;
 
@@ -51,6 +62,21 @@ export function handoffTitles(currentTitle, work) {
     return { next: numbered ? `${numbered[1]} ${Number(numbered[2]) + 1}` : `${title} 2` };
 }
 
+/**
+ * The project among another computer's that holds the same repository as this
+ * one, or undefined when none or several do. Project ids differ per computer,
+ * so the repository is what the two share; among several clones of it, the one
+ * titled like this project is the match.
+ */
+export function matchingProject(project, candidates) {
+    const key = project.repositoryIdentity?.canonicalKey;
+    if (!key) return undefined;
+    const clones = candidates.filter((candidate) => candidate.repositoryIdentity?.canonicalKey === key);
+    if (clones.length === 1) return clones[0];
+    const titled = clones.filter((candidate) => candidate.title === project.title);
+    return titled.length === 1 ? titled[0] : undefined;
+}
+
 /** An error that says what went wrong and, when there is one, what fixes it. */
 class Problem extends Error {
     constructor(message, fix) {
@@ -67,6 +93,12 @@ function parseArgs(argv) {
         if (arg === '--dry-run') flags.dryRun = true;
         else if (arg === '--prompt-file') flags.promptFile = rest[++i];
         else if (arg === '--thread') flags.thread = rest[++i];
+        else if (arg === '--to' || arg === '--ttl') {
+            // A missing name must not fall back to this computer without a word.
+            const value = rest[++i]?.trim();
+            if (!value || value.startsWith('-')) throw new Problem(`${arg} needs a value`, USAGE);
+            flags[arg.slice(2)] = value;
+        }
         else if (arg === '--key') flags.key = rest[++i]?.trim();
         else if (arg === '--description') flags.description = rest[++i]?.trim();
         else throw new Problem(`unknown argument ${arg}`, USAGE);
@@ -81,12 +113,35 @@ async function serverOrigin() {
     const runtimePath = join(T3_HOME, 'userdata', 'server-runtime.json');
     if (!existsSync(runtimePath)) throw new Problem(`T3 Code is not running: ${runtimePath} is missing`, fix);
     const { origin } = JSON.parse(readFileSync(runtimePath, 'utf8'));
-    try {
-        await fetch(`${origin}/.well-known/t3/environment`);
-    } catch {
-        throw new Problem(`T3 Code is not running: nothing answers at ${origin}`, fix);
-    }
+    await probe(origin, `T3 Code is not running: nothing answers at ${origin}`, fix);
     return origin;
+}
+
+async function probe(origin, problem, fix) {
+    try {
+        await fetch(`${origin}/.well-known/t3/environment`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+    } catch {
+        throw new Problem(problem, fix);
+    }
+}
+
+/** Another computer from COMPUTERS_FILE, once its T3 Code server has answered and taken its token. */
+async function otherComputer(name) {
+    const entry = 'Run `node ~/.claude/skills/hf-t3-handoff/t3.mjs token` on that computer: it prints its entry for this file.';
+    if (!existsSync(COMPUTERS_FILE)) throw new Problem(`no other computer is set up: ${COMPUTERS_FILE} is missing`, entry);
+    let computers;
+    try {
+        computers = JSON.parse(readFileSync(COMPUTERS_FILE, 'utf8'));
+    } catch (error) {
+        throw new Problem(`${COMPUTERS_FILE} is not JSON: ${error.message}`, 'It is decrypted from the overlay by deploy-secrets.ps1: fix it there with `sops edit` and deploy again.');
+    }
+    const known = Object.keys(computers).find((key) => key.toLowerCase() === name.toLowerCase());
+    if (!known) throw new Problem(`${COMPUTERS_FILE} has no computer "${name}"; it has: ${Object.keys(computers).join(', ') || 'none'}`, entry);
+    const { origin, token } = computers[known];
+    if (!origin || !token) throw new Problem(`"${known}" in ${COMPUTERS_FILE} needs an origin and a token`, entry);
+    await probe(origin, `T3 Code on ${known} does not answer at ${origin}`, 'Open T3 Code on that computer, set its server to network-accessible, and check this computer reaches it (Tailscale up on both).');
+    const call = api(origin, token, `${known} refused its token in ${COMPUTERS_FILE}. ${entry}`);
+    return { name: known, call, projects: await readProjects(call) };
 }
 
 /** The thread this Claude session belongs to, found through T3's own record of the session. */
@@ -117,14 +172,14 @@ async function currentThreadId() {
     }
 }
 
-/** A ten-minute bearer token, minted by T3's own CLI from its local auth store. */
-function mintToken() {
+/** A bearer session, ten minutes long unless told otherwise, issued by T3's own CLI from its local auth store. */
+function issueSession(ttl = '10m') {
     if (!existsSync(T3_EXE)) throw new Problem(`T3 Code is not installed at ${T3_EXE}`, 'Install T3 Code, or set T3_EXE to its executable.');
     const serverBin = join(T3_EXE, '..', 'resources', 'server.asar', 'apps', 'server', 'dist', 'bin.mjs');
     const fix = 'Update T3 Code. If it is current, its `auth session issue` command has changed and t3.mjs needs updating.';
     let out;
     try {
-        out = execFileSync(T3_EXE, [serverBin, 'auth', 'session', 'issue', '--ttl', '10m', '--label', 'hf-t3-handoff', '--json'], {
+        out = execFileSync(T3_EXE, [serverBin, 'auth', 'session', 'issue', '--ttl', ttl, '--label', 'hf-t3-handoff', '--json'], {
             env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
             encoding: 'utf8',
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -136,12 +191,13 @@ function mintToken() {
         const said = [error.stderr, error.stdout].map((text) => String(text ?? '').trim()).filter(Boolean).join('\n') || error.message;
         throw new Problem(`T3's auth session issue failed (exit ${exit}): ${said.slice(0, 500)}`, fix);
     }
-    const token = out.includes('{') ? JSON.parse(out.slice(out.indexOf('{'))).token : undefined;
-    if (!token) throw new Problem('T3\'s auth session issue printed no token', fix);
-    return token;
+    const session = out.includes('{') ? JSON.parse(out.slice(out.indexOf('{'))) : undefined;
+    if (!session?.token) throw new Problem('T3\'s auth session issue printed no token', fix);
+    return session;
 }
 
-function api(origin, token) {
+/** Calls to one T3 Code server. `refusedFix` is what to do when it turns the token down. */
+function api(origin, token, refusedFix) {
     return async (method, path, body) => {
         const response = await fetch(origin + path, {
             method,
@@ -149,13 +205,45 @@ function api(origin, token) {
             body: body ? JSON.stringify(body) : undefined,
         });
         const text = await response.text();
-        if (!response.ok) throw new Problem(`${method} ${path} answered ${response.status}: ${text.slice(0, 500)}`);
+        if (!response.ok) {
+            const refused = response.status === 401 || response.status === 403;
+            throw new Problem(`${method} ${origin}${path} answered ${response.status}: ${text.slice(0, 500)}`, refused ? refusedFix : undefined);
+        }
         return text ? JSON.parse(text) : null;
     };
 }
 
 async function readThread(call, threadId) {
     return (await call('GET', `/api/orchestration/threads/${threadId}?turnLimit=1`)).thread;
+}
+
+async function readProjects(call) {
+    return (await call('GET', '/api/orchestration/shell')).projects;
+}
+
+/**
+ * Where the next thread starts: here, in the current thread's project and
+ * checkout, or on another computer, in its project for the same repository.
+ */
+async function destination(call, current, there) {
+    if (!there) {
+        const { projectId, branch, worktreePath } = current;
+        return { call, projectId, branch, worktreePath, place: branch ?? worktreePath ?? 'project checkout' };
+    }
+    const project = (await readProjects(call)).find((candidate) => candidate.id === current.projectId);
+    if (!project) throw new Problem(`T3 Code does not list the project of this thread (${current.projectId})`);
+    const match = matchingProject(project, there.projects);
+    if (!match) {
+        const repository = project.repositoryIdentity?.canonicalKey;
+        throw new Problem(
+            repository
+                ? `${there.name} has no one project for ${repository}, the repository of "${project.title}"`
+                : `project "${project.title}" has no git remote to find it by on ${there.name}`,
+            `Add the repository as a project in T3 Code on ${there.name}. If several of its clones are projects there, title one "${project.title}".`,
+        );
+    }
+    // A branch or worktree of this computer says nothing about the checkout there.
+    return { call: there.call, projectId: match.id, branch: null, worktreePath: null, place: `${there.name}, ${match.workspaceRoot}` };
 }
 
 function checkRig() {
@@ -182,7 +270,7 @@ function checkRigHandoffSkill() {
 }
 
 /** Every requirement, each reported; returns whether all of them hold. */
-async function check() {
+async function check(flags) {
     const results = [];
     // Runs one requirement and returns what its step returned, or undefined when it failed.
     const run = async (label, step) => {
@@ -199,9 +287,14 @@ async function check() {
     await run('rig is installed', checkRig);
     await run('the rig-handoff skill is linked', checkRigHandoffSkill);
     const origin = await run('T3 Code is running', serverOrigin);
-    const token = await run('T3 Code issues a token', mintToken);
+    const session = await run('T3 Code issues a token', issueSession);
     const threadId = await run('this thread is found', currentThreadId);
-    if (origin && token && threadId) await run('the T3 API reads this thread', () => readThread(api(origin, token), threadId));
+    const call = origin && session && api(origin, session.token);
+    const current = call && threadId && (await run('the T3 API reads this thread', () => readThread(call, threadId)));
+    if (flags.to) {
+        const there = await run(`T3 Code on ${flags.to} answers and takes its token`, () => otherComputer(flags.to));
+        if (current && there) await run(`${there.name} has this thread's project`, () => destination(call, current, there));
+    }
 
     console.log('hf-t3-handoff needs:');
     for (const result of results) {
@@ -220,9 +313,10 @@ async function continueThread(flags) {
 
     const origin = await serverOrigin();
     const currentId = flags.thread ?? (await currentThreadId());
-    const call = api(origin, mintToken());
+    const call = api(origin, issueSession().token);
     const current = await readThread(call, currentId);
     if (current.archivedAt) throw new Problem(`thread "${current.title}" is already archived`);
+    const next = await destination(call, current, flags.to && (await otherComputer(flags.to)));
 
     const newId = randomUUID();
     const { rename, next: title } = handoffTitles(current.title, flags.key && { key: flags.key, description: flags.description });
@@ -232,13 +326,13 @@ async function continueThread(flags) {
         type: 'thread.create',
         commandId: randomUUID(),
         threadId: newId,
-        projectId: current.projectId,
+        projectId: next.projectId,
         title,
         modelSelection: current.modelSelection,
         runtimeMode: current.runtimeMode,
         interactionMode: current.interactionMode,
-        branch: current.branch,
-        worktreePath: current.worktreePath,
+        branch: next.branch,
+        worktreePath: next.worktreePath,
         createdAt,
     };
     const turn = {
@@ -253,17 +347,17 @@ async function continueThread(flags) {
 
     if (flags.dryRun) {
         const renaming = rename ? `rename "${current.title}" to "${rename}", ` : '';
-        console.log(`Would start "${title}" (${current.branch ?? current.worktreePath ?? 'project checkout'}, ${current.modelSelection.model}), ${renaming}and archive "${archivedTitle}".`);
+        console.log(`Would start "${title}" (${next.place}, ${current.modelSelection.model}), ${renaming}and archive "${archivedTitle}".`);
         return;
     }
 
-    await call('POST', '/api/orchestration/dispatch', create);
-    await call('POST', '/api/orchestration/dispatch', turn);
+    await next.call('POST', '/api/orchestration/dispatch', create);
+    await next.call('POST', '/api/orchestration/dispatch', turn);
 
     const deadline = Date.now() + TURN_START_TIMEOUT_MS;
-    while (!(await readThread(call, newId)).latestTurn) {
+    while (!(await readThread(next.call, newId)).latestTurn) {
         if (Date.now() > deadline) {
-            throw new Problem(`"${title}" (${newId}) was created but its turn has not started after ${TURN_START_TIMEOUT_MS / 1000} s; "${current.title}" is left open`);
+            throw new Problem(`"${title}" (${newId}; ${next.place}) was created but its turn has not started after ${TURN_START_TIMEOUT_MS / 1000} s; "${current.title}" is left open`);
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
     }
@@ -271,16 +365,27 @@ async function continueThread(flags) {
     if (rename) {
         await call('POST', '/api/orchestration/dispatch', { type: 'thread.meta.update', commandId: randomUUID(), threadId: currentId, title: rename });
     }
-    console.log(`Started "${title}" (${newId}). Archiving "${archivedTitle}".`);
+    console.log(`Started "${title}" (${newId}; ${next.place}). Archiving "${archivedTitle}".`);
     await call('POST', '/api/orchestration/dispatch', { type: 'thread.archive', commandId: randomUUID(), threadId: currentId });
+}
+
+/** Prints this computer's entry for another computer's COMPUTERS_FILE, with a token that lasts `ttl`. */
+async function printToken(ttl = '365d') {
+    const { port } = new URL(await serverOrigin());
+    const { token, expiresAt } = issueSession(ttl);
+    console.log(`This computer's entry for ${COMPUTERS_FILE} on the computer that hands off to it:\n`);
+    console.log(`  ${JSON.stringify(hostname().toLowerCase())}: ${JSON.stringify({ origin: `http://${hostname()}:${port}`, token })}\n`);
+    console.log(`The token opens T3 Code on this computer until ${expiresAt}: keep it out of git and out of chat.`);
+    console.log('If the other computer knows this one by another name or address, change the origin to match.');
 }
 
 // Skills are installed as symlinks, so compare real paths: argv[1] is the link.
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
     try {
         const { command, flags } = parseArgs(process.argv.slice(2));
-        if (command === 'check') process.exitCode = (await check()) ? 0 : 1;
+        if (command === 'check') process.exitCode = (await check(flags)) ? 0 : 1;
         else if (command === 'continue') await continueThread(flags);
+        else if (command === 'token') await printToken(flags.ttl);
         else throw new Problem(command ? `unknown command ${command}` : 'no command given', USAGE);
     } catch (error) {
         if (!(error instanceof Problem)) throw error;
