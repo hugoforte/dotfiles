@@ -93,8 +93,12 @@ function parseArgs(argv) {
         if (arg === '--dry-run') flags.dryRun = true;
         else if (arg === '--prompt-file') flags.promptFile = rest[++i];
         else if (arg === '--thread') flags.thread = rest[++i];
-        else if (arg === '--to') flags.to = rest[++i]?.trim();
-        else if (arg === '--ttl') flags.ttl = rest[++i];
+        else if (arg === '--to' || arg === '--ttl') {
+            // A missing name must not fall back to this computer without a word.
+            const value = rest[++i]?.trim();
+            if (!value || value.startsWith('-')) throw new Problem(`${arg} needs a value`, USAGE);
+            flags[arg.slice(2)] = value;
+        }
         else if (arg === '--key') flags.key = rest[++i]?.trim();
         else if (arg === '--description') flags.description = rest[++i]?.trim();
         else throw new Problem(`unknown argument ${arg}`, USAGE);
@@ -125,7 +129,12 @@ async function probe(origin, problem, fix) {
 async function otherComputer(name) {
     const entry = 'Run `node ~/.claude/skills/hf-t3-handoff/t3.mjs token` on that computer: it prints its entry for this file.';
     if (!existsSync(COMPUTERS_FILE)) throw new Problem(`no other computer is set up: ${COMPUTERS_FILE} is missing`, entry);
-    const computers = JSON.parse(readFileSync(COMPUTERS_FILE, 'utf8'));
+    let computers;
+    try {
+        computers = JSON.parse(readFileSync(COMPUTERS_FILE, 'utf8'));
+    } catch (error) {
+        throw new Problem(`${COMPUTERS_FILE} is not JSON: ${error.message}`, 'It is decrypted from the overlay by deploy-secrets.ps1: fix it there with `sops edit` and deploy again.');
+    }
     const known = Object.keys(computers).find((key) => key.toLowerCase() === name.toLowerCase());
     if (!known) throw new Problem(`${COMPUTERS_FILE} has no computer "${name}"; it has: ${Object.keys(computers).join(', ') || 'none'}`, entry);
     const { origin, token } = computers[known];
@@ -222,6 +231,7 @@ async function destination(call, current, there) {
         return { call, projectId, branch, worktreePath, place: branch ?? worktreePath ?? 'project checkout' };
     }
     const project = (await readProjects(call)).find((candidate) => candidate.id === current.projectId);
+    if (!project) throw new Problem(`T3 Code does not list the project of this thread (${current.projectId})`);
     const match = matchingProject(project, there.projects);
     if (!match) {
         const repository = project.repositoryIdentity?.canonicalKey;
