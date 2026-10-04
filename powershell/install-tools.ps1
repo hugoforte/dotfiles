@@ -50,7 +50,12 @@ if (@($manifest.Tools).Count -eq 0) {
     Exit-WithResult $result 1
 }
 
-$optedIn = @(Get-OptedInOptionList -LocalPath $localPath)
+try {
+    $optedIn = @(Get-OptedInOptionList -LocalPath $localPath)
+} catch {
+    Fail "could not read $localPath`: $($_.Exception.Message)"
+    Exit-WithResult $result 1
+}
 $selection = Select-MachineTools -Tools @($manifest.Tools) -OptedIn $optedIn
 $tools = $selection.Selected
 
@@ -111,7 +116,7 @@ function Get-InstalledProgramNames {
 
 function Test-GitHubRelease {
     param([hashtable]$Tool)
-    return (Test-ProgramListed -DisplayName $Tool.Present -Listed (Get-InstalledProgramNames))
+    return (Test-ProgramListed -DisplayName $Tool.Present -Listed @(Get-InstalledProgramNames))
 }
 
 # --- Installers -------------------------------------------------------------------------------
@@ -133,9 +138,12 @@ function Install-NpmPackage {
     return ($LASTEXITCODE -eq 0)
 }
 
-# Downloads the latest release's installer asset and runs it with the entry's InstallArgs.
+# Downloads the latest release's installer asset and runs it with the entry's InstallArgs. The
+# reason for a failure is printed; the caller records the one outcome.
 function Install-GitHubRelease {
     param([hashtable]$Tool)
+    # 5.1 redraws its progress bar per chunk, which makes a large download crawl.
+    $ProgressPreference = 'SilentlyContinue'
     try {
         $release = Invoke-RestMethod "https://api.github.com/repos/$($Tool.Id)/releases/latest" -UseBasicParsing
         $asset = Select-ReleaseAsset -Assets @($release.assets) -Pattern $Tool.Asset
@@ -143,10 +151,13 @@ function Install-GitHubRelease {
         if (-not (Test-Path $downloadDir)) { New-Item -ItemType Directory -Path $downloadDir | Out-Null }
         $installer = Join-Path $downloadDir $asset.name
         Invoke-WebRequest $asset.browser_download_url -OutFile $installer -UseBasicParsing
-        $process = Start-Process -FilePath $installer -ArgumentList @($Tool.InstallArgs) -Wait -PassThru
+        # Not -Wait: in 5.1 that also waits for every process the installer starts, such as the app.
+        $process = Start-Process -FilePath $installer -ArgumentList @($Tool.InstallArgs) -PassThru
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) { Say "  $($Tool.Id): installer exited $($process.ExitCode)" Yellow }
         return ($process.ExitCode -eq 0)
     } catch {
-        Warn "$($Tool.Id): $($_.Exception.Message)"
+        Say "  $($Tool.Id): $($_.Exception.Message)" Yellow
         return $false
     }
 }
@@ -159,8 +170,12 @@ if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
 
 Say "Reading $manifestPath" Cyan
 
+# An unknown name is a missing tool in every mode: it fails -Check and holds back the hash, so a
+# typo is reported on every run rather than once.
 foreach ($name in $selection.Unknown) {
     Warn "machine.local.psd1 opts into '$name', which no tools.psd1 entry declares as Optional"
+    $missing++
+    if (-not $Check) { $failed++ }
 }
 foreach ($name in $selection.Available) {
     Say "optional, not on this machine: $name - add it to OptionalTools in $localPath to install it" DarkGray
@@ -177,6 +192,12 @@ foreach ($tool in $tools) {
     if ($source -eq 'manual') {
         $manualSteps += $tool
         continue
+    }
+
+    # Before the switch: `continue` inside a switch leaves only the switch.
+    if ($source -eq 'github-release') {
+        $problem = Test-GitHubReleaseEntry -Tool $tool
+        if ($problem) { Warn $problem; $missing++; if (-not $Check) { $failed++ }; continue }
     }
 
     $present = $false

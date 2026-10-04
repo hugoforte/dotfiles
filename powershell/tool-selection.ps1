@@ -37,7 +37,7 @@ function Select-MachineTools {
 # error: installing a guess is worse than installing nothing.
 function Select-ReleaseAsset {
     param(
-        [Parameter(Mandatory)][object[]]$Assets,
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Assets,
         [Parameter(Mandatory)][string]$Pattern
     )
 
@@ -47,6 +47,15 @@ function Select-ReleaseAsset {
         throw "more than one release asset matches '$Pattern': $(($found | ForEach-Object { $_.name }) -join ', ')"
     }
     return $found[0]
+}
+
+# What is wrong with a github-release entry, or nothing when it has every field the install
+# method needs. A missing field would otherwise stop the whole run partway through the manifest.
+function Test-GitHubReleaseEntry {
+    param([Parameter(Mandatory)][hashtable]$Tool)
+
+    $missing = @('Asset', 'InstallArgs', 'Present' | Where-Object { -not $Tool[$_] })
+    if ($missing.Count -gt 0) { return "$($Tool.Id): a github-release entry needs $($missing -join ', ')" }
 }
 
 # Whether a program whose display name matches DisplayName (a -like wildcard) is in Listed - the

@@ -35,6 +35,25 @@ Describe 'Get-OptedInOptionList' {
 
         Get-OptedInOptionList -LocalPath $local | Should -Be @('openwhispr')
     }
+
+    It 'takes a single option written as a bare string' {
+        $local = New-LocalFile "@{ OptionalTools = 'openwhispr' }"
+
+        @(Get-OptedInOptionList -LocalPath $local) | Should -Be @('openwhispr')
+    }
+}
+
+Describe 'Test-GitHubReleaseEntry' {
+
+    It 'accepts an entry with Asset, InstallArgs and Present' {
+        Test-GitHubReleaseEntry -Tool @{ Id = 'o/r'; Source = 'github-release'; Asset = 'x-*.exe'; InstallArgs = @('/S'); Present = 'X *' } |
+            Should -BeNullOrEmpty
+    }
+
+    It 'names the fields an entry is missing' {
+        Test-GitHubReleaseEntry -Tool @{ Id = 'o/r'; Source = 'github-release'; Asset = 'x-*.exe' } |
+            Should -Be 'o/r: a github-release entry needs InstallArgs, Present'
+    }
 }
 
 Describe 'Select-MachineTools' {
@@ -87,6 +106,10 @@ Describe 'Select-ReleaseAsset' {
     It 'refuses when the pattern matches more than one asset' {
         { Select-ReleaseAsset -Assets $assets -Pattern 'OpenWhispr-Setup-*' } | Should -Throw '*more than one*'
     }
+
+    It 'refuses a release with no assets the same way, naming the pattern' {
+        { Select-ReleaseAsset -Assets @() -Pattern 'OpenWhispr-Setup-*.exe' } | Should -Throw '*OpenWhispr-Setup-*.exe*'
+    }
 }
 
 Describe 'Test-ProgramListed' {
@@ -97,5 +120,23 @@ Describe 'Test-ProgramListed' {
 
     It 'does not find a program that is not listed' {
         Test-ProgramListed -DisplayName 'OpenWhispr*' -Listed @('Git', 'Node.js') | Should -BeFalse
+    }
+
+    It 'does not take upstream OpenWhispr for the fork the manifest declares' {
+        $entry = (Import-PowerShellDataFile (Join-Path (Split-Path $PSScriptRoot -Parent) 'powershell\tools.psd1')).Tools |
+            Where-Object { $_.Id -eq 'hugoforte/openwhispr' }
+
+        Test-ProgramListed -DisplayName $entry.Present -Listed @('OpenWhispr 1.10.2') | Should -BeFalse
+    }
+
+    It 'finds the fork the manifest declares once it is installed' {
+        $entry = (Import-PowerShellDataFile (Join-Path (Split-Path $PSScriptRoot -Parent) 'powershell\tools.psd1')).Tools |
+            Where-Object { $_.Id -eq 'hugoforte/openwhispr' }
+
+        Test-ProgramListed -DisplayName $entry.Present -Listed @('OpenWhispr 1.10.2-hf.1') | Should -BeTrue
+    }
+
+    It 'finds nothing on a machine that lists no programs' {
+        Test-ProgramListed -DisplayName 'OpenWhispr*' -Listed @() | Should -BeFalse
     }
 }

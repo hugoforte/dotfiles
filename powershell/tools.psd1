@@ -12,7 +12,8 @@
 # A 'github-release' entry installs its repo's latest release, and also needs:
 #   Asset        -like pattern naming the installer among the release's assets
 #   InstallArgs  arguments for a silent install
-#   Present      -like pattern for its display name under Installed apps, which is how it is found
+#   Present      -like pattern for its display name under Installed apps, which is how it is found;
+#                make it tell this build from any other of the same app
 #
 # Entries install only when missing; nothing here is ever upgraded or uninstalled by the
 # installer. Add a tool, push, and every machine picks it up on its next sync.
@@ -73,8 +74,8 @@
            Unattended = $false
            Asset = 'OpenWhispr-Setup-*.exe'
            InstallArgs = @('/S', '/currentuser')
-           Present = 'OpenWhispr*'
-           Note = 'Voice dictation whose voice assistant runs through the logged-in Claude Code, on the Claude subscription. The fork updates itself from its own releases. Not unattended: an installer that starts an app' }
+           Present = 'OpenWhispr *-hf.*'
+           Note = 'Voice dictation whose voice assistant runs through the logged-in Claude Code, on the Claude subscription. Matched by its -hf. version, so an upstream OpenWhispr already installed is replaced rather than taken for it. The fork updates itself from its own releases. Not unattended: a 250 MB download and a desktop app arriving should be watched' }
 
         # rig is deliberately absent: it is an `npm link` of a local checkout, not an install.
         # Installing it from the registry would silently replace the checkout you develop in.
