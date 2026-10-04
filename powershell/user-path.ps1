@@ -5,13 +5,14 @@
 # the real user environment. A shell or app already open keeps the PATH it started with.
 
 # The PATH list with $Entry on the end, or $null when it is already there. Entries compare
-# case-insensitively and ignoring a trailing backslash, as Windows resolves them.
+# case-insensitively, with %VAR% references expanded and a trailing backslash ignored, as Windows
+# resolves them. The list comes back as written, its %VAR% references unexpanded.
 function Add-PathEntry {
     param(
         [AllowEmptyString()][AllowNull()][string]$PathList,
         [Parameter(Mandatory)][string]$Entry
     )
-    $normalise = { param($p) $p.Trim().TrimEnd('\') }
+    $normalise = { param($p) [Environment]::ExpandEnvironmentVariables($p.Trim()).TrimEnd('\') }
     $entries = @(($PathList -split ';') | Where-Object { $_.Trim() })
     foreach ($existing in $entries) {
         if ((& $normalise $existing) -ieq (& $normalise $Entry)) { return $null }
