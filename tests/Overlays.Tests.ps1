@@ -41,6 +41,13 @@ Describe 'Test-SkillSecretsOptIn' {
         Test-SkillSecretsOptIn -LocalPath $local | Should -BeFalse
     }
 
+    It 'is on when machine.local.psd1 declares SearchRoots empty, so deploy-secrets.ps1 reports it' {
+        $local = Join-Path $work 'machine.local.psd1'
+        New-File $local "@{ SearchRoots = @() }"
+
+        Test-SkillSecretsOptIn -LocalPath $local | Should -BeTrue
+    }
+
     It 'is on when machine.local.psd1 declares SearchRoots' {
         $local = Join-Path $work 'machine.local.psd1'
         New-File $local "@{ SearchRoots = @('C:\source') }"

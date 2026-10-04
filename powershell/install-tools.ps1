@@ -144,6 +144,7 @@ function Install-GitHubRelease {
     param([hashtable]$Tool)
     # 5.1 redraws its progress bar per chunk, which makes a large download crawl.
     $ProgressPreference = 'SilentlyContinue'
+    $installer = $null
     try {
         $release = Invoke-RestMethod "https://api.github.com/repos/$($Tool.Id)/releases/latest" -UseBasicParsing
         $asset = Select-ReleaseAsset -Assets @($release.assets) -Pattern $Tool.Asset
@@ -159,6 +160,10 @@ function Install-GitHubRelease {
     } catch {
         Say "  $($Tool.Id): $($_.Exception.Message)" Yellow
         return $false
+    } finally {
+        if ($installer -and (Test-Path -LiteralPath $installer)) {
+            Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
