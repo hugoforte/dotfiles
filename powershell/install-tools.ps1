@@ -9,6 +9,8 @@
 # Idempotent: entries install only when missing. Nothing is ever upgraded or uninstalled -
 # a program on the machine and not in the manifest was installed on purpose.
 #
+# Optional entries install only on a machine that opts into them: see tool-selection.ps1.
+#
 # sync.ps1 calls this as -IfChanged -Unattended -Quiet -PassThru from a scheduled task, so nothing
 # here may raise a UAC prompt: winget installs use --scope user unless the shell is already elevated.
 
@@ -23,8 +25,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "output.ps1")
+. (Join-Path $PSScriptRoot "tool-selection.ps1")
 
 $manifestPath = Join-Path $PSScriptRoot "tools.psd1"
+$localPath = Join-Path (Split-Path $PSScriptRoot -Parent) "ai\secrets\machine.local.psd1"
 $stateDir = Join-Path $env:LOCALAPPDATA "dotfiles"
 $statePath = Join-Path $stateDir "tools.state"
 $missing = 0
@@ -41,13 +45,18 @@ if (-not (Test-Path $manifestPath)) {
 }
 
 $manifest = Import-PowerShellDataFile $manifestPath
-$tools = @($manifest.Tools)
-if ($tools.Count -eq 0) {
+if (@($manifest.Tools).Count -eq 0) {
     Fail "tools.psd1 declares no tools"
     Exit-WithResult $result 1
 }
 
-$manifestHash = (Get-FileHash $manifestPath -Algorithm SHA256).Hash
+$optedIn = @(Get-OptedInOptionList -LocalPath $localPath)
+$selection = Select-MachineTools -Tools @($manifest.Tools) -OptedIn $optedIn
+$tools = $selection.Selected
+
+# Opting in changes what this machine needs without touching tools.psd1, so the options are
+# part of what -IfChanged compares.
+$manifestHash = (Get-FileHash $manifestPath -Algorithm SHA256).Hash + ":" + (($optedIn | Sort-Object) -join ",")
 
 if ($IfChanged) {
     $applied = $null
@@ -87,6 +96,24 @@ function Test-NpmPackage {
     return ((Get-NpmGlobals) -contains $Id)
 }
 
+$script:installedPrograms = $null
+function Get-InstalledProgramNames {
+    if ($null -ne $script:installedPrograms) { return $script:installedPrograms }
+    $keys = @(
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
+        'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
+        'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )
+    $script:installedPrograms = @(Get-ItemProperty $keys -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName } | ForEach-Object { $_.DisplayName })
+    return $script:installedPrograms
+}
+
+function Test-GitHubRelease {
+    param([hashtable]$Tool)
+    return (Test-ProgramListed -DisplayName $Tool.Present -Listed (Get-InstalledProgramNames))
+}
+
 # --- Installers -------------------------------------------------------------------------------
 
 function Install-WingetPackage {
@@ -106,6 +133,24 @@ function Install-NpmPackage {
     return ($LASTEXITCODE -eq 0)
 }
 
+# Downloads the latest release's installer asset and runs it with the entry's InstallArgs.
+function Install-GitHubRelease {
+    param([hashtable]$Tool)
+    try {
+        $release = Invoke-RestMethod "https://api.github.com/repos/$($Tool.Id)/releases/latest" -UseBasicParsing
+        $asset = Select-ReleaseAsset -Assets @($release.assets) -Pattern $Tool.Asset
+        $downloadDir = Join-Path $env:TEMP "dotfiles-tools"
+        if (-not (Test-Path $downloadDir)) { New-Item -ItemType Directory -Path $downloadDir | Out-Null }
+        $installer = Join-Path $downloadDir $asset.name
+        Invoke-WebRequest $asset.browser_download_url -OutFile $installer -UseBasicParsing
+        $process = Start-Process -FilePath $installer -ArgumentList @($Tool.InstallArgs) -Wait -PassThru
+        return ($process.ExitCode -eq 0)
+    } catch {
+        Warn "$($Tool.Id): $($_.Exception.Message)"
+        return $false
+    }
+}
+
 # --- Apply -------------------------------------------------------------------------------------
 
 if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
@@ -113,6 +158,13 @@ if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
 }
 
 Say "Reading $manifestPath" Cyan
+
+foreach ($name in $selection.Unknown) {
+    Warn "machine.local.psd1 opts into '$name', which no tools.psd1 entry declares as Optional"
+}
+foreach ($name in $selection.Available) {
+    Say "optional, not on this machine: $name - add it to OptionalTools in $localPath to install it" DarkGray
+}
 
 $manualSteps = @()
 
@@ -131,6 +183,7 @@ foreach ($tool in $tools) {
     switch ($source) {
         'winget' { $present = Test-WingetPackage $id }
         'npm'    { $present = Test-NpmPackage $id }
+        'github-release' { $present = Test-GitHubRelease $tool }
         default  { Warn "$id has unknown Source '$source'"; continue }
     }
 
@@ -151,6 +204,7 @@ foreach ($tool in $tools) {
     switch ($source) {
         'winget' { $installed = Install-WingetPackage $id }
         'npm'    { $installed = Install-NpmPackage $id }
+        'github-release' { $installed = Install-GitHubRelease $tool }
     }
 
     if ($installed) {

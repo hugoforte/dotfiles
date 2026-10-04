@@ -126,6 +126,14 @@ _Avoid_: package list, registry (that is the secrets one), tools file
 A manifest entry marked `Unattended = $false`: safe to install only on a watched run, so the scheduled task reports it and leaves it. Not a failure, and it does not hold back the manifest hash.
 _Avoid_: skipped, blocked, manual (that is a `Source`, for entries nothing can install)
 
+**Option**:
+A named group of manifest entries (`Optional = '<name>'`) that only machines opting in get: the install and its manual steps together. A machine opts in by listing the name under `OptionalTools` in its `machine.local.psd1`; on any other machine the option is reported as available, never as missing.
+_Avoid_: profile, feature flag, extra
+
+**Install method**:
+What an entry's `Source` field names: `winget`, `npm`, `github-release` (a repo's latest release asset, run silently) or `manual`. The field is called `Source` for history; in prose it is the install method, because a source is a file in this repo.
+_Avoid_: source (that is the repo file a managed path points at), provider, package manager
+
 ### Reporting
 
 **Outcome**:
