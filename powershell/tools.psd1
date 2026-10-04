@@ -40,7 +40,7 @@
 
         @{ Id = 'markdownlint-cli2'
            Source = 'npm'
-           Note = 'Markdown linter. Use the md-lint function, not the binary directly - it has no global config of its own' }
+           Note = 'Markdown linter. Use bin/md-lint, not the binary directly - it has no global config of its own' }
 
         @{ Id = '@anthropic-ai/claude-code'
            Source = 'npm'

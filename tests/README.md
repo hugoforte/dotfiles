@@ -39,6 +39,8 @@ testable yet:
 | `ai/install.sh`'s `link` / `unlink_managed` / `check_link` | the same contract in sh, extracted to a fixture rather than run | #6 |
 | `ai/skills/hf-t3-handoff/t3.mjs`'s `handoffTitles` and `matchingProject` | exported, and the script only acts when run directly | #14 |
 | `powershell/native.ps1` | the command is an argument, and the verdict is the exit code | #15 |
+| `bin/md-lint.mjs`'s `markdownlintArguments` and `hasOwnConfig` | exported, and the script only acts when run directly | this change |
+| `powershell/user-path.ps1`'s `Add-PathEntry` | the PATH list is an argument; `Add-UserPathEntry` applies it and is not run | this change |
 
 **Everything else is untestable on purpose, not by oversight.** `setup.ps1`, `sync.ps1`,
 `install-sync-task.ps1`, and `install-tools.ps1` / `deploy-secrets.ps1` without `-Check` read

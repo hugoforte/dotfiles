@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# Git Bash entry point for md-lint.mjs; md-lint.cmd is the one for PowerShell and cmd.
+exec node "$(dirname "$0")/md-lint.mjs" "$@"

@@ -2,7 +2,7 @@
 //
 // markdownlint-cli2 does NOT look above the current directory and ignores any config in your
 // home directory, so this file only takes effect when something passes it with --config.
-// That is what the md-lint function in markdown.ps1 does.
+// That is what bin/md-lint does.
 //
 // A repo that disagrees wins: drop a .markdownlint-cli2.jsonc in it and md-lint steps aside.
 //

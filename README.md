@@ -16,8 +16,9 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
 | Claude Code sub-agents | `ai/agents/*.md` | `~/.claude/agents/` (symlinks) | `ai/install.sh` |
 | Claude Code settings (model, plugins, allowlist) | `ai/claude/settings.json` | merged into `~/.claude/settings.json` | `ai/install.sh` |
 | Skill secrets (encrypted with SOPS + age) | `ai/secrets/<skill>/`, here or in an overlay | `%USERPROFILE%\.agent-secrets\`, then symlinked into every checkout that has the skill (shipped skills read them in place) | `powershell/deploy-secrets.ps1` |
+| Commands for every shell, agents' included (`md-lint`) | `bin/` | the user PATH | `powershell/setup.ps1`, `powershell/sync.ps1` |
 | Tools and programs a machine needs | `powershell/tools.psd1` | installed via winget and npm | `powershell/install-tools.ps1` |
-| Default markdownlint rules | `powershell/markdownlint.jsonc` | passed to `markdownlint-cli2` by the `md-lint` function | none (used in place) |
+| Default markdownlint rules | `powershell/markdownlint.jsonc` | passed to `markdownlint-cli2` by `bin/md-lint` | none (used in place) |
 | Automatic pull-and-relink | `powershell/sync.ps1` | Windows scheduled task "Dotfiles Sync" | `powershell/install-sync-task.ps1` |
 | Copilot repo instructions and prompts | `.github/` | used in place by GitHub Copilot | none |
 | Engineering-skill config for this repo | `AGENTS.md`, `docs/agents/` | used in place by Claude Code | none |
