@@ -150,8 +150,8 @@ try {
         Write-Log "no aws/config in the repo or any overlay, and ~/.aws/config is absent; if this machine should have one, run install-overlays.ps1"
     }
 
-    # Skill secrets: only on machines that have opted in with a machine.local.psd1
-    if (Test-Path (Join-Path $repoRoot "ai\secrets\machine.local.psd1")) {
+    # Skill secrets: only on machines whose machine.local.psd1 declares SearchRoots
+    if (Test-SkillSecretsOptIn -LocalPath (Join-Path $repoRoot "ai\secrets\machine.local.psd1")) {
         $secretsResult = & (Join-Path $PSScriptRoot "deploy-secrets.ps1") -Quiet -PassThru
         $secretsExit = $LASTEXITCODE
         Write-ResultLog $secretsResult
@@ -160,7 +160,7 @@ try {
             exit 1
         }
     } else {
-        Write-Log "deploy-secrets.ps1 skipped (no ai/secrets/machine.local.psd1)"
+        Write-Log "deploy-secrets.ps1 skipped (no SearchRoots in ai/secrets/machine.local.psd1)"
     }
 
     if ($overlayPullFailed) {

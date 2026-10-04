@@ -2,17 +2,25 @@
 #
 # Every entry is a hashtable:
 #
-#   Id          winget package id, npm package name, or a slug for a manual step
-#   Source      'winget' | 'npm' | 'manual'
+#   Id          winget package id, npm package name, GitHub owner/repo, or a slug for a manual step
+#   Source      'winget' | 'npm' | 'github-release' | 'manual'
 #   Unattended  $false to keep sync.ps1 from installing it behind your back (default $true)
+#   Optional    the name of the option this entry belongs to; omit for every machine
 #   Note        what it is, or - for manual entries - what you have to do
 #   Url         optional, for manual entries that need a page
+#
+# A 'github-release' entry installs its repo's latest release, and also needs:
+#   Asset        -like pattern naming the installer among the release's assets
+#   InstallArgs  arguments for a silent install
+#   Present      -like pattern for its display name under Installed apps, which is how it is found;
+#                make it tell this build from any other of the same app
 #
 # Entries install only when missing; nothing here is ever upgraded or uninstalled by the
 # installer. Add a tool, push, and every machine picks it up on its next sync.
 #
-# There is deliberately no per-machine filtering: both machines are set up the same way.
-# See the design note in the rig data root if that stops being true.
+# Every machine gets every entry, except optional ones: a machine opts into an option by listing
+# its name under OptionalTools in ai/secrets/machine.local.psd1, and then gets every entry of
+# that option, manual steps included.
 
 @{
     Tools = @(
@@ -58,6 +66,17 @@
            Source = 'npm'
            Note = 'Browser automation any agent can drive from a shell (playwright-cli); skills that need a browser use it rather than one agent''s own browser tool' }
 
+        # --- github-release ---------------------------------------------------------------
+
+        @{ Id = 'hugoforte/openwhispr'
+           Source = 'github-release'
+           Optional = 'openwhispr'
+           Unattended = $false
+           Asset = 'OpenWhispr-Setup-*.exe'
+           InstallArgs = @('/S', '/currentuser')
+           Present = 'OpenWhispr *-hf.*'
+           Note = 'Voice dictation whose voice assistant runs through the logged-in Claude Code, on the Claude subscription. Matched by its -hf. version, so an upstream OpenWhispr already installed is replaced rather than taken for it. The fork updates itself from its own releases. Not unattended: a 250 MB download and a desktop app arriving should be watched' }
+
         # rig is deliberately absent: it is an `npm link` of a local checkout, not an install.
         # Installing it from the registry would silently replace the checkout you develop in.
 
@@ -75,5 +94,10 @@
         @{ Id = 'sops-recipient'
            Source = 'manual'
            Note = 'Register this machine as an age recipient before secrets will decrypt - see ai/secrets/README.md, "Add a machine"' }
+
+        @{ Id = 'openwhispr-first-run'
+           Source = 'manual'
+           Optional = 'openwhispr'
+           Note = 'Open OpenWhispr and set it up: pick the dictation hotkey and a local Whisper model; under cleanup choose a local model; under Voice Assistant choose Local CLI Agent > Claude Code. Needs `claude` logged in to the subscription' }
     )
 }

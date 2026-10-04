@@ -26,6 +26,36 @@ BeforeAll {
     }
 }
 
+Describe 'Test-SkillSecretsOptIn' {
+
+    BeforeEach { $work = New-WorkDir }
+
+    It 'is off when the machine has no machine.local.psd1' {
+        Test-SkillSecretsOptIn -LocalPath (Join-Path $work 'machine.local.psd1') | Should -BeFalse
+    }
+
+    It 'is off when machine.local.psd1 declares no SearchRoots, as one written only for OptionalTools' {
+        $local = Join-Path $work 'machine.local.psd1'
+        New-File $local "@{ OptionalTools = @('openwhispr') }"
+
+        Test-SkillSecretsOptIn -LocalPath $local | Should -BeFalse
+    }
+
+    It 'is on when machine.local.psd1 declares SearchRoots empty, so deploy-secrets.ps1 reports it' {
+        $local = Join-Path $work 'machine.local.psd1'
+        New-File $local "@{ SearchRoots = @() }"
+
+        Test-SkillSecretsOptIn -LocalPath $local | Should -BeTrue
+    }
+
+    It 'is on when machine.local.psd1 declares SearchRoots' {
+        $local = Join-Path $work 'machine.local.psd1'
+        New-File $local "@{ SearchRoots = @('C:\source') }"
+
+        Test-SkillSecretsOptIn -LocalPath $local | Should -BeTrue
+    }
+}
+
 Describe 'Get-OverlayList' {
 
     BeforeEach { $work = New-WorkDir }

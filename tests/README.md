@@ -41,6 +41,7 @@ testable yet:
 | `powershell/native.ps1` | the command is an argument, and the verdict is the exit code | #15 |
 | `bin/md-lint.mjs`'s `markdownlintArguments` and `hasOwnConfig` | exported, and the script only acts when run directly | this change |
 | `powershell/user-path.ps1`'s `Add-PathEntry` | the PATH list is an argument; `Add-UserPathEntry` applies it and is not run | this change |
+| `powershell/tool-selection.ps1` | which entries a machine gets, the release asset and the installed-program match are functions of their arguments; `install-tools.ps1` reads the registry and downloads | this change |
 
 **Everything else is untestable on purpose, not by oversight.** `setup.ps1`, `sync.ps1`,
 `install-sync-task.ps1`, and `install-tools.ps1` / `deploy-secrets.ps1` without `-Check` read
