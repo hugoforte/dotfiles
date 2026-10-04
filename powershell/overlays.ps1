@@ -9,6 +9,16 @@
 #   ai/skills/<name>/                             skills, linked by ai/install.sh; a name ships from one place
 #   bruno/<collection>/                           Bruno collections, linked into ~/bruno by ai/install.sh; a name ships from one place
 
+# Whether a machine.local.psd1 opts the machine into skill secrets: it must declare SearchRoots,
+# which deploy-secrets.ps1 cannot run without. The file alone is not enough, because a machine
+# also writes it just to list OptionalTools or Overlays.
+function Test-SkillSecretsOptIn {
+    param([Parameter(Mandatory)][string]$LocalPath)
+
+    if (-not (Test-Path -LiteralPath $LocalPath)) { return $false }
+    return [bool](Import-PowerShellDataFile $LocalPath).SearchRoots
+}
+
 # The overlay directories listed in a machine.local.psd1. No file, or no Overlays key, is no
 # overlays. A listed directory that does not exist is an error: silently skipping it would
 # quietly drop every secret and setting it carries.

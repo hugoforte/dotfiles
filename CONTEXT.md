@@ -65,7 +65,7 @@ _Avoid_: update, refresh
 ### Machines
 
 **Machine**:
-One Windows install with a checkout of this repo. Its identity is its SSH key, and it opts into skill secrets by having a `machine.local.psd1`.
+One Windows install with a checkout of this repo. Its identity is its SSH key, and it opts into skill secrets by declaring `SearchRoots` in its `machine.local.psd1`; the same file lists its overlays and options.
 _Avoid_: host, box, device
 
 **Checkout**:
