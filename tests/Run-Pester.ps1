@@ -38,7 +38,9 @@ if (-not $pester5) {
     Write-Host "Pester 5 is required to run this suite and was not found." -ForegroundColor Red
     Write-Host "  Pester versions on this machine: $versions"
     Write-Host "  Install it with:"
-    Write-Host "      Install-Module Pester -MinimumVersion 5.0 -Scope CurrentUser"
+    Write-Host "      Install-PackageProvider NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force"
+    Write-Host "      Install-Module Pester -MinimumVersion 5.0 -Scope CurrentUser -Force -SkipPublisherCheck"
+    Write-Host "  The first line installs the NuGet provider without the prompt a non-interactive shell cannot answer."
     Write-Host "  This runner will not install it for you: that would change your module path."
     exit 1
 }
