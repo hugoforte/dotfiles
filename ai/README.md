@@ -48,7 +48,7 @@ A skill or agent deleted from the repo leaves a dangling symlink on every machin
 
 | Prefix | Count | Origin |
 |---|---|---|
-| `matt-*` | 24 | [mattpocock/skills](https://github.com/mattpocock/skills), engineering + productivity sets, MIT. Pinned commit in `licenses/mattpocock-skills-VERSION`. |
+| `matt-*` | 25 | [mattpocock/skills](https://github.com/mattpocock/skills), engineering + productivity sets, MIT. Pinned commit in `licenses/mattpocock-skills-VERSION`. |
 | `hf-*` | 4 | Own. One per row below. |
 
 My own skills carry an `hf-` prefix, so a skill list says at a glance which ones this repo wrote and which came from somewhere else.
@@ -61,6 +61,8 @@ My own skills carry an `hf-` prefix, so a skill list says at a glance which ones
 | `hf-dotfiles-secrets` | The procedures for the encrypted skill secrets under `secrets/`. |
 
 Matt's skills are prefixed `matt-` (folder and `name:`), and their `/slash` cross-references were rewritten to match, so `/matt-triage`, `/matt-grill-with-docs`, and so on. Backticked mentions like "the `research` skill" were left as-is because the same words also name wayfinder ticket types.
+
+A few references were edited by hand because the skill they name is not vendored: `/handoff` reads `/rig-handoff`, `/code-review` is Claude Code's built-in rather than Matt's, and `matt-setup-matt-pocock-skills` checks for `matt-triage` by its prefixed name.
 
 ### Adding a skill
 
@@ -76,7 +78,9 @@ To adopt a skill that already lives in `~/.claude/skills/<name>`: move the folde
 git clone --depth 1 https://github.com/mattpocock/skills /tmp/mattskills
 ```
 
-Copy the wanted folders from `skills/engineering` and `skills/productivity` to `ai/skills/matt-<name>`, set `name: matt-<name>` in each `SKILL.md`, rewrite `/<name>` references to `/matt-<name>`, and update `licenses/mattpocock-skills-VERSION`. Skills in `in-progress`, `misc` and `deprecated` were deliberately not vendored.
+Copy the wanted folders from `skills/engineering` and `skills/productivity` to `ai/skills/matt-<name>`, set `name: matt-<name>` in each `SKILL.md`, rewrite `/<name>` references to `/matt-<name>`, prefix `display_name` in each `agents/openai.yaml` with `Matt: `, and update `licenses/mattpocock-skills-VERSION`. Skills in `in-progress`, `misc` and `deprecated` were deliberately not vendored, and neither were `code-review` and `handoff`.
+
+To refresh skills already vendored without losing the hand edits above, merge rather than copy: apply the same rewrite to upstream at the pinned commit (the base) and at the new one, then `git merge-file` each vendored file against the two.
 
 ### Not managed here
 

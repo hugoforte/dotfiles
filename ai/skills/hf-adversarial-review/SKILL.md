@@ -41,7 +41,7 @@ Assume this diff is wrong. Your job is to find how — not to summarise it, not 
 Read, in this order:
 - the whole diff: gh pr diff <number>
 - every file the diff touches, in full, as it stands now
-- the repo's CLAUDE.md, AGENTS.md, CONTEXT.md and docs/adr/ where they exist
+- the repo's CLAUDE.md, AGENTS.md, GLOSSARY.md and docs/adr/ where they exist
 - the tests covering the touched code, and how neighbouring code solves the same problem
 
 Hunt for:
