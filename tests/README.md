@@ -19,8 +19,11 @@ reads or writes `~/.claude`, `$HOME` or `%USERPROFILE%`.
 If `Run-Pester.ps1` says Pester 5 is missing:
 
 ```powershell
-Install-Module Pester -MinimumVersion 5.0 -Scope CurrentUser
+Install-PackageProvider NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force
+Install-Module Pester -MinimumVersion 5.0 -Scope CurrentUser -Force -SkipPublisherCheck
 ```
+
+The first line installs the NuGet provider up front. Without it, `Install-Module` stops to ask for it, which a non-interactive shell, such as an agent's, cannot answer. `-SkipPublisherCheck` lets Pester 5 install beside the Pester 3 Windows ships, which is signed by a different publisher.
 
 It will not install it for you. Nothing in this repo installs something behind your back.
 
