@@ -89,7 +89,7 @@ The sync task pulls each overlay repo and re-applies all of these, so a change p
 - [ai/](ai/README.md): agent skills, Claude Code config, installer
 - [.github/](.github/instructions/README.md): Copilot instructions and reusable prompts
 - [tests/](tests/README.md): fixture tests for the parts that can be tested without touching the machine you are on; CI runs them on every pull request
-- [CONTEXT.md](CONTEXT.md): the glossary — what "managed", "drift", "checkout" and the rest mean here
+- [GLOSSARY.md](GLOSSARY.md): the glossary — what "managed", "drift", "checkout" and the rest mean here
 - [docs/adr/](docs/adr/): the decisions a reader would otherwise try to undo, and why
 - [docs/agents/](docs/agents/): issue tracker, triage labels and domain-doc conventions read by the engineering skills
 - [RELEASES.md](RELEASES.md): change log

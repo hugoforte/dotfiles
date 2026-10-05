@@ -85,6 +85,8 @@ Project-local scratch goes in `.notes/` or `notes/`, never the repo root.
 
 Use the `gh` CLI for everything GitHub: issues, PRs, checks, releases, and `gh api` for anything else. WebFetch is only for public documentation pages.
 
+Write a PR body with the `matt-pr` skill, unless the repo has a PR template; then fill that in. In a rig work, write it into the context doc's `## Pull request` section with its headings at `###` (`rig pr` raises them to `##`; a `##` would end the section), and let `rig pr` lift it; never edit a rig PR's body on GitHub.
+
 Never post PR review comments without explicit approval. When replying to an existing review thread, reply in-thread rather than creating a root-level comment.
 
 ## Comments and docs
