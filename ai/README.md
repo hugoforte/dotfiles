@@ -62,7 +62,7 @@ My own skills carry an `hf-` prefix, so a skill list says at a glance which ones
 
 Matt's skills are prefixed `matt-` (folder and `name:`), and their `/slash` cross-references were rewritten to match, so `/matt-triage`, `/matt-grill-with-docs`, and so on. Backticked mentions like "the `research` skill" were left as-is because the same words also name wayfinder ticket types.
 
-A few references were edited by hand because the skill they name is not vendored: `/handoff` reads `/rig-handoff`, `/code-review` is Claude Code's built-in rather than Matt's, and `matt-setup-matt-pocock-skills` checks for `matt-triage` by its prefixed name.
+A few references were edited by hand. Two name a skill that is not vendored: `/handoff` reads `/rig-handoff`, and `/code-review` is Claude Code's built-in rather than Matt's. In `matt-setup-matt-pocock-skills`, the backticked `triage`, `to-tickets` and `to-spec` carry their `matt-` names, because that skill checks whether `matt-triage` is installed.
 
 ### Adding a skill
 
