@@ -64,6 +64,17 @@ assert_eq "sed -i after the expression is refused" "deny" \
 assert_eq "sed -i later in a pipeline is refused" "deny" \
     "$(decision Bash "cd src && sed -i 's/a/b/' f")"
 
+assert_eq "a heredoc piped into tee is refused" "deny" \
+    "$(decision Bash "cat <<'EOF' | tee notes.md${nl}x${nl}EOF")"
+assert_eq "a heredoc piped into an interpreter is refused" "deny" \
+    "$(decision Bash "cat <<'EOF' | python${nl}print(1)${nl}EOF")"
+assert_eq "a refusal wins over a merge in the same command" "deny" \
+    "$(decision Bash "gh pr merge 42; cat <<EOF > out.txt${nl}x${nl}EOF")"
+assert_eq "sed -i with a quoted command word is refused" "deny" \
+    "$(decision Bash "\"sed\" -i 's/a/b/' f")"
+assert_eq "a heredoc piped into a filter is allowed" "allow" \
+    "$(decision Bash "cat <<'EOF' | grep x${nl}x${nl}EOF")"
+
 assert_eq "a PR body that mentions sed -i is allowed" "allow" \
     "$(decision Bash "gh pr create --title t --body \"\$(cat <<'EOF'${nl}Refuses perl -i and sed -i edits${nl}EOF${nl})\"")"
 assert_eq "a PR body that mentions gh pr merge is allowed" "allow" \
@@ -93,6 +104,10 @@ assert_eq "a GraphQL merge asks first" "ask" \
     "$(decision Bash "gh api graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'")"
 assert_eq "asking gh api whether a PR merged is allowed" "allow" \
     "$(decision Bash "gh api repos/o/r/pulls/12/merge")"
+assert_eq "a quoted heredoc marker does not hide a merge" "ask" \
+    "$(decision Bash "echo \"<<EOF\"${nl}gh pr merge 42")"
+assert_eq "a quoted command word does not hide a merge" "ask" \
+    "$(decision Bash "gh \"pr\" merge 42")"
 assert_eq "gh pr merge from PowerShell asks first" "ask" \
     "$(decision PowerShell "gh pr merge 12 --squash")"
 assert_eq "PowerShell commands are only checked for merges" "allow" \

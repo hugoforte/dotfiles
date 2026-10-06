@@ -32,7 +32,14 @@ const writeThroughShell = 'Write files and scripts with the Write tool and edit 
     + 'A heredoc or an in-place perl/sed edit loses quotes and backslashes on the way through Git Bash.';
 const mergeIsHuman = 'Merging a pull request is the human\'s call. Go ahead only if they named this PR for merging in this session.';
 
+const quoted = /'[^']*'|"(?:[^"\\]|\\.)*"/g;
+
+// withoutQuotes(text): each quoted string blanked, except a single word, which is unwrapped so a
+// quoted command word (`gh "pr" merge`) is still read as one.
+const withoutQuotes = (text) => text.replace(quoted, (q) => (/^.[\w.-]*.$/.test(q) ? q.slice(1, -1) : '""'));
+
 // withoutHeredocBodies(command): the command with every heredoc's body and closing marker removed.
+// Openers are looked for outside quoted strings, but a quoted marker straight after `<<` counts.
 function withoutHeredocBodies(command) {
     const kept = [];
     let markers = [];
@@ -42,36 +49,39 @@ function withoutHeredocBodies(command) {
             continue;
         }
         kept.push(line);
-        markers = [...line.matchAll(heredocOpener)].map((m) => m[2]);
+        const unquoted = line.replace(/(<<-?\s*)?('[^']*'|"(?:[^"\\]|\\.)*")/g, (m, opener) => (opener ? m : '""'));
+        markers = [...unquoted.matchAll(heredocOpener)].map((m) => m[2]);
     }
     return kept.join('\n');
 }
 
-const withoutQuotes = (text) => text.replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, '""');
+// pipelines(text): each pipeline, trimmed. commands(pipeline): its commands, trimmed, so a pattern
+// anchored with ^ is in command position.
+const pipelines = (text) => text.split(/\n|;|&&|\|\||\$\(|\(|`/).map((s) => s.trim()).filter(Boolean);
+const commands = (pipeline) => pipeline.split('|').map((s) => s.trim()).filter(Boolean);
 
-// segments(text): each simple command, trimmed, so a pattern anchored with ^ is in command position.
-const segments = (text) => text.split(/\n|;|&&|\|\||\||\$\(|\(|`/).map((s) => s.trim()).filter(Boolean);
+// writesThroughShell(pipeline): a heredoc that ends in a file or an interpreter, or an in-place edit.
+function writesThroughShell(pipeline) {
+    const parts = commands(pipeline);
+    if (/(?<!<)<<(?!<)/.test(pipeline)
+        && (fileRedirect.test(pipeline) || parts.some((c) => interpreter.test(c) || /^tee\b/.test(c)))) {
+        return true;
+    }
+    return parts.some((c) => inPlaceEdit.test(c));
+}
 
 // verdict(tool, command): { decision: 'deny' | 'ask', reason } or null to let the call through.
+// A refusal wins over a question, so approving a merge cannot carry a refused write with it.
 export function verdict(tool, command) {
     if (typeof command !== 'string') return null;
     const bodiless = withoutHeredocBodies(command);
-    // The graphql query is itself a quoted string, so merges are read before quotes come out.
-    const raw = segments(bodiless);
-    if (raw.some((s) => ghGraphqlMerge.test(s))) return { decision: 'ask', reason: mergeIsHuman };
-    const commands = segments(withoutQuotes(bodiless));
-    if (commands.some((s) => ghMerge.test(s)) || raw.some((s) => ghApiMerge.test(s))) {
-        return { decision: 'ask', reason: mergeIsHuman };
-    }
-    if (tool !== 'Bash') return null;
-    for (const s of commands) {
-        const heredoc = /(?<!<)<<(?!<)/.test(s);
-        if (heredoc && (interpreter.test(s) || fileRedirect.test(s) || /^tee\b/.test(s))) {
-            return { decision: 'deny', reason: writeThroughShell };
-        }
-        if (inPlaceEdit.test(s)) return { decision: 'deny', reason: writeThroughShell };
-    }
-    return null;
+    const stripped = pipelines(withoutQuotes(bodiless));
+    if (tool === 'Bash' && stripped.some(writesThroughShell)) return { decision: 'deny', reason: writeThroughShell };
+    // gh api's path and a graphql query are quoted strings, so those are read with quotes in.
+    const raw = pipelines(bodiless).flatMap(commands);
+    const merges = stripped.flatMap(commands).some((c) => ghMerge.test(c))
+        || raw.some((c) => ghApiMerge.test(c) || ghGraphqlMerge.test(c));
+    return merges ? { decision: 'ask', reason: mergeIsHuman } : null;
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {

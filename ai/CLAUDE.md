@@ -6,7 +6,7 @@
 - Prefer `gh` for GitHub operations; never the GitHub MCP tools.
 - Global agent config lives in `~/.claude`, symlinked from the `dotfiles` repo. Edit the repo, not the symlink target.
 - Rules that hold in every repo belong here, not in a project's auto-memory: memory is kept per starting folder, so a rule saved from one folder is missing in a session started in another.
-- Write files and scripts with Write and edit them with Edit, then run them. Never write a file or a script through a heredoc, or edit one in place with `perl -i` or `sed -i`: quotes and backslashes break on the way through Git Bash. The `agent-guard` hook refuses those commands.
+- Write files and scripts with Write and edit them with Edit, then run them. Never write a file or a script through a heredoc, or edit one in place with `perl -i` or `sed -i`: quotes and backslashes break on the way through Git Bash. The `agent-guard` hook refuses those commands in the Bash tool.
 - Git Bash's `/tmp` is not the `/tmp` that Windows-native node, python and gh see. Hand them Windows paths (`cygpath -w`).
 - Wait for CI with `gh pr checks <n> --watch` run in the background, never `sleep`.
 - "Continue from where you left off" after a crash, a usage limit or an API error means resume the unfinished task.
@@ -101,7 +101,7 @@ Use the `gh` CLI for everything GitHub: issues, PRs, checks, releases, and `gh a
 
 Write a PR body with the `matt-pr` skill, unless the repo has a PR template; then fill that in. In a rig work, write it into the context doc's `## Pull request` section with its headings at `###` (`rig pr` raises them to `##`; a `##` would end the section), and let `rig pr` lift it; never edit a rig PR's body on GitHub.
 
-Finished rig work ends in a pushed PR. Every PR, issue, comment or run you create or mention gets its full URL, never a bare `#123`.
+Finished rig work ends in a pushed PR. In what you write to the user, every PR, issue, comment or run you create or mention gets its full URL, never a bare `#123`; a commit's `Fixes #123` line stays as it is.
 
 Never post PR review comments without explicit approval. When replying to an existing review thread, reply in-thread rather than creating a root-level comment.
 
