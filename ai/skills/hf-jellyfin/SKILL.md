@@ -14,8 +14,8 @@ Jellyfin runs on the home media server, reachable only over Tailscale, at the `J
 ```bash
 set -a; . ~/.agent-secrets/hf-jellyfin/.secrets.env; set +a
 jf() {  # jf <METHOD> <path> [json body]
-    curl -s -X "$1" "$JELLYFIN_URL$2" -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
-        ${3:+-H 'content-type: application/json' -d "$3"}
+    curl -s -X "${1}" "$JELLYFIN_URL${2}" -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
+        ${3:+-H 'content-type: application/json' -d "${3}"}
 }
 ```
 

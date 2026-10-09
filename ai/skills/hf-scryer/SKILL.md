@@ -20,14 +20,20 @@ set -a; . ~/.agent-secrets/hf-scryer/.secrets.env; set +a
 gql() {  # gql '<query>' ['<variables json>']
     curl -s "$SCRYER_URL/graphql" -H 'content-type: application/json' \
         ${SCRYER_TOKEN:+-H "authorization: Bearer $SCRYER_TOKEN"} \
-        -d "$(jq -n --arg q "$1" --argjson v "${2:-{\}}" '{query: $q, variables: $v}')"
+        -d "$(jq -n --arg q "${1}" --argjson v "${2:-{\}}" '{query: $q, variables: $v}')"
 }
-SCRYER_TOKEN=$(gql 'mutation($i: LoginInput!) { login(input: $i) { token } }' \
-    "$(jq -n --arg u "$SCRYER_USERNAME" --arg p "$SCRYER_PASSWORD" '{i: {username: $u, password: $p}}')" \
-    | jq -r '.data.login.token')
+token_file=~/.agent-secrets/hf-scryer/.token
+SCRYER_TOKEN=$(cat "$token_file" 2>/dev/null)
+if ! gql '{ me { username } }' | jq -e '.data.me' >/dev/null; then
+    SCRYER_TOKEN=
+    SCRYER_TOKEN=$(gql 'mutation($i: LoginInput!) { login(input: $i) { token } }' \
+        "$(jq -n --arg u "$SCRYER_USERNAME" --arg p "$SCRYER_PASSWORD" '{i: {username: $u, password: $p}}')" \
+        | jq -r '.data.login.token // empty')
+    printf '%s' "$SCRYER_TOKEN" > "$token_file"
+fi
 ```
 
-Shell state does not persist between tool calls, so repeat this block at the top of each command that needs it. Unauthenticated queries answer nothing useful, so signing in is also how to tell whether Scryer is up: a failed connection means it is down. Quick repeated sign-ins are throttled, and then `login` answers with a `RATE_LIMITED` error and `retryAfterSeconds`, the token comes out as `null`, and every later query is refused; wait that long and sign in again.
+Shell state does not persist between tool calls, so repeat this block at the top of each command that needs it. It reuses the last token while it still works and signs in only when it does not, because quick repeated sign-ins are throttled: `login` then answers with a `RATE_LIMITED` error and `retryAfterSeconds`, the token comes out empty, and every later query is refused until that wait is over. Unauthenticated queries answer nothing useful, so signing in is also how to tell whether Scryer is up: a failed connection means it is down.
 
 ## Finding the shape of anything
 
@@ -57,11 +63,11 @@ gql '{ __type(name: "UpdateSeedingProfileInput") { inputFields { name type { nam
 | A title by id | `title(id: "…") { name facet monitored collections { id collectionIndex monitored episodesOwned episodesTotal } }` — `titles(query:)` returns a catalogue page, not a list |
 | Monitor a season | `setCollectionMonitored(input: { collectionId, monitored: true })`, the season's id from `collections` |
 | Monitor a movie or series | `setTitleMonitored(input: { titleId, monitored: true })` |
-| Search now | `triggerAcquisitionSearch(input: { titleId, seasonNumber, wantedKind: MISSING })`, then poll `acquisitionSearchJob(id:)` for `grabbedCount`. One job runs at a time; a second is refused until the first finishes |
+| Search now | `triggerAcquisitionSearch(input: { titleId, seasonNumber, wantedKind: MISSING })`, then poll `acquisitionSearchJob(id:) { state grabbedCount }` until `state` is `COMPLETED`. One job runs at a time; a second is refused until the first finishes |
 | Change a quality profile | read `qualityProfileSettings`, send every profile back through `saveQualityProfileSettings` with `replaceExisting: false`, along with `globalProfileId`, `globalScoringPersona`, `categorySelections` and `categoryPersonaSelections` |
 | Disable an indexer | Disable it in Prowlarr (see `hf-prowlarr`). `updateIndexerConfig(input: { id, isEnabled: false })` here is a local override that survives Prowlarr syncs, so re-enabling one takes `isEnabled: true` here as well as Prowlarr's `enable` |
 | Search a title's releases | `searchReleases(input: { titleId, limit })` returns each result's `seeders`, `autoDecisionCode`, `qualityProfileDecision { releaseScore }`, `candidateToken` and `queueScope`. Without `season` it returns season packs across the series; `season` needs `episode` as well |
-| Grab a chosen release | `queueExistingTitleDownload(input: { titleId, candidateToken, sizeBytes, scope: { collection: <season id> } })`, with the token and `sizeBytes` exactly as a fresh search returned them. The token fixes the scope, so the `scope` passed is only required, never used. `CONFLICT` means a download already holds that scope; `replaceInProgress: true` replaces it, removing those torrents and leaving their files on disk |
+| Grab a chosen release | `queueExistingTitleDownload(input: { titleId, candidateToken, sizeBytes, scope: { collection: <season id> } })` (the input type is `QueueDownloadInput`), with the token and `sizeBytes` exactly as a fresh search returned them. The token fixes the scope, so the `scope` passed is only required, never used. `CONFLICT` means a download already holds that scope; `replaceInProgress: true` replaces it, removing those torrents and leaving their files on disk |
 | Why a release was or wasn't grabbed | `titleAcquisitionDiagnostics(titleId:) { recentDecisions { releaseTitle decisionCode candidateScore explanationJson } }`; `explanationJson` names the indexer (`candidate.source`) and carries the scoring log |
 | A title's history | `titleHistory(filter: { titleIds: [...], eventTypes: [GRABBED, IMPORT_SKIPPED], limit }) { items { eventType sourceTitle sourceProvider downloadId sourceRef skipReason dataJson } }`. Event types go in as uppercase enums and come back lowercase (`grabbed`). The torrent's hash is `downloadId` on grabs and `sourceRef` on imports |
 | Download history | `downloadHistory(limit: 50, offset:) { hasMore items {...} }`, 50 rows a page at most, and it stops at 500 |
@@ -82,11 +88,13 @@ Check the download client before blaming the release. qBittorrent's Web API answ
 
 Only when qBittorrent is connected and a torrent still has no peers is the release dead. Then `markTrackedDownloadFailed` is usually the answer: it fails the release so Scryer grabs a different one, where deleting it in qBittorrent alone lets Scryer grab the same dead release again. `skipReacquire: true` fails it without searching again. Failing a release does not remove the torrent from qBittorrent; delete it there with `POST /torrents/delete` (`hashes`, `deleteFiles=true`).
 
+**An aired episode Scryer never grabs**, where `searchReleases` marks every release `queued_better_or_equal` ("a release already downloading for this scope is equal or better") but nothing for it is in qBittorrent, is held by a download that was deleted in qBittorrent without being failed in Scryer first, usually a fake. Scryer never clears that hold, and searches skip the episode, so its wanted item shows `lastSearchAt: null`. Find the torrent's hash in `titleHistory` (the `IMPORT_SKIPPED` event's `sourceRef`), then call `ignoreTrackedDownload(input: { clientId, clientType, downloadClientItemId })`. `markTrackedDownloadFailed` answers `NOT_FOUND` for a torrent the client no longer lists. Ignoring does not blocklist the release, so a fake can be grabbed again; the scheduled task fails it then, and that blocklists it.
+
 ## Torrents left behind in qBittorrent
 
 Scryer removes a torrent from qBittorrent only after importing it and seeding it to its profile's goal. A torrent whose import was skipped stays for good, stopped once qBittorrent's seeding limit runs out. The `IMPORT_SKIPPED` events in `titleHistory` name each one, by `sourceRef` (the hash) and `skipReason`, and `dataJson`'s `reason` says why in words:
 
-- **`no_video_files`** is usually a **fake**: an executable named like the episode. qBittorrent's excluded file names keep the executable from downloading, and the task above removes the torrent at its next run, so a fake younger than that run is expected. `GET /torrents/files?hash=` shows what it holds. Safe to delete.
+- **`no_video_files`** is usually a **fake**: an executable named like the episode. qBittorrent's excluded file names keep the executable from downloading, and the task above removes the torrent at its next run, so a fake younger than that run is expected. `GET /torrents/files?hash=` shows what it holds. Fail it with `markTrackedDownloadFailed` before deleting it: Scryer keeps a fake's download as `import_blocked`, which still holds its episode, and deleting the torrent alone leaves that hold in place for good (see below).
 - **`already_imported`**: the library already holds an identical file. Safe to delete.
 - **`policy_mismatch`**: the file contradicts what the release advertised (a "2160p" that is 1440p), so it was never imported and may be the only copy. So is anything with no `skipReason`. The user decides.
 

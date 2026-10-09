@@ -14,8 +14,8 @@ Prowlarr runs on the home media server, reachable only over Tailscale, at the `P
 ```bash
 set -a; . ~/.agent-secrets/hf-prowlarr/.secrets.env; set +a
 pr() {  # pr <METHOD> <path> [json body]
-    curl -s -X "$1" "$PROWLARR_URL/api/v1$2" -H "X-Api-Key: $PROWLARR_API_KEY" \
-        ${3:+-H 'content-type: application/json' -d "$3"}
+    curl -s -X "${1}" "$PROWLARR_URL/api/v1${2}" -H "X-Api-Key: $PROWLARR_API_KEY" \
+        ${3:+-H 'content-type: application/json' -d "${3}"}
 }
 ```
 
