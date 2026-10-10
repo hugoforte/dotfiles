@@ -1,5 +1,19 @@
 {
   "model": "sonnet",
+  "cleanupPeriodDays": 365,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent-guard"
+          }
+        ]
+      }
+    ]
+  },
   "autoUpdatesChannel": "latest",
   "tui": "fullscreen",
   "theme": "dark",
