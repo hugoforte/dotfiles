@@ -14,7 +14,7 @@ function Get-OptedInOptionList {
     $options = [ordered]@{}
     foreach ($file in $Path) {
         if (-not (Test-Path -LiteralPath $file)) { continue }
-        foreach ($name in @((Import-PowerShellDataFile $file).OptionalTools)) {
+        foreach ($name in @((Import-PowerShellDataFile -LiteralPath $file).OptionalTools)) {
             if ($name -and -not $options.Contains($name)) { $options[$name] = $true }
         }
     }
@@ -30,7 +30,7 @@ function Get-MergedToolManifest {
     $seen = @{}
     foreach ($file in $Path) {
         if (-not (Test-Path -LiteralPath $file)) { continue }
-        foreach ($tool in @((Import-PowerShellDataFile $file).Tools | Where-Object { $_ })) {
+        foreach ($tool in @((Import-PowerShellDataFile -LiteralPath $file).Tools | Where-Object { $_ })) {
             if (-not $tool.Id) { throw "an entry in $file has no Id" }
             if ($seen.ContainsKey($tool.Id)) {
                 throw "tool '$($tool.Id)' is declared in both $($seen[$tool.Id]) and $file"

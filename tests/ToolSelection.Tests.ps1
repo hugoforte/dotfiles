@@ -107,6 +107,15 @@ Describe 'Get-MergedToolManifest' {
         @(Get-MergedToolManifest -Path $overlay).Id | Should -Be @('media-backups-setup')
     }
 
+    It 'reads a manifest whose path has brackets, which a wildcard path would not match' {
+        $dir = Join-Path $TestDrive 'overlay[1]'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $overlay = Join-Path $dir 'tools.psd1'
+        [IO.File]::WriteAllText($overlay, "@{ Tools = @( @{ Id = 'a'; Source = 'manual' } ) }")
+
+        @(Get-MergedToolManifest -Path $overlay).Id | Should -Be @('a')
+    }
+
     It 'refuses an entry with no Id, naming its manifest' {
         $overlay = New-LocalFile "@{ Tools = @( @{ Source = 'manual'; Note = 'x' } ) }"
 
