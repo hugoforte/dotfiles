@@ -42,10 +42,48 @@
            Source = 'winget'
            Note = 'Encrypts ai/secrets; deploy-secrets.ps1 refuses without it' }
 
-        @{ Id = 'OpenJS.NodeJS'
+        @{ Id = 'CoreyButler.NVMforWindows'
            Source = 'winget'
            Unattended = $false
-           Note = 'Runtime for every npm entry below. Not unattended: swapping the runtime under running node processes is the disruptive case this flag exists for' }
+           Note = 'Node version manager; the node it installs runs every npm entry below. Not unattended: it installs machine-wide and swaps the runtime under running node processes' }
+
+        @{ Id = 'Git.Git'
+           Source = 'winget'
+           Unattended = $false
+           Note = 'Git, and the Git Bash that ai/install.sh and the sync run in. Not unattended: machine-wide installer' }
+
+        @{ Id = 'GitHub.cli'
+           Source = 'winget'
+           Unattended = $false
+           Note = 'gh: clones private repos, and every GitHub operation here goes through it. Not unattended: machine-wide installer' }
+
+        @{ Id = 'BurntSushi.ripgrep.MSVC'
+           Source = 'winget'
+           Note = 'rg: fast search, used by agents from a shell' }
+
+        @{ Id = 'astral-sh.uv'
+           Source = 'winget'
+           Note = 'Python package and tool runner' }
+
+        @{ Id = 'Python.Python.3.12'
+           Source = 'winget'
+           Unattended = $false
+           Note = 'Python. Not unattended: a desktop runtime arriving should be watched' }
+
+        @{ Id = 'Amazon.AWSCLI'
+           Source = 'winget'
+           Unattended = $false
+           Note = 'AWS CLI; the profiles come from aws/config. Not unattended: machine-wide installer' }
+
+        @{ Id = 'Microsoft.WindowsTerminal'
+           Source = 'winget'
+           Unattended = $false
+           Note = 'Windows Terminal. Not unattended: a desktop app arriving should be watched' }
+
+        @{ Id = 'Microsoft.VisualStudioCode'
+           Source = 'winget'
+           Unattended = $false
+           Note = 'VS Code. Not unattended: a desktop app arriving should be watched' }
 
         # --- npm globals -------------------------------------------------------------------
 
@@ -93,6 +131,10 @@
         @{ Id = 'gh-auth'
            Source = 'manual'
            Note = 'Authenticate the GitHub CLI: gh auth login. Needed to clone private repos and by the git credential helper' }
+
+        @{ Id = 'node-via-nvm'
+           Source = 'manual'
+           Note = 'Install and select a Node.js once NVM for Windows is in: nvm install lts, then nvm use lts. The npm entries need it' }
 
         @{ Id = 'sops-recipient'
            Source = 'manual'
