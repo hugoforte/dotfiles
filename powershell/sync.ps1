@@ -120,13 +120,13 @@ try {
     # Tools: after the overlay pull, so a tool an overlay adds lands on this sync rather than the
     # next. Only when a manifest or the options changed since the last successful run, and only the
     # entries marked safe to install unwatched - this task must never raise a UAC prompt.
+    # A failure is logged and the run carries on, like a failed overlay pull: an overlay's manifest
+    # can now fail this step, and stopping here would leave the links and secrets below stale.
     $toolsResult = & (Join-Path $PSScriptRoot "install-tools.ps1") -IfChanged -Unattended -Quiet -PassThru
     $toolsExit = $LASTEXITCODE
     Write-ResultLog $toolsResult
-    if ($toolsExit -ne 0) {
-        Write-Log "install-tools.ps1 exited $toolsExit"
-        exit 1
-    }
+    $toolsFailed = $toolsExit -ne 0
+    if ($toolsFailed) { Write-Log "install-tools.ps1 exited $toolsExit" }
 
     # A link into this repo whose source the repo no longer ships is left over from a file that
     # moved out, to an overlay or away entirely.
@@ -166,6 +166,10 @@ try {
 
     if ($overlayPullFailed) {
         Write-Log "sync finished, but an overlay repo could not be pulled (above)"
+        exit 1
+    }
+    if ($toolsFailed) {
+        Write-Log "sync finished, but install-tools.ps1 failed (above)"
         exit 1
     }
 }
