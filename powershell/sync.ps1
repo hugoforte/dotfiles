@@ -93,16 +93,6 @@ try {
     $binPath = Join-Path $repoRoot "bin"
     if ((Add-UserPathEntry -Directory $binPath) -eq 'Added') { Write-Log "added $binPath to the user PATH" }
 
-    # Tools: only when tools.psd1 has changed since the last successful run, and only the
-    # entries marked safe to install unwatched - this task must never raise a UAC prompt.
-    $toolsResult = & (Join-Path $PSScriptRoot "install-tools.ps1") -IfChanged -Unattended -Quiet -PassThru
-    $toolsExit = $LASTEXITCODE
-    Write-ResultLog $toolsResult
-    if ($toolsExit -ne 0) {
-        Write-Log "install-tools.ps1 exited $toolsExit"
-        exit 1
-    }
-
     # Overlays (see overlays.ps1): pull each overlay repo, then bring what they supply in line, so
     # a change pushed to an overlay reaches this machine without anyone re-running setup.ps1.
     . (Join-Path $PSScriptRoot "managed-link.ps1")
@@ -126,6 +116,17 @@ try {
         Write-Log "pulled $overlayRepo"
     }
     Write-Log "~/.gitconfig-overlays: $(Update-GitOverlayInclude -Overlays $overlays)"
+
+    # Tools: after the overlay pull, so a tool an overlay adds lands on this sync rather than the
+    # next. Only when a manifest or the options changed since the last successful run, and only the
+    # entries marked safe to install unwatched - this task must never raise a UAC prompt.
+    $toolsResult = & (Join-Path $PSScriptRoot "install-tools.ps1") -IfChanged -Unattended -Quiet -PassThru
+    $toolsExit = $LASTEXITCODE
+    Write-ResultLog $toolsResult
+    if ($toolsExit -ne 0) {
+        Write-Log "install-tools.ps1 exited $toolsExit"
+        exit 1
+    }
 
     # A link into this repo whose source the repo no longer ships is left over from a file that
     # moved out, to an overlay or away entirely.

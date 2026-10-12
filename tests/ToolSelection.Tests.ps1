@@ -1,5 +1,6 @@
 # Which manifest entries a machine gets (optional tools are opted into per machine, by name, in
-# machine.local.psd1), and the pure parts of the github-release install method: picking the
+# machine.local.psd1 or an overlay's machines/<COMPUTERNAME>.psd1), how the manifests of dotfiles
+# and its overlays merge, and the pure parts of the github-release install method: picking the
 # installer asset and recognising the installed program. Everything happens under TestDrive:.
 
 BeforeAll {
@@ -21,25 +22,76 @@ BeforeAll {
 Describe 'Get-OptedInOptionList' {
 
     It 'is empty when the machine has no machine.local.psd1' {
-        @(Get-OptedInOptionList -LocalPath (Join-Path $TestDrive 'absent.psd1')).Count | Should -Be 0
+        @(Get-OptedInOptionList -Path (Join-Path $TestDrive 'absent.psd1')).Count | Should -Be 0
     }
 
     It 'is empty when machine.local.psd1 opts into nothing' {
         $local = New-LocalFile "@{ Overlays = @() }"
 
-        @(Get-OptedInOptionList -LocalPath $local).Count | Should -Be 0
+        @(Get-OptedInOptionList -Path $local).Count | Should -Be 0
     }
 
     It 'returns the options the machine lists' {
         $local = New-LocalFile "@{ OptionalTools = @('openwhispr') }"
 
-        Get-OptedInOptionList -LocalPath $local | Should -Be @('openwhispr')
+        Get-OptedInOptionList -Path $local | Should -Be @('openwhispr')
     }
 
     It 'takes a single option written as a bare string' {
         $local = New-LocalFile "@{ OptionalTools = 'openwhispr' }"
 
-        @(Get-OptedInOptionList -LocalPath $local) | Should -Be @('openwhispr')
+        @(Get-OptedInOptionList -Path $local) | Should -Be @('openwhispr')
+    }
+
+    It 'adds the options of the machine file to those of machine.local.psd1' {
+        $local = New-LocalFile "@{ OptionalTools = @('openwhispr') }"
+        $machine = New-LocalFile "@{ OptionalTools = @('media-server') }"
+
+        Get-OptedInOptionList -Path $local, $machine | Should -Be @('openwhispr', 'media-server')
+    }
+
+    It 'lists an option named in both files once' {
+        $local = New-LocalFile "@{ OptionalTools = @('openwhispr') }"
+        $machine = New-LocalFile "@{ OptionalTools = @('openwhispr', 'dev') }"
+
+        Get-OptedInOptionList -Path $local, $machine | Should -Be @('openwhispr', 'dev')
+    }
+}
+
+Describe 'Get-MergedToolManifest' {
+
+    BeforeAll {
+        function New-Manifest {
+            param([string[]]$Ids)
+            $entries = ($Ids | ForEach-Object { "@{ Id = '$_'; Source = 'manual' }" }) -join "`n"
+            return New-LocalFile "@{ Tools = @(`n$entries`n) }"
+        }
+    }
+
+    It 'returns the entries of every manifest, in the order given' {
+        $dotfiles = New-Manifest 'jqlang.jq', 'OpenJS.NodeJS'
+        $overlay = New-Manifest 'media-backups-setup'
+
+        (Get-MergedToolManifest -Path $dotfiles, $overlay).Id | Should -Be @('jqlang.jq', 'OpenJS.NodeJS', 'media-backups-setup')
+    }
+
+    It 'skips a manifest that does not exist, as an overlay that ships none' {
+        $dotfiles = New-Manifest 'jqlang.jq'
+
+        (Get-MergedToolManifest -Path $dotfiles, (Join-Path $TestDrive 'absent.psd1')).Id | Should -Be @('jqlang.jq')
+    }
+
+    It 'refuses an id declared in two manifests, naming both' {
+        $dotfiles = New-Manifest 'jqlang.jq'
+        $overlay = New-Manifest 'jqlang.jq'
+
+        { Get-MergedToolManifest -Path $dotfiles, $overlay } | Should -Throw "*$dotfiles*$overlay*"
+    }
+
+    It 'refuses an id declared twice in one manifest' {
+        $dotfiles = New-Manifest 'jqlang.jq', 'jqlang.jq'
+
+        { Get-MergedToolManifest -Path $dotfiles } | Should -Throw "*'jqlang.jq'*"
     }
 }
 

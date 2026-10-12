@@ -8,6 +8,8 @@
 #   git/gitconfig                                 a fragment; every overlay's is included
 #   ai/skills/<name>/                             skills, linked by ai/install.sh; a name ships from one place
 #   bruno/<collection>/                           Bruno collections, linked into ~/bruno by ai/install.sh; a name ships from one place
+#   powershell/tools.psd1                         tools, merged by install-tools.ps1; an id is declared in one place
+#   machines/<COMPUTERNAME>.psd1                  the machine's OptionalTools, read by install-tools.ps1; one source
 
 # Whether a machine.local.psd1 opts the machine into skill secrets: it must declare SearchRoots,
 # which deploy-secrets.ps1 cannot run without. The file alone is not enough, because a machine

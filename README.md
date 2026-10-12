@@ -17,7 +17,7 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
 | Claude Code settings (model, plugins, allowlist) | `ai/claude/settings.json` | merged into `~/.claude/settings.json` | `ai/install.sh` |
 | Skill secrets (encrypted with SOPS + age) | `ai/secrets/<skill>/`, here or in an overlay | `%USERPROFILE%\.agent-secrets\`, then symlinked into every checkout that has the skill (shipped skills read them in place) | `powershell/deploy-secrets.ps1` |
 | Commands for every shell, agents' included (`md-lint`) | `bin/` | the user PATH | `powershell/setup.ps1`, `powershell/sync.ps1` |
-| Tools and programs a machine needs | `powershell/tools.psd1` | installed via winget, npm and GitHub releases | `powershell/install-tools.ps1` |
+| Tools and programs a machine needs | `powershell/tools.psd1`, here or in an overlay | installed via winget, npm and GitHub releases | `powershell/install-tools.ps1` |
 | Default markdownlint rules | `powershell/markdownlint.jsonc` | passed to `markdownlint-cli2` by `bin/md-lint` | none (used in place) |
 | Automatic pull-and-relink | `powershell/sync.ps1` | Windows scheduled task "Dotfiles Sync" | `powershell/install-sync-task.ps1` |
 | Copilot repo instructions and prompts | `.github/` | used in place by GitHub Copilot | none |
@@ -71,8 +71,10 @@ What an overlay can supply, and how:
 - `bruno/<collection>/`: linked into `~/bruno` by `ai/install.sh`, so Bruno opens every overlay's collections from one home; a collection name may be shipped from only one place.
 - `aws/config`: linked to `~/.aws/config`; only one source across this repo and all overlays.
 - `git/gitconfig`: included, in overlay order, by the generated `~/.gitconfig-overlays`.
+- `powershell/tools.psd1`: merged with this repo's manifest by `install-tools.ps1`; a tool id may be declared only once. Its entries may be optional, so an overlay can declare its own options.
+- `machines/<COMPUTERNAME>.psd1`: the machine's `OptionalTools`, found by the Windows computer name and added to those in `machine.local.psd1`, so a machine's options are tracked and survive the machine. Only one source across all overlays. The overlays themselves stay in `machine.local.psd1`, since this file is found through them.
 
-The sync task pulls each overlay repo and re-applies all of these, so a change pushed to an overlay reaches every machine that lists it. Skills are linked by `ai/install.sh`, which the sync runs before it pulls the overlays, so an overlay's skill change lands one sync later. `install-overlays.ps1` is idempotent; re-run it when an overlay repo gains an overlay.
+The sync task pulls each overlay repo and re-applies all of these, so a change pushed to an overlay reaches every machine that lists it. Skills are linked by `ai/install.sh`, which the sync runs before it pulls the overlays, so an overlay's skill change lands one sync later. Tools are installed after the pull, so an overlay's tool lands on the same sync. `install-overlays.ps1` is idempotent; re-run it when an overlay repo gains an overlay.
 
 ## Keeping machines in sync
 
@@ -80,7 +82,7 @@ The sync task pulls each overlay repo and re-applies all of these, so a change p
 - Other machines pull and re-link automatically via the scheduled task, or on demand with `dotfiles-sync` in PowerShell. Symlinked files pick up edits without re-running anything; new files need a re-link, which the sync does.
 - Every installer has a report-only mode that changes nothing and exits non-zero if anything is out of sync: `./ai/install.sh --check`, `.\powershell\setup.ps1 -Check`, `.\powershell\deploy-secrets.ps1 -Check` and `dotfiles-tools -Check`. Each reports links that are missing, replaced by a real file, or pointing elsewhere. They answer "is this machine in sync with the repo?" — not "is this code correct?", which is what `tests/` is for.
 - Tools are declared in [powershell/tools.psd1](powershell/tools.psd1). Add an entry, commit, push, and every machine installs it on its next sync — the sync only does this work when the manifest, or the machine's options, have actually changed. Entries marked `Unattended = $false` are skipped by the scheduled task and wait for `dotfiles-tools`; `dotfiles-tools -Check` reports what is missing without installing anything.
-- Optional tools install only on machines that ask for them. An entry with `Optional = 'openwhispr'` belongs to that option; list the name under `OptionalTools` in `ai/secrets/machine.local.psd1` and run `dotfiles-tools` to install it, its first-run step included. Machines that don't list it are told it is available. A machine without skill secrets can write that file just for `OptionalTools`: the sync deploys secrets only when it also declares `SearchRoots`.
+- Optional tools install only on machines that ask for them. An entry with `Optional = 'openwhispr'` belongs to that option; list the name under `OptionalTools` in an overlay's `machines/<COMPUTERNAME>.psd1` (or in `ai/secrets/machine.local.psd1`) and run `dotfiles-tools` to install it, its first-run step included. Machines that don't list it are told it is available. A machine without skill secrets can write that file just for `OptionalTools`: the sync deploys secrets only when it also declares `SearchRoots`.
 
 ## Layout
 

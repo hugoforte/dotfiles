@@ -2,17 +2,42 @@
 # Dot-sourced by install-tools.ps1.
 #
 # An entry with Optional = '<name>' belongs to that option. A machine opts into it by listing the
-# name under OptionalTools in ai/secrets/machine.local.psd1 (git-ignored), and then gets every
-# entry of the option - its install and its manual steps together.
+# name under OptionalTools in ai/secrets/machine.local.psd1 (git-ignored) or in an overlay's
+# machines/<COMPUTERNAME>.psd1 (tracked), and then gets every entry of the option - its install
+# and its manual steps together.
 
-# The options a machine.local.psd1 opts into. No file, or no OptionalTools key, is none.
+# The options the given files opt into, each named once, in the order first listed. A file that
+# does not exist, or has no OptionalTools key, adds none.
 function Get-OptedInOptionList {
-    param([Parameter(Mandatory)][string]$LocalPath)
+    param([Parameter(Mandatory)][string[]]$Path)
 
-    if (-not (Test-Path -LiteralPath $LocalPath)) { return @() }
-    $local = Import-PowerShellDataFile $LocalPath
-    if (-not $local.OptionalTools) { return @() }
-    return @($local.OptionalTools)
+    $options = [ordered]@{}
+    foreach ($file in $Path) {
+        if (-not (Test-Path -LiteralPath $file)) { continue }
+        foreach ($name in @((Import-PowerShellDataFile $file).OptionalTools)) {
+            if ($name -and -not $options.Contains($name)) { $options[$name] = $true }
+        }
+    }
+    return @($options.Keys)
+}
+
+# Every entry of the given tools.psd1 files, in order: dotfiles' own, then each overlay's. A file
+# that does not exist contributes nothing. The same Id twice is an error naming where each was
+# declared, because installing either would be a guess.
+function Get-MergedToolManifest {
+    param([Parameter(Mandatory)][string[]]$Path)
+
+    $seen = @{}
+    foreach ($file in $Path) {
+        if (-not (Test-Path -LiteralPath $file)) { continue }
+        foreach ($tool in (Import-PowerShellDataFile $file).Tools) {
+            if ($seen.ContainsKey($tool.Id)) {
+                throw "tool '$($tool.Id)' is declared in both $($seen[$tool.Id]) and $file"
+            }
+            $seen[$tool.Id] = $file
+            $tool
+        }
+    }
 }
 
 # Splits the manifest for one machine:
