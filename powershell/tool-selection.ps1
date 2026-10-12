@@ -30,7 +30,8 @@ function Get-MergedToolManifest {
     $seen = @{}
     foreach ($file in $Path) {
         if (-not (Test-Path -LiteralPath $file)) { continue }
-        foreach ($tool in (Import-PowerShellDataFile $file).Tools) {
+        foreach ($tool in @((Import-PowerShellDataFile $file).Tools | Where-Object { $_ })) {
+            if (-not $tool.Id) { throw "an entry in $file has no Id" }
             if ($seen.ContainsKey($tool.Id)) {
                 throw "tool '$($tool.Id)' is declared in both $($seen[$tool.Id]) and $file"
             }
@@ -38,6 +39,18 @@ function Get-MergedToolManifest {
             $tool
         }
     }
+}
+
+# What -IfChanged compares: every manifest read, and the options. Opting in changes what a machine
+# needs without touching any manifest, so the options count too; their order does not.
+function Get-ToolStateHash {
+    param(
+        [Parameter(Mandatory)][string[]]$ManifestPath,
+        [AllowEmptyCollection()][string[]]$OptedIn = @()
+    )
+
+    $hashes = @($ManifestPath | ForEach-Object { (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash })
+    return ($hashes -join "+") + ":" + ((@($OptedIn) | Sort-Object) -join ",")
 }
 
 # Splits the manifest for one machine:

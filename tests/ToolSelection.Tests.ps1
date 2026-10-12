@@ -93,6 +93,55 @@ Describe 'Get-MergedToolManifest' {
 
         { Get-MergedToolManifest -Path $dotfiles } | Should -Throw "*'jqlang.jq'*"
     }
+
+    It 'takes nothing from a manifest with no Tools' {
+        $dotfiles = New-Manifest 'jqlang.jq'
+        $overlay = New-LocalFile "@{ }"
+
+        (Get-MergedToolManifest -Path $dotfiles, $overlay).Id | Should -Be @('jqlang.jq')
+    }
+
+    It 'takes a single entry written without @()' {
+        $overlay = New-LocalFile "@{ Tools = @{ Id = 'media-backups-setup'; Source = 'manual' } }"
+
+        @(Get-MergedToolManifest -Path $overlay).Id | Should -Be @('media-backups-setup')
+    }
+
+    It 'refuses an entry with no Id, naming its manifest' {
+        $overlay = New-LocalFile "@{ Tools = @( @{ Source = 'manual'; Note = 'x' } ) }"
+
+        { Get-MergedToolManifest -Path $overlay } | Should -Throw "*$overlay*"
+    }
+}
+
+Describe 'Get-ToolStateHash' {
+
+    BeforeAll {
+        $dotfiles = New-LocalFile "@{ Tools = @( @{ Id = 'jqlang.jq'; Source = 'winget' } ) }"
+        $overlay = New-LocalFile "@{ Tools = @( @{ Id = 'a'; Source = 'manual' } ) }"
+    }
+
+    It 'is the same for the same manifests and options' {
+        Get-ToolStateHash -ManifestPath $dotfiles, $overlay -OptedIn 'dev' |
+            Should -Be (Get-ToolStateHash -ManifestPath $dotfiles, $overlay -OptedIn 'dev')
+    }
+
+    It 'changes when an overlay manifest changes, so the sync installs what it added' {
+        $before = Get-ToolStateHash -ManifestPath $dotfiles, $overlay -OptedIn @()
+        Set-Content -LiteralPath $overlay -Value "@{ Tools = @( @{ Id = 'b'; Source = 'manual' } ) }"
+
+        Get-ToolStateHash -ManifestPath $dotfiles, $overlay -OptedIn @() | Should -Not -Be $before
+    }
+
+    It 'changes when the options change' {
+        Get-ToolStateHash -ManifestPath $dotfiles -OptedIn 'dev' |
+            Should -Not -Be (Get-ToolStateHash -ManifestPath $dotfiles -OptedIn @())
+    }
+
+    It 'does not depend on the order the options are listed in' {
+        Get-ToolStateHash -ManifestPath $dotfiles -OptedIn 'dev', 'laptop' |
+            Should -Be (Get-ToolStateHash -ManifestPath $dotfiles -OptedIn 'laptop', 'dev')
+    }
 }
 
 Describe 'Test-GitHubReleaseEntry' {

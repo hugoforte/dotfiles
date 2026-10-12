@@ -52,10 +52,10 @@ if (@((Import-PowerShellDataFile $manifestPath).Tools).Count -eq 0) {
 }
 
 try {
-    $overlays = @(Get-OverlayList -LocalPath $localPath)
-    $manifestPaths = @($manifestPath) + @($overlays | ForEach-Object { Join-Path $_ "powershell\tools.psd1" } | Where-Object { Test-Path -LiteralPath $_ })
+    $overlaySource = Get-OverlayToolSource -Overlays @(Get-OverlayList -LocalPath $localPath) -ComputerName $env:COMPUTERNAME
+    $manifestPaths = @($manifestPath) + $overlaySource.Manifests
     $allTools = @(Get-MergedToolManifest -Path $manifestPaths)
-    $machinePath = if ($overlays.Count) { Find-OverlayFile -Roots $overlays -RelativePath "machines\$env:COMPUTERNAME.psd1" }
+    $machinePath = $overlaySource.MachineFile
     $optedIn = @(Get-OptedInOptionList -Path (@($localPath) + @($machinePath | Where-Object { $_ })))
 } catch {
     Fail "could not read the manifests or the options: $($_.Exception.Message)"
@@ -64,9 +64,7 @@ try {
 $selection = Select-MachineTools -Tools $allTools -OptedIn $optedIn
 $tools = $selection.Selected
 
-# Opting in changes what this machine needs without touching any manifest, so the options are
-# part of what -IfChanged compares, beside every manifest read.
-$manifestHash = (@($manifestPaths | ForEach-Object { (Get-FileHash $_ -Algorithm SHA256).Hash }) -join "+") + ":" + (($optedIn | Sort-Object) -join ",")
+$manifestHash = Get-ToolStateHash -ManifestPath $manifestPaths -OptedIn $optedIn
 
 if ($IfChanged) {
     $applied = $null
@@ -180,6 +178,9 @@ if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
 
 foreach ($path in $manifestPaths) { Say "Reading $path" Cyan }
 if ($machinePath) { Say "Reading $machinePath" Cyan }
+foreach ($dir in $overlaySource.MachineDirs) {
+    Warn "no $env:COMPUTERNAME.psd1 in $dir - this machine's options come from machine.local.psd1 alone"
+}
 
 # An unknown name is a missing tool in every mode: it fails -Check and holds back the hash, so a
 # typo is reported on every run rather than once.
@@ -206,7 +207,14 @@ foreach ($tool in $tools) {
         continue
     }
 
-    # Before the switch: `continue` inside a switch leaves only the switch.
+    # Before the switch: `continue` inside a switch leaves only the switch. Without Node there is
+    # no npm, and calling it would end the run before the manual steps that say how to get Node.
+    if ($source -eq 'npm' -and -not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        Warn "$id missing (npm) - npm is not on PATH: install Node.js first, as the manual steps below say"
+        $missing++
+        if (-not $Check) { $failed++ }
+        continue
+    }
     if ($source -eq 'github-release') {
         $problem = Test-GitHubReleaseEntry -Tool $tool
         if ($problem) { Warn $problem; $missing++; if (-not $Check) { $failed++ }; continue }

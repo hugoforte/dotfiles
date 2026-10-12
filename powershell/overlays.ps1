@@ -82,6 +82,27 @@ function Find-OverlayFile {
     return $null
 }
 
+# What the overlays give install-tools.ps1 on the computer named ComputerName:
+#   Manifests    each overlay's powershell/tools.psd1 that exists, in overlay order
+#   MachineFile  the one machines/<ComputerName>.psd1, or $null; two overlays shipping it is an error
+#   MachineDirs  the overlays' machines/ directories when none holds this computer's file, so a
+#                misnamed file can be reported rather than its options dropped in silence
+function Get-OverlayToolSource {
+    param(
+        [AllowEmptyCollection()][string[]]$Overlays = @(),
+        [Parameter(Mandatory)][string]$ComputerName
+    )
+
+    $machineFile = if ($Overlays.Count) { Find-OverlayFile -Roots $Overlays -RelativePath "machines\$ComputerName.psd1" }
+    [pscustomobject]@{
+        Manifests   = @($Overlays | ForEach-Object { Join-Path $_ "powershell\tools.psd1" } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
+        MachineFile = $machineFile
+        MachineDirs = @(if (-not $machineFile) {
+                $Overlays | ForEach-Object { Join-Path $_ "machines" } | Where-Object { Test-Path -LiteralPath $_ -PathType Container }
+            })
+    }
+}
+
 # The contents of ~/.gitconfig-overlays: one include per overlay that ships git/gitconfig, in
 # overlay order, so a later overlay overrides an earlier one.
 function Get-GitOverlayIncludeContent {
