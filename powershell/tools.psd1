@@ -134,7 +134,7 @@
 
         @{ Id = 'node-via-nvm'
            Source = 'manual'
-           Note = 'Install and select a Node.js once NVM for Windows is in: nvm install lts, then nvm use lts. The npm entries need it' }
+           Note = 'Install and select a Node.js once NVM for Windows is in: nvm install lts, then nvm use lts. The npm entries need it. A machine set up when this manifest declared OpenJS.NodeJS still has it, and its C:\Program Files\nodejs can shadow NVM''s on PATH: winget uninstall OpenJS.NodeJS first, then reinstall the npm entries with dotfiles-tools' }
 
         @{ Id = 'sops-recipient'
            Source = 'manual'
