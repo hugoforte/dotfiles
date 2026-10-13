@@ -109,7 +109,7 @@ Outside T3 Code, a session uses `~/.claude` unless it is started with `CLAUDE_CO
 [claude-swap](https://github.com/realiti4/claude-swap) (`cswap`) holds several logins for `~/.claude` and switches between them. `cswap auto` watches the active account's 5-hour and 7-day usage and moves to the account with the most left before the limit is reached; Claude Code picks up the new login on its next message. It is an option: list `claude-swap` under `OptionalTools` in `ai/secrets/machine.local.psd1` and run `dotfiles-tools`, which installs `uv` and then claude-swap with `uv tool install claude-swap`. Then:
 
 1. Sign each account into `~/.claude` in turn (`claude auth login`) and run `cswap add` after each. Do not `/logout` between them: that can revoke the login just added.
-2. Run `.\powershell\install-cswap-task.ps1`. It registers the "Claude Swap Auto" scheduled task, which runs `cswap auto` hidden at every sign-in, and starts it now. Re-running it is safe; `-Uninstall` removes it.
+2. Run `.\powershell\install-cswap-task.ps1`. It registers the "Claude Swap Auto" scheduled task, which runs `cswap auto` hidden at every sign-in, restarts it a minute after it exits, logs to `%LOCALAPPDATA%\dotfiles\cswap-auto.log`, and starts it now. Re-running it is safe; `-Uninstall` stops and removes it.
 3. `cswap list` shows every account's usage and which one is active.
 
 claude.ai connectors (Atlassian, Microsoft 365 and the like) belong to a claude.ai account, not to a machine, so after a switch new sessions get the other account's connectors. Set up the connectors you need on every account in the rotation.

@@ -48,7 +48,7 @@ testable yet:
 | `ai/install.sh`'s extra Claude config folders | `HOME` and the overlay list are fixtures, so the folders it fills are temp directories | this change |
 
 **Everything else is untestable on purpose, not by oversight.** `setup.ps1`, `sync.ps1`,
-`install-sync-task.ps1`, and `install-tools.ps1` / `deploy-secrets.ps1` without `-Check` read
+`install-sync-task.ps1`, `install-cswap-task.ps1`, and `install-tools.ps1` / `deploy-secrets.ps1` without `-Check` read
 their targets from globals at the point of use and mutate the real machine. The seam that
 would fix that is [#11](https://github.com/hugoforte/dotfiles/issues/11). Until it lands, do
 not add a test that runs any of them — add the seam first.
