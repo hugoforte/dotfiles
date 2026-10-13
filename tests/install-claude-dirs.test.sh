@@ -151,7 +151,7 @@ assert_eq "--check fails on a relative path" "1" "$rc"
 
 # The root and the home folder are never a Claude config folder: refuse both.
 fresh_home
-config '/\n~\n~/\n'
+config '/\n//\n~\n~/\n~/.\n~/./\n~/.claude-x/..\n'
 out="$(run)"; rc=$?
 assert_eq "install carries on past / and ~" "0" "$rc"
 assert_eq "and puts no CLAUDE.md in the home folder" "n" "$(exists "$home/CLAUDE.md")"

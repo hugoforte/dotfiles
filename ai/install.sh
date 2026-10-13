@@ -66,9 +66,11 @@ config_dir_path() {
             path="$(cygpath -u "$path")" ;;
         *) printf '%s\n' "$path"; return 2 ;;
     esac
-    path="${path%/}"
+    # Lexically: repeated slashes collapse, . segments go, and a trailing slash goes, so ~/. and //
+    # cannot pass for something other than home or root. A .. segment is refused outright.
+    path="$(printf '%s\n' "$path" | sed -e 's#//*#/#g' -e 's#/\./#/#g' -e 's#/\./#/#g' -e 's#/\.$##' -e 's#/$##')"
     # The root or the home folder itself is never a Claude config folder.
-    case "$path" in ''|"${HOME%/}") printf '%s\n' "${1}"; return 2 ;; esac
+    case "$path" in ''|"${HOME%/}"|*/..|*/../*) printf '%s\n' "${1}"; return 2 ;; esac
     printf '%s\n' "$path"
 }
 
