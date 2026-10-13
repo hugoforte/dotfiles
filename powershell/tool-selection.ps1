@@ -1,4 +1,5 @@
-# Which manifest entries a machine gets, and the pure parts of the github-release install method.
+# Which manifest entries a machine gets, and the pure parts of the github-release and uv install
+# methods.
 # Dot-sourced by install-tools.ps1.
 #
 # An entry with Optional = '<name>' belongs to that option. A machine opts into it by listing the
@@ -56,6 +57,14 @@ function Test-GitHubReleaseEntry {
 
     $missing = @('Asset', 'InstallArgs', 'Present' | Where-Object { -not $Tool[$_] })
     if ($missing.Count -gt 0) { return "$($Tool.Id): a github-release entry needs $($missing -join ', ')" }
+}
+
+# The tools `uv tool list` reports installed. It prints each tool as "<name> v<version>", followed
+# by a "- <executable>" line per command the tool put on PATH, or "No tools installed".
+function Get-UvToolNames {
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$ListOutput)
+
+    return @($ListOutput -split "`r?`n" | Where-Object { $_ -match '^\S+ v\d' } | ForEach-Object { ($_ -split ' ')[0] })
 }
 
 # Whether a program whose display name matches DisplayName (a -like wildcard) is in Listed - the

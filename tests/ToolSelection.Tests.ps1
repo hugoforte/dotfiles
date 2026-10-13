@@ -1,6 +1,7 @@
 # Which manifest entries a machine gets (optional tools are opted into per machine, by name, in
-# machine.local.psd1), and the pure parts of the github-release install method: picking the
-# installer asset and recognising the installed program. Everything happens under TestDrive:.
+# machine.local.psd1), the pure parts of the github-release install method (picking the
+# installer asset and recognising the installed program) and of the uv one (reading what uv has
+# installed). Everything happens under TestDrive:.
 
 BeforeAll {
     . (Join-Path (Split-Path $PSScriptRoot -Parent) 'powershell\tool-selection.ps1')
@@ -109,6 +110,26 @@ Describe 'Select-ReleaseAsset' {
 
     It 'refuses a release with no assets the same way, naming the pattern' {
         { Select-ReleaseAsset -Assets @() -Pattern 'OpenWhispr-Setup-*.exe' } | Should -Throw '*OpenWhispr-Setup-*.exe*'
+    }
+}
+
+Describe 'Get-UvToolNames' {
+
+    It 'names each installed tool, without its version or commands' {
+        Get-UvToolNames -ListOutput "claude-swap v1.4.0`n- cswap.exe`nruff v0.6.2`n- ruff.exe" |
+            Should -Be @('claude-swap', 'ruff')
+    }
+
+    It 'reads output with Windows line endings' {
+        Get-UvToolNames -ListOutput "claude-swap v1.4.0`r`n- cswap.exe`r`n" | Should -Be @('claude-swap')
+    }
+
+    It 'names nothing when uv has no tools installed' {
+        @(Get-UvToolNames -ListOutput 'No tools installed').Count | Should -Be 0
+    }
+
+    It 'names nothing for empty output' {
+        @(Get-UvToolNames -ListOutput '').Count | Should -Be 0
     }
 }
 
