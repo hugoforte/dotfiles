@@ -46,9 +46,10 @@ CLAUDE_DIRS="$CLAUDE_DIR"
 
 # config_dir_path <line>: print the folder one config-dirs line names. A line is one path,
 # surrounding whitespace ignored: absolute (/..., C:\... or C:/...) or under the home directory
-# (~, ~/... or ~\...). A # at the start of a line, or after whitespace, starts a comment that
+# (~/... or ~\...). A # at the start of a line, or after whitespace, starts a comment that
 # runs to the end of the line. Returns 1 for a line naming no folder (blank or all comment), and
-# 2, printing the path, for one that is not absolute.
+# 2, printing the path, for one that is not absolute, is the root or the home folder itself, or
+# is a drive path with no cygpath to convert it.
 config_dir_path() {
     path="${1#"${1%%[![:space:]]*}"}"
     path="${path%%[[:space:]]"#"*}"
@@ -60,10 +61,15 @@ config_dir_path() {
     esac
     case "$path" in
         /*) ;;
-        [A-Za-z]:[\\/]*) command -v cygpath > /dev/null 2>&1 && path="$(cygpath -u "$path")" ;;
+        [A-Za-z]:[\\/]*)
+            command -v cygpath > /dev/null 2>&1 || { printf '%s\n' "$path"; return 2; }
+            path="$(cygpath -u "$path")" ;;
         *) printf '%s\n' "$path"; return 2 ;;
     esac
-    printf '%s\n' "${path%/}"
+    path="${path%/}"
+    # The root or the home folder itself is never a Claude config folder.
+    case "$path" in ''|"${HOME%/}") printf '%s\n' "${1}"; return 2 ;; esac
+    printf '%s\n' "$path"
 }
 
 # resolve_claude_dirs: add each folder the overlays name to CLAUDE_DIRS, once: a folder already
@@ -80,7 +86,7 @@ resolve_claude_dirs() {
             dir="$(config_dir_path "$line")"
             case $? in
                 1) continue ;;
-                2) warning "$overlay/$CONFIG_DIRS_FILE: $dir is not an absolute path or ~/... - skipped"
+                2) warning "$overlay/$CONFIG_DIRS_FILE: $dir is not an absolute path or ~/..., or is / or ~ itself - skipped"
                    CHECK_FAILED=1
                    continue ;;
             esac

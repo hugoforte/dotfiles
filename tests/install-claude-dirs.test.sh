@@ -149,6 +149,15 @@ assert_eq "and creates nothing for it" "" "$(ls -A "$cwd")"
 out="$(check)"; rc=$?
 assert_eq "--check fails on a relative path" "1" "$rc"
 
+# The root and the home folder are never a Claude config folder: refuse both.
+fresh_home
+config '/\n~\n~/\n'
+out="$(run)"; rc=$?
+assert_eq "install carries on past / and ~" "0" "$rc"
+assert_eq "and puts no CLAUDE.md in the home folder" "n" "$(exists "$home/CLAUDE.md")"
+out="$(check)"; rc=$?
+assert_eq "--check fails on / or ~" "1" "$rc"
+
 # A folder named twice, or naming ~/.claude itself, is set up once: one settings backup, of the
 # file as it was.
 fresh_home
