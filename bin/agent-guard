@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# Git Bash entry point for agent-guard.mjs; agent-guard.cmd is the one for PowerShell and cmd.
+exec node "$(dirname "$0")/agent-guard.mjs" "$@"
