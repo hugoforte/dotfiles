@@ -4,6 +4,7 @@ rem Git for Windows puts git on PATH but not sh, so sh is found beside git: <Git
 setlocal
 set "SH=sh"
 where sh >nul 2>nul && goto run
+set "GITEXE="
 for /f "delims=" %%G in ('where git 2^>nul') do if not defined GITEXE set "GITEXE=%%G"
 if not defined GITEXE (echo check-encrypted: neither sh nor git is on PATH; install Git for Windows 1>&2 & exit /b 1)
 for %%D in ("%GITEXE%\..\..") do set "SH=%%~fD\bin\sh.exe"
