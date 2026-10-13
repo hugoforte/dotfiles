@@ -2,6 +2,7 @@
 
 # Installs the AI tooling in this repo into the agents' home directories by symlink.
 # Components: CLAUDE.md, agents, skills, rig skills, overlay skills, Bruno collections, settings.
+# The Claude ones apply to ~/.claude and to every extra Claude config folder (see claude_dirs).
 # See --help.
 
 # Derive repo root from script location (works regardless of where repo is cloned)
@@ -25,21 +26,46 @@ CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 SETTINGS_FRAGMENT="$ZSH/ai/claude/settings.json"
 
+# Overlays may name extra Claude config folders (each one a CLAUDE_CONFIG_DIR with its own login),
+# one per line in <overlay>/ai/claude/config-dirs. See claude_dirs.
+CONFIG_DIRS_FILE="ai/claude/config-dirs"
+
 # Overlays ship Bruno collections too, under <overlay>/bruno/<collection>/, each linked into
 # this one home so Bruno opens them all from one place. No collection lives in this public repo;
 # the content is private, the mechanism is not.
 BRUNO_DIR="$HOME/bruno"
 
-# Skill directories: every ai/skills/<name>/ is linked into each of these.
-# ~/.claude/skills is always used; the others only when their tool directory exists.
-SKILL_TARGETS="$HOME/.claude/skills $HOME/.codex/skills $HOME/.copilot/skills"
-
 TAB="$(printf '\t')"
 
+# The Claude config folders, one per line: ~/.claude, then each extra folder the overlays name in
+# their ai/claude/config-dirs. Each gets exactly what ~/.claude gets: CLAUDE.md, agents, skills and
+# the managed settings. Nothing else in a folder is touched, so its login (.credentials.json),
+# .claude.json, history and projects stay Claude Code's. In a config-dirs file a line is a path,
+# ~/ for the home directory; blank lines and lines starting with # are skipped.
+claude_dirs() {
+    echo "$CLAUDE_DIR"
+    overlay_dirs | while IFS= read -r overlay; do
+        [ -f "$overlay/$CONFIG_DIRS_FILE" ] || continue
+        tr -d '\r' < "$overlay/$CONFIG_DIRS_FILE" | while IFS= read -r dir; do
+            case "$dir" in
+                ''|'#'*) continue ;;
+                '~/'*) dir="$HOME/${dir#'~/'}" ;;
+                [A-Za-z]:*) command -v cygpath > /dev/null 2>&1 && dir="$(cygpath -u "$dir")" ;;
+            esac
+            echo "${dir%/}"
+        done
+    done
+}
+
+# Skill directories: every ai/skills/<name>/ is linked into each of these.
+# Each Claude config folder's skills/ is always used; Codex's and Copilot's only when their tool
+# directory exists.
 skill_target_dirs() {
-    for target in $SKILL_TARGETS; do
-        parent="$(dirname "$target")"
-        if [ "$target" = "$HOME/.claude/skills" ] || [ -d "$parent" ]; then
+    for dir in $(claude_dirs); do
+        echo "$dir/skills"
+    done
+    for target in "$HOME/.codex/skills" "$HOME/.copilot/skills"; do
+        if [ -d "$(dirname "$target")" ]; then
             echo "$target"
         fi
     done
@@ -200,36 +226,48 @@ check_orphans() {
 # ---------------------------------------------------------------------------
 
 install_claude_md() {
-    mkdir -p "$CLAUDE_DIR"
-    link "$ZSH/ai/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md" && success "Linked CLAUDE.md"
+    for dir in $(claude_dirs); do
+        mkdir -p "$dir"
+        link "$ZSH/ai/CLAUDE.md" "$dir/CLAUDE.md" && success "Linked CLAUDE.md into $dir"
+    done
 }
 uninstall_claude_md() {
-    unlink_managed "$ZSH/ai/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md" && success "Removed CLAUDE.md link"
+    for dir in $(claude_dirs); do
+        unlink_managed "$ZSH/ai/CLAUDE.md" "$dir/CLAUDE.md" && success "Removed CLAUDE.md link from $dir"
+    done
 }
 check_claude_md() {
-    check_link "$ZSH/ai/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
+    for dir in $(claude_dirs); do
+        check_link "$ZSH/ai/CLAUDE.md" "$dir/CLAUDE.md"
+    done
 }
 
 install_agents() {
-    mkdir -p "$CLAUDE_DIR/agents"
-    for agent in "$ZSH"/ai/agents/*.md; do
-        link "$agent" "$CLAUDE_DIR/agents/$(basename "$agent")"
+    for dir in $(claude_dirs); do
+        mkdir -p "$dir/agents"
+        for agent in "$ZSH"/ai/agents/*.md; do
+            link "$agent" "$dir/agents/$(basename "$agent")"
+        done
+        prune_orphans "$dir/agents" "$ZSH/ai/agents"
+        success "Linked agents into $dir/agents"
     done
-    prune_orphans "$CLAUDE_DIR/agents" "$ZSH/ai/agents"
-    success "Linked agents into $CLAUDE_DIR/agents"
 }
 uninstall_agents() {
-    for agent in "$ZSH"/ai/agents/*.md; do
-        unlink_managed "$agent" "$CLAUDE_DIR/agents/$(basename "$agent")"
+    for dir in $(claude_dirs); do
+        for agent in "$ZSH"/ai/agents/*.md; do
+            unlink_managed "$agent" "$dir/agents/$(basename "$agent")"
+        done
+        prune_orphans "$dir/agents" "$ZSH/ai/agents"
     done
-    prune_orphans "$CLAUDE_DIR/agents" "$ZSH/ai/agents"
     success "Removed agent links"
 }
 check_agents() {
-    for agent in "$ZSH"/ai/agents/*.md; do
-        check_link "$agent" "$CLAUDE_DIR/agents/$(basename "$agent")"
+    for dir in $(claude_dirs); do
+        for agent in "$ZSH"/ai/agents/*.md; do
+            check_link "$agent" "$dir/agents/$(basename "$agent")"
+        done
+        check_orphans "$dir/agents" "$ZSH/ai/agents"
     done
-    check_orphans "$CLAUDE_DIR/agents" "$ZSH/ai/agents"
 }
 
 install_skills() {
@@ -502,24 +540,33 @@ EOF
     each_overlay_orphans "$BRUNO_DIR" check_orphans bruno
 }
 
-# Settings are merged, not linked: ~/.claude/settings.json also holds machine-local state.
+# Settings are merged, not linked: each folder's settings.json also holds machine-local state.
 install_settings() {
-    mkdir -p "$CLAUDE_DIR"
-    if [ -f "$SETTINGS_FILE" ]; then
-        cp "$SETTINGS_FILE" "${SETTINGS_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
-    fi
-    if reconcile_settings merge "$SETTINGS_FILE" "$SETTINGS_FRAGMENT"; then
-        success "Merged ai/claude/settings.json into $SETTINGS_FILE"
-    fi
+    for dir in $(claude_dirs); do
+        mkdir -p "$dir"
+        if [ -f "$dir/settings.json" ]; then
+            cp "$dir/settings.json" "$dir/settings.json.backup.$(date +%Y%m%d_%H%M%S)"
+        fi
+        if reconcile_settings merge "$dir/settings.json" "$SETTINGS_FRAGMENT"; then
+            success "Merged ai/claude/settings.json into $dir/settings.json"
+        fi
+    done
 }
 uninstall_settings() {
-    info "Settings are merged, not linked; nothing to remove from $SETTINGS_FILE"
+    info "Settings are merged, not linked; nothing to remove from any settings.json"
 }
 check_settings() {
-    reconcile_settings check "$SETTINGS_FILE" "$SETTINGS_FRAGMENT" || CHECK_FAILED=1
+    for dir in $(claude_dirs); do
+        # The drift lines name keys, not files, so say which folder they were about.
+        if ! reconcile_settings check "$dir/settings.json" "$SETTINGS_FRAGMENT"; then
+            warning "$dir/settings.json is out of line with ai/claude/settings.json"
+            CHECK_FAILED=1
+        fi
+    done
 }
 
-# Copy the managed keys from the live file back into the repo fragment.
+# Copy the managed keys from ~/.claude's live file back into the repo fragment. Only ~/.claude:
+# the extra folders get the same keys from the fragment, so they are not a second source.
 export_settings() {
     reconcile_settings export "$SETTINGS_FILE" "$SETTINGS_FRAGMENT" || exit 1
     success "Wrote managed keys from $SETTINGS_FILE to ai/claude/settings.json (review with git diff)"
@@ -555,7 +602,8 @@ show_help() {
     echo "into ~/.codex and ~/.copilot when present), links the skills the rig checkout"
     echo "ships and the skills each overlay in ai/secrets/machine.local.psd1 ships the same way,"
     echo "links each overlay's Bruno collections (<overlay>/bruno/) into ~/bruno, and merges"
-    echo "ai/claude/settings.json into ~/.claude/settings.json."
+    echo "ai/claude/settings.json into ~/.claude/settings.json. Every extra Claude config folder"
+    echo "an overlay names in <overlay>/ai/claude/config-dirs gets the same as ~/.claude."
     echo ""
     echo "Modes:"
     echo "  (default)              Install"

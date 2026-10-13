@@ -8,6 +8,7 @@
 #   git/gitconfig                                 a fragment; every overlay's is included
 #   ai/skills/<name>/                             skills, linked by ai/install.sh; a name ships from one place
 #   bruno/<collection>/                           Bruno collections, linked into ~/bruno by ai/install.sh; a name ships from one place
+#   ai/claude/config-dirs                         extra Claude config folders, one per line; ai/install.sh gives each what ~/.claude gets
 
 # Whether a machine.local.psd1 opts the machine into skill secrets: it must declare SearchRoots,
 # which deploy-secrets.ps1 cannot run without. The file alone is not enough, because a machine
