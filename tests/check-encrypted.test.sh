@@ -91,6 +91,17 @@ assert_eq "names the plaintext secret in that directory" "y" "$arg_caught"
 case "$arg_out" in *"skillB"*) arg_own=y ;; *) arg_own=n ;; esac
 assert_eq "leaves its own directory out of it" "n" "$arg_own"
 
+printf '=== bin/check-encrypted, the command on PATH ===\n'
+# It runs the script beside it in the same tree, so a copy in the fake tree
+# audits the fake tree, from any working directory.
+mkdir -p "$work/bin"
+cp "$REPO_ROOT/bin/check-encrypted" "$work/bin/check-encrypted"
+cmd_out="$(cd "$overlay" && sh "$work/bin/check-encrypted" ai/secrets 2>&1)"; cmd_rc=$?
+printf '%s\n' "$cmd_out" | sed 's/^/        /'
+assert_eq "the command fails on a plaintext secret in the directory given" "1" "$cmd_rc"
+case "$cmd_out" in *"skillC/.secrets.env"*) cmd_caught=y ;; *) cmd_caught=n ;; esac
+assert_eq "the command names it" "y" "$cmd_caught"
+
 printf '=== ai/install.sh --check audits each overlay ===\n'
 # install.sh derives ZSH from its own location and the home directories from
 # $HOME, so a repo tree whose own secrets are clean, with $HOME inside the temp
