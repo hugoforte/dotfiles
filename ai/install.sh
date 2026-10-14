@@ -2,6 +2,7 @@
 
 # Installs the AI tooling in this repo into the agents' home directories by symlink.
 # Components: CLAUDE.md, agents, skills, rig skills, overlay skills, Bruno collections, settings.
+# The Claude ones apply to ~/.claude and to every extra Claude config folder (see CLAUDE_DIRS).
 # See --help.
 
 # Derive repo root from script location (works regardless of where repo is cloned)
@@ -25,21 +26,99 @@ CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 SETTINGS_FRAGMENT="$ZSH/ai/claude/settings.json"
 
+# Overlays may name extra Claude config folders (each one a CLAUDE_CONFIG_DIR with its own login),
+# one per line in <overlay>/ai/claude/config-dirs. See config_dir_path.
+CONFIG_DIRS_FILE="ai/claude/config-dirs"
+
 # Overlays ship Bruno collections too, under <overlay>/bruno/<collection>/, each linked into
 # this one home so Bruno opens them all from one place. No collection lives in this public repo;
 # the content is private, the mechanism is not.
 BRUNO_DIR="$HOME/bruno"
 
-# Skill directories: every ai/skills/<name>/ is linked into each of these.
-# ~/.claude/skills is always used; the others only when their tool directory exists.
-SKILL_TARGETS="$HOME/.claude/skills $HOME/.codex/skills $HOME/.copilot/skills"
-
 TAB="$(printf '\t')"
 
+# The Claude config folders, one per line: ~/.claude, then each extra folder the overlays name in
+# their ai/claude/config-dirs. Each gets exactly what ~/.claude gets: CLAUDE.md, agents, skills and
+# the managed settings. Nothing else in a folder is touched, so its login (.credentials.json),
+# .claude.json, history and projects stay Claude Code's. Set by resolve_claude_dirs; a path may
+# hold spaces, so loop over it line by line, never with `for`.
+CLAUDE_DIRS="$CLAUDE_DIR"
+
+# config_dir_path <line>: print the folder one config-dirs line names. A line is one path,
+# surrounding whitespace ignored: absolute (/..., C:\... or C:/...) or under the home directory
+# (~/... or ~\...). A # at the start of a line, or after whitespace, starts a comment that
+# runs to the end of the line. Returns 1 for a line naming no folder (blank or all comment), and
+# 2, printing the path, for one that is not absolute, is the root or the home folder itself, or
+# is a drive path with no cygpath to convert it.
+config_dir_path() {
+    path="${1#"${1%%[![:space:]]*}"}"
+    path="${path%%[[:space:]]"#"*}"
+    path="${path%"${path##*[![:space:]]}"}"
+    case "$path" in
+        ''|'#'*) return 1 ;;
+        '~') path="$HOME" ;;
+        '~/'*|'~\'*) path="$HOME/$(printf '%s' "${path#??}" | tr '\\' '/')" ;;
+    esac
+    case "$path" in
+        /*) ;;
+        [A-Za-z]:[\\/]*)
+            command -v cygpath > /dev/null 2>&1 || { printf '%s\n' "$path"; return 2; }
+            path="$(cygpath -u "$path")" ;;
+        *) printf '%s\n' "$path"; return 2 ;;
+    esac
+    # Lexically: repeated slashes collapse, . segments go, and a trailing slash goes, so ~/. and //
+    # cannot pass for something other than home or root. A .. segment is refused outright.
+    path="$(printf '%s\n' "$path" | sed -e 's#//*#/#g' -e 's#/\./#/#g' -e 's#/\./#/#g' -e 's#/\.$##' -e 's#/$##')"
+    # The root or the home folder itself is never a Claude config folder.
+    case "$path" in ''|"${HOME%/}"|*/..|*/../*) printf '%s\n' "${1}"; return 2 ;; esac
+    printf '%s\n' "$path"
+}
+
+# resolve_claude_dirs: add each folder the overlays name to CLAUDE_DIRS, once: a folder already
+# there, ~/.claude included, is not added again. A path that is not absolute is warned about,
+# never created, and is drift to --check.
+resolve_claude_dirs() {
+    overlays="$(overlay_dirs)"
+    [ -n "$overlays" ] || return 0
+    while IFS= read -r overlay; do
+        [ -f "$overlay/$CONFIG_DIRS_FILE" ] || continue
+        # Through a here-document: the last line counts without a newline after it.
+        lines="$(tr -d '\r' < "$overlay/$CONFIG_DIRS_FILE")"
+        while IFS= read -r line; do
+            dir="$(config_dir_path "$line")"
+            case $? in
+                1) continue ;;
+                2) warning "$overlay/$CONFIG_DIRS_FILE: $dir is not an absolute path or ~/..., or is / or ~ itself - skipped"
+                   CHECK_FAILED=1
+                   continue ;;
+            esac
+            known=false
+            while IFS= read -r claude_dir; do
+                same_path "$claude_dir" "$dir" && known=true
+            done <<EOF
+$CLAUDE_DIRS
+EOF
+            [ "$known" = "true" ] || CLAUDE_DIRS="$CLAUDE_DIRS
+$dir"
+        done <<EOF
+$lines
+EOF
+    done <<EOF
+$overlays
+EOF
+}
+
+# Skill directories: every ai/skills/<name>/ is linked into each of these.
+# Each Claude config folder's skills/ is always used; Codex's and Copilot's only when their tool
+# directory exists.
 skill_target_dirs() {
-    for target in $SKILL_TARGETS; do
-        parent="$(dirname "$target")"
-        if [ "$target" = "$HOME/.claude/skills" ] || [ -d "$parent" ]; then
+    while IFS= read -r dir; do
+        echo "$dir/skills"
+    done <<EOF
+$CLAUDE_DIRS
+EOF
+    for target in "$HOME/.codex/skills" "$HOME/.copilot/skills"; do
+        if [ -d "$(dirname "$target")" ]; then
             echo "$target"
         fi
     done
@@ -200,40 +279,64 @@ check_orphans() {
 # ---------------------------------------------------------------------------
 
 install_claude_md() {
-    mkdir -p "$CLAUDE_DIR"
-    link "$ZSH/ai/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md" && success "Linked CLAUDE.md"
+    while IFS= read -r dir; do
+        mkdir -p "$dir"
+        link "$ZSH/ai/CLAUDE.md" "$dir/CLAUDE.md" && success "Linked CLAUDE.md into $dir"
+    done <<EOF
+$CLAUDE_DIRS
+EOF
 }
 uninstall_claude_md() {
-    unlink_managed "$ZSH/ai/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md" && success "Removed CLAUDE.md link"
+    while IFS= read -r dir; do
+        unlink_managed "$ZSH/ai/CLAUDE.md" "$dir/CLAUDE.md" && success "Removed CLAUDE.md link from $dir"
+    done <<EOF
+$CLAUDE_DIRS
+EOF
 }
 check_claude_md() {
-    check_link "$ZSH/ai/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
+    while IFS= read -r dir; do
+        check_link "$ZSH/ai/CLAUDE.md" "$dir/CLAUDE.md"
+    done <<EOF
+$CLAUDE_DIRS
+EOF
 }
 
 install_agents() {
-    mkdir -p "$CLAUDE_DIR/agents"
-    for agent in "$ZSH"/ai/agents/*.md; do
-        link "$agent" "$CLAUDE_DIR/agents/$(basename "$agent")"
-    done
-    prune_orphans "$CLAUDE_DIR/agents" "$ZSH/ai/agents"
-    success "Linked agents into $CLAUDE_DIR/agents"
+    while IFS= read -r dir; do
+        mkdir -p "$dir/agents"
+        for agent in "$ZSH"/ai/agents/*.md; do
+            link "$agent" "$dir/agents/$(basename "$agent")"
+        done
+        prune_orphans "$dir/agents" "$ZSH/ai/agents"
+        success "Linked agents into $dir/agents"
+    done <<EOF
+$CLAUDE_DIRS
+EOF
 }
 uninstall_agents() {
-    for agent in "$ZSH"/ai/agents/*.md; do
-        unlink_managed "$agent" "$CLAUDE_DIR/agents/$(basename "$agent")"
-    done
-    prune_orphans "$CLAUDE_DIR/agents" "$ZSH/ai/agents"
+    while IFS= read -r dir; do
+        for agent in "$ZSH"/ai/agents/*.md; do
+            unlink_managed "$agent" "$dir/agents/$(basename "$agent")"
+        done
+        prune_orphans "$dir/agents" "$ZSH/ai/agents"
+    done <<EOF
+$CLAUDE_DIRS
+EOF
     success "Removed agent links"
 }
 check_agents() {
-    for agent in "$ZSH"/ai/agents/*.md; do
-        check_link "$agent" "$CLAUDE_DIR/agents/$(basename "$agent")"
-    done
-    check_orphans "$CLAUDE_DIR/agents" "$ZSH/ai/agents"
+    while IFS= read -r dir; do
+        for agent in "$ZSH"/ai/agents/*.md; do
+            check_link "$agent" "$dir/agents/$(basename "$agent")"
+        done
+        check_orphans "$dir/agents" "$ZSH/ai/agents"
+    done <<EOF
+$CLAUDE_DIRS
+EOF
 }
 
 install_skills() {
-    for target in $(skill_target_dirs); do
+    while IFS= read -r target; do
         mkdir -p "$target"
         for skill in "$ZSH"/ai/skills/*/; do
             skill="${skill%/}"
@@ -241,27 +344,33 @@ install_skills() {
         done
         prune_orphans "$target" "$ZSH/ai/skills"
         success "Linked skills into $target"
-    done
+    done <<EOF
+$(skill_target_dirs)
+EOF
 }
 uninstall_skills() {
-    for target in $(skill_target_dirs); do
+    while IFS= read -r target; do
         [ -d "$target" ] || continue
         for skill in "$ZSH"/ai/skills/*/; do
             skill="${skill%/}"
             unlink_managed "$skill" "$target/$(basename "$skill")"
         done
         prune_orphans "$target" "$ZSH/ai/skills"
-    done
+    done <<EOF
+$(skill_target_dirs)
+EOF
     success "Removed skill links"
 }
 check_skills() {
-    for target in $(skill_target_dirs); do
+    while IFS= read -r target; do
         for skill in "$ZSH"/ai/skills/*/; do
             skill="${skill%/}"
             check_link "$skill" "$target/$(basename "$skill")"
         done
         check_orphans "$target" "$ZSH/ai/skills"
-    done
+    done <<EOF
+$(skill_target_dirs)
+EOF
 }
 
 # rig ships its own agent skills under <checkout>/skills/ and links none of them;
@@ -271,7 +380,7 @@ check_skills() {
 install_rig_skills() {
     root="$(rig_root)" || { info "No rig checkout on this machine - no rig skills to link"; return 0; }
     [ -d "$root/skills" ] || { info "rig at $root ships no skills yet - run rig update"; return 0; }
-    for target in $(skill_target_dirs); do
+    while IFS= read -r target; do
         mkdir -p "$target"
         for skill in "$root"/skills/*/; do
             skill="${skill%/}"
@@ -280,11 +389,13 @@ install_rig_skills() {
         done
         prune_orphans "$target" "$root/skills"
         success "Linked rig skills from $root into $target"
-    done
+    done <<EOF
+$(skill_target_dirs)
+EOF
 }
 uninstall_rig_skills() {
     root="$(rig_root)" || return 0
-    for target in $(skill_target_dirs); do
+    while IFS= read -r target; do
         [ -d "$target" ] || continue
         for skill in "$root"/skills/*/; do
             skill="${skill%/}"
@@ -292,20 +403,24 @@ uninstall_rig_skills() {
             unlink_managed "$skill" "$target/$(basename "$skill")"
         done
         prune_orphans "$target" "$root/skills"
-    done
+    done <<EOF
+$(skill_target_dirs)
+EOF
     success "Removed rig skill links"
 }
 check_rig_skills() {
     root="$(rig_root)" || { info "No rig checkout on this machine - no rig skills expected"; return 0; }
     [ -d "$root/skills" ] || return 0
-    for target in $(skill_target_dirs); do
+    while IFS= read -r target; do
         for skill in "$root"/skills/*/; do
             skill="${skill%/}"
             [ -d "$skill" ] || continue
             check_link "$skill" "$target/$(basename "$skill")"
         done
         check_orphans "$target" "$root/skills"
-    done
+    done <<EOF
+$(skill_target_dirs)
+EOF
 }
 
 # Overlays ship skills too, under <overlay>/ai/skills/*/: a skill whose text names something
@@ -375,7 +490,7 @@ EOF
 install_overlay_skills() {
     skills="$(overlay_skills)"
     report_overlay_skill_clashes "$skills" || :
-    for target in $(skill_target_dirs); do
+    while IFS= read -r target; do
         mkdir -p "$target"
         while IFS="$TAB" read -r skill clash; do
             [ -n "$skill" ] && [ -z "$clash" ] || continue
@@ -385,11 +500,13 @@ $skills
 EOF
         each_overlay_orphans "$target" prune_orphans
         if [ -n "$skills" ]; then success "Linked overlay skills into $target"; fi
-    done
+    done <<EOF
+$(skill_target_dirs)
+EOF
 }
 uninstall_overlay_skills() {
     skills="$(overlay_skills)"
-    for target in $(skill_target_dirs); do
+    while IFS= read -r target; do
         [ -d "$target" ] || continue
         while IFS="$TAB" read -r skill clash; do
             [ -n "$skill" ] || continue
@@ -401,13 +518,15 @@ uninstall_overlay_skills() {
 $skills
 EOF
         each_overlay_orphans "$target" prune_orphans
-    done
+    done <<EOF
+$(skill_target_dirs)
+EOF
     success "Removed overlay skill links"
 }
 check_overlay_skills() {
     skills="$(overlay_skills)"
     report_overlay_skill_clashes "$skills" || CHECK_FAILED=1
-    for target in $(skill_target_dirs); do
+    while IFS= read -r target; do
         while IFS="$TAB" read -r skill clash; do
             [ -n "$skill" ] && [ -z "$clash" ] || continue
             check_link "$skill" "$target/$(basename "$skill")"
@@ -415,7 +534,9 @@ check_overlay_skills() {
 $skills
 EOF
         each_overlay_orphans "$target" check_orphans
-    done
+    done <<EOF
+$(skill_target_dirs)
+EOF
 }
 
 # Overlays ship Bruno collections under <overlay>/bruno/<collection>/, linked into ~/bruno so
@@ -502,24 +623,37 @@ EOF
     each_overlay_orphans "$BRUNO_DIR" check_orphans bruno
 }
 
-# Settings are merged, not linked: ~/.claude/settings.json also holds machine-local state.
+# Settings are merged, not linked: each folder's settings.json also holds machine-local state.
 install_settings() {
-    mkdir -p "$CLAUDE_DIR"
-    if [ -f "$SETTINGS_FILE" ]; then
-        cp "$SETTINGS_FILE" "${SETTINGS_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
-    fi
-    if reconcile_settings merge "$SETTINGS_FILE" "$SETTINGS_FRAGMENT"; then
-        success "Merged ai/claude/settings.json into $SETTINGS_FILE"
-    fi
+    while IFS= read -r dir; do
+        mkdir -p "$dir"
+        if [ -f "$dir/settings.json" ]; then
+            cp "$dir/settings.json" "$dir/settings.json.backup.$(date +%Y%m%d_%H%M%S)"
+        fi
+        if reconcile_settings merge "$dir/settings.json" "$SETTINGS_FRAGMENT"; then
+            success "Merged ai/claude/settings.json into $dir/settings.json"
+        fi
+    done <<EOF
+$CLAUDE_DIRS
+EOF
 }
 uninstall_settings() {
-    info "Settings are merged, not linked; nothing to remove from $SETTINGS_FILE"
+    info "Settings are merged, not linked; nothing to remove from any settings.json"
 }
 check_settings() {
-    reconcile_settings check "$SETTINGS_FILE" "$SETTINGS_FRAGMENT" || CHECK_FAILED=1
+    while IFS= read -r dir; do
+        # The drift lines name keys, not files, so say which folder they were about.
+        if ! reconcile_settings check "$dir/settings.json" "$SETTINGS_FRAGMENT"; then
+            warning "$dir/settings.json is out of line with ai/claude/settings.json"
+            CHECK_FAILED=1
+        fi
+    done <<EOF
+$CLAUDE_DIRS
+EOF
 }
 
-# Copy the managed keys from the live file back into the repo fragment.
+# Copy the managed keys from ~/.claude's live file back into the repo fragment. Only ~/.claude:
+# the extra folders get the same keys from the fragment, so they are not a second source.
 export_settings() {
     reconcile_settings export "$SETTINGS_FILE" "$SETTINGS_FRAGMENT" || exit 1
     success "Wrote managed keys from $SETTINGS_FILE to ai/claude/settings.json (review with git diff)"
@@ -555,7 +689,8 @@ show_help() {
     echo "into ~/.codex and ~/.copilot when present), links the skills the rig checkout"
     echo "ships and the skills each overlay in ai/secrets/machine.local.psd1 ships the same way,"
     echo "links each overlay's Bruno collections (<overlay>/bruno/) into ~/bruno, and merges"
-    echo "ai/claude/settings.json into ~/.claude/settings.json."
+    echo "ai/claude/settings.json into ~/.claude/settings.json. Every extra Claude config folder"
+    echo "an overlay names in <overlay>/ai/claude/config-dirs gets the same as ~/.claude."
     echo ""
     echo "Modes:"
     echo "  (default)              Install"
@@ -612,6 +747,9 @@ done
 if [ "$MODE" = "install" ] && [ "$INSTALL_SETTINGS" = "true" ] && ! command -v jq > /dev/null 2>&1; then
     warning "jq not found - settings merge will be skipped (winget install jqlang.jq)"
 fi
+
+# Export reads ~/.claude alone, so it has no use for the extra folders or a warning about them.
+[ "$MODE" = "export" ] || resolve_claude_dirs
 
 # ---------------------------------------------------------------------------
 # Run

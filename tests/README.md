@@ -44,10 +44,11 @@ testable yet:
 | `powershell/native.ps1` | the command is an argument, and the verdict is the exit code | #15 |
 | `bin/md-lint.mjs`'s `markdownlintArguments` and `hasOwnConfig` | exported, and the script only acts when run directly | this change |
 | `powershell/user-path.ps1`'s `Add-PathEntry` | the PATH list is an argument; `Add-UserPathEntry` applies it and is not run | this change |
-| `powershell/tool-selection.ps1` | which entries a machine gets, the release asset and the installed-program match are functions of their arguments; `install-tools.ps1` reads the registry and downloads | this change |
+| `powershell/tool-selection.ps1` | which entries a machine gets, the release asset, the installed-program match and the reading of `uv tool list` are functions of their arguments; `install-tools.ps1` reads the registry, runs uv and downloads | this change |
+| `ai/install.sh`'s extra Claude config folders | `HOME` and the overlay list are fixtures, so the folders it fills are temp directories | this change |
 
 **Everything else is untestable on purpose, not by oversight.** `setup.ps1`, `sync.ps1`,
-`install-sync-task.ps1`, and `install-tools.ps1` / `deploy-secrets.ps1` without `-Check` read
+`install-sync-task.ps1`, `install-cswap-task.ps1`, and `install-tools.ps1` / `deploy-secrets.ps1` without `-Check` read
 their targets from globals at the point of use and mutate the real machine. The seam that
 would fix that is [#11](https://github.com/hugoforte/dotfiles/issues/11). Until it lands, do
 not add a test that runs any of them — add the seam first.
