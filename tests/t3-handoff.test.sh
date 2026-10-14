@@ -111,7 +111,7 @@ assert_eq "--project for a folder with two T3 projects names both" \
     "error: T3 Code has 2 projects for $(native projects example): \"example\" (example), \"copy\" (copy)" \
     "$(call "t3.projectForFolder(String.raw\`$root\\projects\\example\`, [...$projects, {id:'copy',title:'copy',workspaceRoot:String.raw\`$root\\projects\\example\`}])")"
 
-settings="{providers:{codex:{enabled:false}},providerInstances:{claudeAgent:{driver:'claudeAgent',displayName:'Claude'},claudeAgent_work:{driver:'claudeAgent',displayName:'Claude Work',enabled:true,config:{homePath:'~/.claude-work'}},claudeAgent_old:{driver:'claudeAgent',displayName:'Claude Old',enabled:false},codex_spare:{driver:'codex',config:{enabled:true}}}}"
+settings="{providers:{codex:{enabled:false},grok:{enabled:false}},providerInstances:{claudeAgent:{driver:'claudeAgent',displayName:'Claude'},claudeAgent_work:{driver:'claudeAgent',displayName:'Claude Work',enabled:true,config:{homePath:'~/.claude-work'}},claudeAgent_old:{driver:'claudeAgent',displayName:'Claude Old',enabled:false},codex_spare:{driver:'codex',config:{enabled:true}},codex_managed:{driver:'codex',enabled:true,config:{enabled:false}},grok_unset:{driver:'grok'}}}"
 
 # instance <id> [current instance id]: prints "<id>|<display name>|<driver>", or the error.
 instance() {
@@ -133,6 +133,15 @@ assert_eq "--provider for a disabled instance lists the enabled ones" \
 assert_eq "--provider for a default instance its driver turned off says it is disabled" \
     "error: provider instance \"codex\" (codex) is disabled in T3 Code; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
     "$(instance codex)"
+assert_eq "--provider for an instance whose config turns it off says it is disabled" \
+    "error: provider instance \"codex_managed\" (codex_managed) is disabled in T3 Code; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
+    "$(instance codex_managed)"
+assert_eq "--provider for an instance that does not say takes its driver's setting" \
+    "error: provider instance \"grok_unset\" (grok_unset) is disabled in T3 Code; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
+    "$(instance grok_unset)"
+assert_eq "--provider for a thread whose instance is gone skips the driver comparison" \
+    "codex_spare|codex_spare|codex" \
+    "$(instance codex_spare claudeAgent_removed)"
 assert_eq "--provider refuses an instance of another driver than the thread's model" \
     "error: provider instance \"codex_spare\" runs codex, and this thread's model runs on claudeAgent" \
     "$(instance codex_spare claudeAgent_work)"

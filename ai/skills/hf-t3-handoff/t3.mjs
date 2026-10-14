@@ -88,9 +88,14 @@ class Problem extends Error {
     }
 }
 
+/** A folder made absolute. A bare drive, `D:`, is that drive's root rather than the folder last used on it. */
+function absolute(folder) {
+    return resolve(/^[a-z]:$/i.test(folder) ? `${folder}/` : folder);
+}
+
 /** A folder as T3 compares it: absolute, forward slashes, no trailing slash, and without case on Windows. */
 function folderKey(folder) {
-    const key = resolve(folder).replaceAll('\\', '/').replace(/\/+$/, '');
+    const key = absolute(folder).replaceAll('\\', '/').replace(/\/+$/, '');
     return process.platform === 'win32' ? key.toLowerCase() : key;
 }
 
@@ -100,10 +105,10 @@ export function projectForFolder(folder, projects) {
     const found = projects.filter((project) => project.workspaceRoot && folderKey(project.workspaceRoot) === key);
     if (found.length === 1) return found[0];
     if (!found.length) {
-        throw new Problem(`T3 Code has no project for ${resolve(folder)}`, 'Add the folder as a project in T3 Code, then run this again.');
+        throw new Problem(`T3 Code has no project for ${absolute(folder)}`, 'Add the folder as a project in T3 Code, then run this again.');
     }
     throw new Problem(
-        `T3 Code has ${found.length} projects for ${resolve(folder)}: ${found.map((project) => `"${project.title}" (${project.id})`).join(', ')}`,
+        `T3 Code has ${found.length} projects for ${absolute(folder)}: ${found.map((project) => `"${project.title}" (${project.id})`).join(', ')}`,
         'Remove all but one of them in T3 Code, then run this again.',
     );
 }
@@ -111,23 +116,25 @@ export function projectForFolder(folder, projects) {
 /**
  * The provider instance `id` names in T3's settings, for --provider: one of
  * `providerInstances`, or a driver's default instance, whose id is the driver's
- * name. It must be enabled and, when `currentInstanceId` is given, run the same
- * driver as that instance, since the thread's model belongs to its driver.
+ * name. It must be enabled and, when the thread's own instance is known, run
+ * the same driver as it, since the thread's model belongs to its driver.
  */
 export function providerInstance(id, settings, currentInstanceId) {
     const configured = settings.providerInstances ?? {};
     const providers = settings.providers ?? {};
+    const driverEnabled = (driver) => providers[driver]?.enabled ?? true;
     const instances = new Map(
-        Object.entries(configured).map(([key, instance]) => [key, {
-            id: key,
-            displayName: instance.displayName ?? key,
-            driver: instance.driver,
-            // As T3 reads it: off when either the instance or its config says so.
-            enabled: instance.enabled !== false && instance.config?.enabled !== false,
-        }]),
+        Object.entries(configured).map(([key, instance]) => {
+            // As T3 reads it: off when the instance or its config says so, else what either
+            // says, else what the driver says.
+            const own = instance.enabled === false || instance.config?.enabled === false
+                ? false
+                : instance.enabled ?? instance.config?.enabled;
+            return [key, { id: key, displayName: instance.displayName ?? key, driver: instance.driver, enabled: own ?? driverEnabled(instance.driver) }];
+        }),
     );
     for (const driver of [...Object.values(configured).map((instance) => instance.driver), ...Object.keys(providers)]) {
-        if (!instances.has(driver)) instances.set(driver, { id: driver, displayName: driver, driver, enabled: providers[driver]?.enabled !== false });
+        if (!instances.has(driver)) instances.set(driver, { id: driver, displayName: driver, driver, enabled: driverEnabled(driver) });
     }
 
     const enabled = [...instances.values()].filter((instance) => instance.enabled);
@@ -136,7 +143,8 @@ export function providerInstance(id, settings, currentInstanceId) {
     const instance = instances.get(id);
     if (!instance) throw new Problem(`T3 Code has no provider instance "${id}"; ${list}`, fix);
     if (!instance.enabled) throw new Problem(`provider instance "${id}" (${instance.displayName}) is disabled in T3 Code; ${list}`, fix);
-    const currentDriver = currentInstanceId && (instances.get(currentInstanceId)?.driver ?? currentInstanceId);
+    // An instance removed since the thread started has no driver to compare.
+    const currentDriver = instances.get(currentInstanceId)?.driver;
     if (currentDriver && instance.driver !== currentDriver) {
         const same = enabled.filter((candidate) => candidate.driver === currentDriver).map((candidate) => candidate.id);
         throw new Problem(
@@ -386,7 +394,8 @@ async function check(flags) {
         await run(`T3 Code has a project for ${flags.project}`, async () => projectForFolder(flags.project, await readProjects(call)));
     }
     if (flags.provider) {
-        await run(`provider instance ${flags.provider} is enabled and runs this thread's model`, () => providerInstance(flags.provider, readSettings(), current?.modelSelection?.instanceId));
+        const label = current ? 'is enabled and runs this thread\'s model' : 'is enabled';
+        await run(`provider instance ${flags.provider} ${label}`, () => providerInstance(flags.provider, readSettings(), current?.modelSelection?.instanceId));
     }
 
     console.log('hf-t3-handoff needs:');

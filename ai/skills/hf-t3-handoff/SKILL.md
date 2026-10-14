@@ -25,7 +25,7 @@ Threads of a rig work are titled `RIG - [KEY] Short description`, and each hando
 ## 0. Check the setup
 
 ```bash
-node ~/.claude/skills/hf-t3-handoff/t3.mjs check [--to <computer>] [--project <folder>] [--provider <instance-id>]
+node ~/.claude/skills/hf-t3-handoff/t3.mjs check [--to <computer> | [--project <folder>] [--provider <instance-id>]]
 ```
 
 It checks each requirement and prints `ok` or `FAIL`. Every failure comes with the command or step that fixes it. If any line fails, show the user the output as it is, offer to run the fixes that are commands, and stop: nothing has been committed or written yet. Do not start the handoff with a requirement missing, because a handoff that cannot open its new thread leaves the user to paste the prompt by hand.
@@ -49,7 +49,7 @@ Inside a rig work, take the title's parts from `rig status`:
 - **Description**: the work's title, cut to about five words, leading with the product when the work is about one (`IM unable to add product`). It must not end in a number, because a trailing number is read as the count.
 
 ```bash
-node ~/.claude/skills/hf-t3-handoff/t3.mjs continue --prompt-file <file> --key <key> --description "<description>" [--to <computer>] [--project <folder>] [--provider <instance-id>] --dry-run
+node ~/.claude/skills/hf-t3-handoff/t3.mjs continue --prompt-file <file> --key <key> --description "<description>" [--to <computer> | [--project <folder>] [--provider <instance-id>]] --dry-run
 ```
 
 When the thread's title is already standard, the script keeps its key and description and ignores these two. Outside a rig work, leave both out: the title then counts up as it is, so "Foo" becomes "Foo 2".
@@ -64,4 +64,4 @@ One or two lines: the new thread's title, the computer it is on when that is not
 
 ## How it works
 
-`t3.mjs` drives the local T3 Code server through the HTTP API T3's own client uses: it mints a ten-minute bearer token with T3's `auth session issue` CLI, then dispatches `thread.create`, `thread.turn.start`, `thread.meta.update` (the rename) and `thread.archive` to `/api/orchestration/dispatch`. With `--to`, the new thread's commands go to the other computer's server instead, at the origin and with the token its entry in `computers.local.json` gives, into the project whose repository matches this thread's project; the rename and the archive still go to this one. `--project` picks the project whose workspace root is the folder, compared as an absolute path with either slash (and without case on Windows), and `--provider` reads the instances from T3's `settings.json`, as T3 does: an instance is off when it or its config says `enabled: false`, and a driver's default instance has the driver's name for its id. That API is internal to an alpha app and may change between T3 versions. When the script reports an unexpected response, it comes from that API, not from this skill.
+`t3.mjs` drives the local T3 Code server through the HTTP API T3's own client uses: it mints a ten-minute bearer token with T3's `auth session issue` CLI, then dispatches `thread.create`, `thread.turn.start`, `thread.meta.update` (the rename) and `thread.archive` to `/api/orchestration/dispatch`. With `--to`, the new thread's commands go to the other computer's server instead, at the origin and with the token its entry in `computers.local.json` gives, into the project whose repository matches this thread's project; the rename and the archive still go to this one. `--project` picks the project whose workspace root is the folder, compared as an absolute path with either slash (and without case on Windows), and `--provider` reads the instances from T3's `settings.json`, as T3 does: an instance is off when it or its config says `enabled: false`, takes its driver's setting when neither says, and a driver's default instance has the driver's name for its id. That API is internal to an alpha app and may change between T3 versions. When the script reports an unexpected response, it comes from that API, not from this skill.
