@@ -72,4 +72,118 @@ assert_eq "among several clones, the one titled like this project matches"     "
 assert_eq "several clones and no title to tell them apart is no match"     "none"     "$(match "$here" "[$(project first a github.com/hugoforte/dotfiles),$(project second b github.com/hugoforte/dotfiles)]")"
 assert_eq "a project with no repository matches nothing"     "none"     "$(match "$(project here scratch)" "[$(project there scratch)]")"
 
+# call <expression>: evaluates an expression over the module's exports (as `t3`) and
+# prints its value, or "error: <message>" when it throws.
+call() {
+    T3_MODULE="$module" T3_EXPRESSION="$1" node --input-type=module -e "
+        import { pathToFileURL } from 'node:url';
+        const t3 = await import(pathToFileURL(process.env.T3_MODULE).href);
+        const AsyncFunction = (async () => {}).constructor;
+        try {
+            console.log(await new AsyncFunction('t3', 'return (' + process.env.T3_EXPRESSION + ')')(t3));
+        } catch (error) {
+            console.log('error: ' + error.message);
+        }
+    "
+}
+
+# The examples live under the temp directory, so they are absolute on every platform.
+root="$(cd "${TMPDIR:-/tmp}" && pwd -W 2>/dev/null || pwd)"
+# native <part...>: a folder under the root, as Node spells it in a message.
+native() {
+    call "(await import('node:path')).resolve(String.raw\`$root\`, ...'$*'.split(' '))"
+}
+projects="[{id:'example',title:'example',workspaceRoot:String.raw\`$root\\projects\\example\`},{id:'other',title:'other',workspaceRoot:'$root/projects/other/'}]"
+
+assert_eq "--project finds the project whose workspace root is the folder" \
+    "example" \
+    "$(call "t3.projectForFolder(String.raw\`$root\\projects\\example\`, $projects).id")"
+assert_eq "--project matches with either slash and a trailing one" \
+    "other" \
+    "$(call "t3.projectForFolder('$root/projects/other', $projects).id")"
+assert_eq "--project matches without case on Windows" \
+    "example" \
+    "$(call "t3.projectForFolder(process.platform === 'win32' ? String.raw\`$root\\PROJECTS\\Example\` : String.raw\`$root/projects/example\`, $projects).id")"
+assert_eq "--project for a folder T3 has no project for says how to add one" \
+    "error: T3 Code has no project for $(native projects missing)" \
+    "$(call "t3.projectForFolder(String.raw\`$root\\projects\\missing\`, $projects)")"
+assert_eq "--project for a folder with two T3 projects names both" \
+    "error: T3 Code has 2 projects for $(native projects example): \"example\" (example), \"copy\" (copy)" \
+    "$(call "t3.projectForFolder(String.raw\`$root\\projects\\example\`, [...$projects, {id:'copy',title:'copy',workspaceRoot:String.raw\`$root\\projects\\example\`}])")"
+
+settings="{providers:{codex:{enabled:false},grok:{enabled:false}},providerInstances:{claudeAgent:{driver:'claudeAgent',displayName:'Claude'},claudeAgent_work:{driver:'claudeAgent',displayName:'Claude Work',enabled:true,config:{homePath:'~/.claude-work'}},claudeAgent_old:{driver:'claudeAgent',displayName:'Claude Old',enabled:false},codex_spare:{driver:'codex',config:{enabled:true}},codex_managed:{driver:'codex',enabled:true,config:{enabled:false}},grok_unset:{driver:'grok'}}}"
+
+# instance <id> [current instance id]: prints "<id>|<display name>|<driver>", or the error.
+instance() {
+    call "(({ id, displayName, driver }) => [id, displayName, driver].join('|'))(t3.providerInstance('$1', $settings, '${2:-}' || undefined))"
+}
+
+assert_eq "--provider finds an enabled instance and its display name" \
+    "claudeAgent_work|Claude Work|claudeAgent" \
+    "$(instance claudeAgent_work claudeAgent)"
+assert_eq "--provider names an instance with no display name by its id" \
+    "codex_spare|codex_spare|codex" \
+    "$(instance codex_spare)"
+assert_eq "--provider for an unknown instance lists the enabled ones" \
+    "error: T3 Code has no provider instance \"claudeAgent_typo\"; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
+    "$(instance claudeAgent_typo)"
+assert_eq "--provider for a disabled instance lists the enabled ones" \
+    "error: provider instance \"claudeAgent_old\" (Claude Old) is disabled in T3 Code; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
+    "$(instance claudeAgent_old)"
+assert_eq "--provider for a default instance its driver turned off says it is disabled" \
+    "error: provider instance \"codex\" (codex) is disabled in T3 Code; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
+    "$(instance codex)"
+assert_eq "--provider for an instance whose config turns it off says it is disabled" \
+    "error: provider instance \"codex_managed\" (codex_managed) is disabled in T3 Code; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
+    "$(instance codex_managed)"
+assert_eq "--provider for an instance that does not say takes its driver's setting" \
+    "error: provider instance \"grok_unset\" (grok_unset) is disabled in T3 Code; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
+    "$(instance grok_unset)"
+assert_eq "--provider for a thread whose instance is gone skips the driver comparison" \
+    "codex_spare|codex_spare|codex" \
+    "$(instance codex_spare claudeAgent_removed)"
+assert_eq "--provider refuses an instance of another driver than the thread's model" \
+    "error: provider instance \"codex_spare\" runs codex, and this thread's model runs on claudeAgent" \
+    "$(instance codex_spare claudeAgent_work)"
+
+current="{projectId:'here',branch:'feature',worktreePath:null,modelSelection:{instanceId:'claudeAgent',model:'claude-model',options:[{id:'effort',value:'medium'}]}}"
+
+# destination <project expression>: prints the next thread's "<projectId>|<branch>|<worktreePath>|<place>".
+destination() {
+    call "(({ projectId, branch, worktreePath, place }) => [projectId, branch, worktreePath, place].join('|'))(await t3.destination(undefined, $current, undefined, $1))"
+}
+
+assert_eq "without --project the next thread keeps this project and branch" \
+    "here|feature||feature" \
+    "$(destination undefined)"
+assert_eq "--project for this thread's own project keeps the branch" \
+    "here|feature||D:/projects/here, feature" \
+    "$(destination "{id:'here',workspaceRoot:'D:/projects/here'}")"
+assert_eq "--project for another project starts in its checkout" \
+    "there|||D:/projects/there" \
+    "$(destination "{id:'there',workspaceRoot:'D:/projects/there'}")"
+
+assert_eq "without --provider the model selection is this thread's, untouched" \
+    "true" \
+    "$(call "(() => { const s = ($current).modelSelection; return t3.modelSelectionOn(s, undefined) === s; })()")"
+assert_eq "--provider keeps the model and its options and changes only the instance" \
+    '{"instanceId":"claudeAgent_work","model":"claude-model","options":[{"id":"effort","value":"medium"}]}' \
+    "$(call "JSON.stringify(t3.modelSelectionOn(($current).modelSelection, { id: 'claudeAgent_work' }))")"
+
+# cli <args...>: runs t3.mjs and prints the first line it wrote to stderr. Each case
+# here is refused while the arguments are read, before anything reaches T3 Code.
+cli() {
+    node "$module" "$@" 2>&1 >/dev/null | head -n 1
+}
+
+assert_eq "--project needs a folder" \
+    "t3: --project needs a value" \
+    "$(cli continue --prompt-file x --project)"
+assert_eq "--provider needs an instance id" \
+    "t3: --provider needs a value" \
+    "$(cli check --provider --dry-run)"
+assert_eq "--project and --to do not go together" \
+    "t3: --project and --provider choose on this computer, so they do not go with --to" \
+    "$(cli continue --prompt-file x --to elsewhere --project .)"
+
 assert_summary "t3-handoff"
