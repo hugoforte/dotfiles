@@ -1,15 +1,16 @@
-# Install the tools declared in tools.psd1.
+# Install the tools declared in tools.psd1, and in the powershell/tools.psd1 of each overlay.
 #
 #   install-tools.ps1              install everything missing; report manual steps
 #   install-tools.ps1 -Check       report only; exit 1 if anything is missing
 #   install-tools.ps1 -Unattended  install only entries safe to install unwatched
-#   install-tools.ps1 -IfChanged   do nothing unless tools.psd1 has changed since the last run
+#   install-tools.ps1 -IfChanged   do nothing unless a manifest or the options have changed since the last run
 #   install-tools.ps1 -PassThru    also return the result object, for a caller that reads it
 #
 # Idempotent: entries install only when missing. Nothing is ever upgraded or uninstalled -
 # a program on the machine and not in the manifest was installed on purpose.
 #
-# Optional entries install only on a machine that opts into them: see tool-selection.ps1.
+# Optional entries install only on a machine that opts into them, in machine.local.psd1 or in an
+# overlay's machines/<COMPUTERNAME>.psd1: see tool-selection.ps1.
 #
 # sync.ps1 calls this as -IfChanged -Unattended -Quiet -PassThru from a scheduled task, so nothing
 # here may raise a UAC prompt: winget installs use --scope user unless the shell is already elevated.
@@ -26,6 +27,7 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "output.ps1")
 . (Join-Path $PSScriptRoot "tool-selection.ps1")
+. (Join-Path $PSScriptRoot "overlays.ps1")
 . (Join-Path $PSScriptRoot "native.ps1")
 
 $manifestPath = Join-Path $PSScriptRoot "tools.psd1"
@@ -45,30 +47,31 @@ if (-not (Test-Path $manifestPath)) {
     Exit-WithResult $result 1
 }
 
-$manifest = Import-PowerShellDataFile $manifestPath
-if (@($manifest.Tools).Count -eq 0) {
+if (@((Import-PowerShellDataFile $manifestPath).Tools).Count -eq 0) {
     Fail "tools.psd1 declares no tools"
     Exit-WithResult $result 1
 }
 
 try {
-    $optedIn = @(Get-OptedInOptionList -LocalPath $localPath)
+    $overlaySource = Get-OverlayToolSource -Overlays @(Get-OverlayList -LocalPath $localPath) -ComputerName $env:COMPUTERNAME
+    $manifestPaths = @($manifestPath) + $overlaySource.Manifests
+    $allTools = @(Get-MergedToolManifest -Path $manifestPaths)
+    $machinePath = $overlaySource.MachineFile
+    $optedIn = @(Get-OptedInOptionList -Path (@($localPath) + @($machinePath | Where-Object { $_ })))
 } catch {
-    Fail "could not read $localPath`: $($_.Exception.Message)"
+    Fail "could not read the manifests or the options: $($_.Exception.Message)"
     Exit-WithResult $result 1
 }
-$selection = Select-MachineTools -Tools @($manifest.Tools) -OptedIn $optedIn
+$selection = Select-MachineTools -Tools $allTools -OptedIn $optedIn
 $tools = $selection.Selected
 
-# Opting in changes what this machine needs without touching tools.psd1, so the options are
-# part of what -IfChanged compares.
-$manifestHash = (Get-FileHash $manifestPath -Algorithm SHA256).Hash + ":" + (($optedIn | Sort-Object) -join ",")
+$manifestHash = Get-ToolStateHash -ManifestPath $manifestPaths -OptedIn $optedIn
 
 if ($IfChanged) {
     $applied = $null
     if (Test-Path $statePath) { $applied = (Get-Content $statePath -Raw).Trim() }
     if ($applied -eq $manifestHash) {
-        Ok "tools.psd1 unchanged since the last successful run; nothing to do"
+        Ok "manifests and options unchanged since the last successful run; nothing to do"
         Exit-WithResult $result 0
     }
 }
@@ -194,23 +197,28 @@ function Install-GitHubRelease {
 if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
     Warn "winget not found; winget entries cannot be installed on this machine"
 }
-# uv arrives through winget in the same option as the tools it installs, so on the run that
+# uv arrives through winget on the same run as the tools it installs, so on the run that
 # installs it this shell cannot see it yet; the next run can.
 if (@($tools | Where-Object { $_.Source -eq 'uv' }).Count -and -not (Get-Command uv -ErrorAction SilentlyContinue)) {
     Warn "uv not found; uv entries cannot be installed until it is (winget install astral-sh.uv, then open a new shell)"
 }
 
-Say "Reading $manifestPath" Cyan
+foreach ($path in $manifestPaths) { Say "Reading $path" Cyan }
+if ($machinePath) { Say "Reading $machinePath" Cyan }
+foreach ($dir in $overlaySource.MachineDirs) {
+    Warn "no $env:COMPUTERNAME.psd1 in $dir - this machine's options come from machine.local.psd1 alone"
+}
 
 # An unknown name is a missing tool in every mode: it fails -Check and holds back the hash, so a
 # typo is reported on every run rather than once.
 foreach ($name in $selection.Unknown) {
-    Warn "machine.local.psd1 opts into '$name', which no tools.psd1 entry declares as Optional"
+    Warn "this machine opts into '$name', which no tools.psd1 entry declares as Optional"
     $missing++
     if (-not $Check) { $failed++ }
 }
+$optInPath = if ($machinePath) { $machinePath } else { $localPath }
 foreach ($name in $selection.Available) {
-    Say "optional, not on this machine: $name - add it to OptionalTools in $localPath to install it" DarkGray
+    Say "optional, not on this machine: $name - add it to OptionalTools in $optInPath to install it" DarkGray
 }
 
 $manualSteps = @()
@@ -226,7 +234,14 @@ foreach ($tool in $tools) {
         continue
     }
 
-    # Before the switch: `continue` inside a switch leaves only the switch.
+    # Before the switch: `continue` inside a switch leaves only the switch. Without Node there is
+    # no npm, and calling it would end the run before the manual steps that say how to get Node.
+    if ($source -eq 'npm' -and -not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        Warn "$id missing (npm) - npm is not on PATH: install Node.js first, as the manual steps below say"
+        $missing++
+        if (-not $Check) { $failed++ }
+        continue
+    }
     if ($source -eq 'github-release') {
         $problem = Test-GitHubReleaseEntry -Tool $tool
         if ($problem) { Warn $problem; $missing++; if (-not $Check) { $failed++ }; continue }

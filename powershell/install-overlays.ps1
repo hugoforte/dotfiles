@@ -81,9 +81,16 @@ $selected = @($available | ForEach-Object { $_.FullName })
 
 # --- Work out the new list, and check it before writing it ----------------------------------------
 
+# The checkouts deploy-secrets.ps1 links secrets into sit beside this one, as the overlay repo does.
 if (-not (Test-Path -LiteralPath $localPath)) {
-    Copy-Item -LiteralPath "$localPath.example" -Destination $localPath
-    Change "created $localPath from the example; check its SearchRoots"
+    $searchRoot = Split-Path $repoRoot -Parent
+    try {
+        New-MachineLocalFile -ExamplePath "$localPath.example" -LocalPath $localPath -SearchRoot $searchRoot
+    } catch {
+        Fail $_.Exception.Message
+        Exit-WithResult $result 1
+    }
+    Change "created $localPath from the example, searching $searchRoot for checkouts"
 }
 
 try {

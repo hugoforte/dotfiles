@@ -123,7 +123,7 @@ _Avoid_: manifest (that is the tools one), catalogue, index
 ### Tools
 
 **Manifest**:
-`powershell/tools.psd1`: the tools and programs a machine needs, declared. Entries install only when missing; nothing is ever upgraded or uninstalled, because a program on the machine and not in the manifest was installed on purpose.
+`powershell/tools.psd1`, in this repo and in any overlay that ships one: the tools and programs a machine needs, declared. The manifests merge, and a tool id may appear in only one. Entries install only when missing; nothing is ever upgraded or uninstalled, because a program on the machine and not in the manifest was installed on purpose.
 _Avoid_: package list, registry (that is the secrets one), tools file
 
 **Deferred entry**:
@@ -131,7 +131,7 @@ A manifest entry marked `Unattended = $false`: safe to install only on a watched
 _Avoid_: skipped, blocked, manual (that is a `Source`, for entries nothing can install)
 
 **Option**:
-A named group of manifest entries (`Optional = '<name>'`) that only machines opting in get: the install and its manual steps together. A machine opts in by listing the name under `OptionalTools` in its `machine.local.psd1`; on any other machine the option is reported as available, never as missing.
+A named group of manifest entries (`Optional = '<name>'`) that only machines opting in get: the install and its manual steps together. A machine opts in by listing the name under `OptionalTools` in an overlay's `machines/<COMPUTERNAME>.psd1` or its `machine.local.psd1`; on any other machine the option is reported as available, never as missing.
 _Avoid_: profile, feature flag, extra
 
 **Install method**:

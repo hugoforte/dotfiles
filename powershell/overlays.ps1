@@ -9,6 +9,8 @@
 #   ai/skills/<name>/                             skills, linked by ai/install.sh; a name ships from one place
 #   bruno/<collection>/                           Bruno collections, linked into ~/bruno by ai/install.sh; a name ships from one place
 #   ai/claude/config-dirs                         extra Claude config folders, one per line; ai/install.sh gives each what ~/.claude gets
+#   powershell/tools.psd1                         tools, merged by install-tools.ps1; an id is declared in one place
+#   machines/<COMPUTERNAME>.psd1                  the machine's OptionalTools, read by install-tools.ps1; one source
 
 # Whether a machine.local.psd1 opts the machine into skill secrets: it must declare SearchRoots,
 # which deploy-secrets.ps1 cannot run without. The file alone is not enough, because a machine
@@ -81,6 +83,27 @@ function Find-OverlayFile {
     return $null
 }
 
+# What the overlays give install-tools.ps1 on the computer named ComputerName:
+#   Manifests    each overlay's powershell/tools.psd1 that exists, in overlay order
+#   MachineFile  the one machines/<ComputerName>.psd1, or $null; two overlays shipping it is an error
+#   MachineDirs  the overlays' machines/ directories when none holds this computer's file, so a
+#                misnamed file can be reported rather than its options dropped in silence
+function Get-OverlayToolSource {
+    param(
+        [AllowEmptyCollection()][string[]]$Overlays = @(),
+        [Parameter(Mandatory)][string]$ComputerName
+    )
+
+    $machineFile = if ($Overlays.Count) { Find-OverlayFile -Roots $Overlays -RelativePath "machines\$ComputerName.psd1" }
+    [pscustomobject]@{
+        Manifests   = @($Overlays | ForEach-Object { Join-Path $_ "powershell\tools.psd1" } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
+        MachineFile = $machineFile
+        MachineDirs = @(if (-not $machineFile) {
+                $Overlays | ForEach-Object { Join-Path $_ "machines" } | Where-Object { Test-Path -LiteralPath $_ -PathType Container }
+            })
+    }
+}
+
 # The contents of ~/.gitconfig-overlays: one include per overlay that ships git/gitconfig, in
 # overlay order, so a later overlay overrides an earlier one.
 function Get-GitOverlayIncludeContent {
@@ -113,6 +136,26 @@ function Get-OverlayRepoRoots {
         if (-not $roots.Contains($top)) { $roots[$top] = $true }
     }
     return @($roots.Keys)
+}
+
+# Creates a machine.local.psd1 from the example, searching $SearchRoot for checkouts in place of
+# the example's folder, which is one machine's and not every machine's. An example whose
+# SearchRoots entry this cannot recognise is an error rather than a guess.
+function New-MachineLocalFile {
+    param(
+        [Parameter(Mandatory)][string]$ExamplePath,
+        [Parameter(Mandatory)][string]$LocalPath,
+        [Parameter(Mandatory)][string]$SearchRoot
+    )
+
+    $text = [IO.File]::ReadAllText($ExamplePath)
+    $pattern = "(?m)^([ \t]*SearchRoots\s*=\s*)@\(\s*'(?:[^']|'')*'\s*\)"
+    if ([regex]::Matches($text, $pattern).Count -ne 1) {
+        throw "$ExamplePath has no single-path SearchRoots entry to replace; create $LocalPath by hand"
+    }
+    $root = $SearchRoot -replace "'", "''"
+    $text = [regex]::Replace($text, $pattern, { param($m) "$($m.Groups[1].Value)@('$root')" })
+    [IO.File]::WriteAllText($LocalPath, $text)
 }
 
 # Writes the Overlays entry of a machine.local.psd1, replacing the one there or adding one before

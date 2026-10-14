@@ -1,5 +1,6 @@
 # Which manifest entries a machine gets (optional tools are opted into per machine, by name, in
-# machine.local.psd1), the pure parts of the github-release install method (picking the
+# machine.local.psd1 or an overlay's machines/<COMPUTERNAME>.psd1), how the manifests of dotfiles
+# and its overlays merge, the pure parts of the github-release install method (picking the
 # installer asset and recognising the installed program) and of the uv one (reading what uv has
 # installed). Everything happens under TestDrive:.
 
@@ -22,25 +23,134 @@ BeforeAll {
 Describe 'Get-OptedInOptionList' {
 
     It 'is empty when the machine has no machine.local.psd1' {
-        @(Get-OptedInOptionList -LocalPath (Join-Path $TestDrive 'absent.psd1')).Count | Should -Be 0
+        @(Get-OptedInOptionList -Path (Join-Path $TestDrive 'absent.psd1')).Count | Should -Be 0
     }
 
     It 'is empty when machine.local.psd1 opts into nothing' {
         $local = New-LocalFile "@{ Overlays = @() }"
 
-        @(Get-OptedInOptionList -LocalPath $local).Count | Should -Be 0
+        @(Get-OptedInOptionList -Path $local).Count | Should -Be 0
     }
 
     It 'returns the options the machine lists' {
         $local = New-LocalFile "@{ OptionalTools = @('openwhispr') }"
 
-        Get-OptedInOptionList -LocalPath $local | Should -Be @('openwhispr')
+        Get-OptedInOptionList -Path $local | Should -Be @('openwhispr')
     }
 
     It 'takes a single option written as a bare string' {
         $local = New-LocalFile "@{ OptionalTools = 'openwhispr' }"
 
-        @(Get-OptedInOptionList -LocalPath $local) | Should -Be @('openwhispr')
+        @(Get-OptedInOptionList -Path $local) | Should -Be @('openwhispr')
+    }
+
+    It 'adds the options of the machine file to those of machine.local.psd1' {
+        $local = New-LocalFile "@{ OptionalTools = @('openwhispr') }"
+        $machine = New-LocalFile "@{ OptionalTools = @('media-server') }"
+
+        Get-OptedInOptionList -Path $local, $machine | Should -Be @('openwhispr', 'media-server')
+    }
+
+    It 'lists an option named in both files once' {
+        $local = New-LocalFile "@{ OptionalTools = @('openwhispr') }"
+        $machine = New-LocalFile "@{ OptionalTools = @('openwhispr', 'dev') }"
+
+        Get-OptedInOptionList -Path $local, $machine | Should -Be @('openwhispr', 'dev')
+    }
+}
+
+Describe 'Get-MergedToolManifest' {
+
+    BeforeAll {
+        function New-Manifest {
+            param([string[]]$Ids)
+            $entries = ($Ids | ForEach-Object { "@{ Id = '$_'; Source = 'manual' }" }) -join "`n"
+            return New-LocalFile "@{ Tools = @(`n$entries`n) }"
+        }
+    }
+
+    It 'returns the entries of every manifest, in the order given' {
+        $dotfiles = New-Manifest 'jqlang.jq', 'OpenJS.NodeJS'
+        $overlay = New-Manifest 'media-backups-setup'
+
+        (Get-MergedToolManifest -Path $dotfiles, $overlay).Id | Should -Be @('jqlang.jq', 'OpenJS.NodeJS', 'media-backups-setup')
+    }
+
+    It 'skips a manifest that does not exist, as an overlay that ships none' {
+        $dotfiles = New-Manifest 'jqlang.jq'
+
+        (Get-MergedToolManifest -Path $dotfiles, (Join-Path $TestDrive 'absent.psd1')).Id | Should -Be @('jqlang.jq')
+    }
+
+    It 'refuses an id declared in two manifests, naming both' {
+        $dotfiles = New-Manifest 'jqlang.jq'
+        $overlay = New-Manifest 'jqlang.jq'
+
+        { Get-MergedToolManifest -Path $dotfiles, $overlay } | Should -Throw "*$dotfiles*$overlay*"
+    }
+
+    It 'refuses an id declared twice in one manifest' {
+        $dotfiles = New-Manifest 'jqlang.jq', 'jqlang.jq'
+
+        { Get-MergedToolManifest -Path $dotfiles } | Should -Throw "*'jqlang.jq'*"
+    }
+
+    It 'takes nothing from a manifest with no Tools' {
+        $dotfiles = New-Manifest 'jqlang.jq'
+        $overlay = New-LocalFile "@{ }"
+
+        (Get-MergedToolManifest -Path $dotfiles, $overlay).Id | Should -Be @('jqlang.jq')
+    }
+
+    It 'takes a single entry written without @()' {
+        $overlay = New-LocalFile "@{ Tools = @{ Id = 'media-backups-setup'; Source = 'manual' } }"
+
+        @(Get-MergedToolManifest -Path $overlay).Id | Should -Be @('media-backups-setup')
+    }
+
+    It 'reads a manifest whose path has brackets, which a wildcard path would not match' {
+        $dir = Join-Path $TestDrive 'overlay[1]'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $overlay = Join-Path $dir 'tools.psd1'
+        [IO.File]::WriteAllText($overlay, "@{ Tools = @( @{ Id = 'a'; Source = 'manual' } ) }")
+
+        @(Get-MergedToolManifest -Path $overlay).Id | Should -Be @('a')
+    }
+
+    It 'refuses an entry with no Id, naming its manifest' {
+        $overlay = New-LocalFile "@{ Tools = @( @{ Source = 'manual'; Note = 'x' } ) }"
+
+        { Get-MergedToolManifest -Path $overlay } | Should -Throw "*$overlay*"
+    }
+}
+
+Describe 'Get-ToolStateHash' {
+
+    BeforeAll {
+        $dotfiles = New-LocalFile "@{ Tools = @( @{ Id = 'jqlang.jq'; Source = 'winget' } ) }"
+        $overlay = New-LocalFile "@{ Tools = @( @{ Id = 'a'; Source = 'manual' } ) }"
+    }
+
+    It 'is the same for the same manifests and options' {
+        Get-ToolStateHash -ManifestPath $dotfiles, $overlay -OptedIn 'dev' |
+            Should -Be (Get-ToolStateHash -ManifestPath $dotfiles, $overlay -OptedIn 'dev')
+    }
+
+    It 'changes when an overlay manifest changes, so the sync installs what it added' {
+        $before = Get-ToolStateHash -ManifestPath $dotfiles, $overlay -OptedIn @()
+        Set-Content -LiteralPath $overlay -Value "@{ Tools = @( @{ Id = 'b'; Source = 'manual' } ) }"
+
+        Get-ToolStateHash -ManifestPath $dotfiles, $overlay -OptedIn @() | Should -Not -Be $before
+    }
+
+    It 'changes when the options change' {
+        Get-ToolStateHash -ManifestPath $dotfiles -OptedIn 'dev' |
+            Should -Not -Be (Get-ToolStateHash -ManifestPath $dotfiles -OptedIn @())
+    }
+
+    It 'does not depend on the order the options are listed in' {
+        Get-ToolStateHash -ManifestPath $dotfiles -OptedIn 'dev', 'laptop' |
+            Should -Be (Get-ToolStateHash -ManifestPath $dotfiles -OptedIn 'laptop', 'dev')
     }
 }
 

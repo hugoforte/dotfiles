@@ -147,6 +147,54 @@ Describe 'Find-OverlayFile' {
     }
 }
 
+Describe 'Get-OverlayToolSource' {
+
+    BeforeEach { $a = New-WorkDir; $b = New-WorkDir }
+
+    It 'lists the tools.psd1 of each overlay that ships one, in overlay order' {
+        New-File (Join-Path $a 'powershell\tools.psd1')
+        New-File (Join-Path $b 'powershell\tools.psd1')
+
+        (Get-OverlayToolSource -Overlays $a, $b -ComputerName 'BOX').Manifests |
+            Should -Be @((Join-Path $a 'powershell\tools.psd1'), (Join-Path $b 'powershell\tools.psd1'))
+    }
+
+    It 'lists no manifest for an overlay that ships none' {
+        @((Get-OverlayToolSource -Overlays $a -ComputerName 'BOX').Manifests).Count | Should -Be 0
+    }
+
+    It 'finds the machine file named after the computer' {
+        New-File (Join-Path $b 'machines\BOX.psd1')
+
+        (Get-OverlayToolSource -Overlays $a, $b -ComputerName 'BOX').MachineFile | Should -Be (Join-Path $b 'machines\BOX.psd1')
+    }
+
+    It 'has no machine file when no overlay names this computer' {
+        New-File (Join-Path $b 'machines\OTHER.psd1')
+
+        (Get-OverlayToolSource -Overlays $a, $b -ComputerName 'BOX').MachineFile | Should -BeNullOrEmpty
+    }
+
+    It 'names the machines directories that hold no file for this computer, so a misnamed file is not silent' {
+        New-File (Join-Path $b 'machines\OTHER.psd1')
+
+        (Get-OverlayToolSource -Overlays $a, $b -ComputerName 'BOX').MachineDirs | Should -Be @((Join-Path $b 'machines'))
+    }
+
+    It 'fails, naming both, when two overlays ship this computer''s file' {
+        New-File (Join-Path $a 'machines\BOX.psd1')
+        New-File (Join-Path $b 'machines\BOX.psd1')
+
+        { Get-OverlayToolSource -Overlays $a, $b -ComputerName 'BOX' } | Should -Throw "*$a*$b*"
+    }
+
+    It 'has nothing to offer a machine with no overlays' {
+        $source = Get-OverlayToolSource -Overlays @() -ComputerName 'BOX'
+
+        @($source.Manifests).Count + @($source.MachineDirs).Count | Should -Be 0
+    }
+}
+
 Describe 'Get-GitOverlayIncludeContent' {
 
     It 'includes only the overlays that ship git/gitconfig, in order, with forward slashes' {
@@ -215,6 +263,34 @@ Describe 'Get-OverlayRepoRoots' {
 
     It 'leaves out an overlay that is not in a repository' {
         @(Get-OverlayRepoRoots -Overlays (New-WorkDir)).Count | Should -Be 0
+    }
+}
+
+Describe 'New-MachineLocalFile' {
+
+    BeforeEach {
+        $work = New-WorkDir
+        $local = Join-Path $work 'machine.local.psd1'
+        $example = Join-Path (Split-Path $PSScriptRoot -Parent) 'ai\secrets\machine.local.psd1.example'
+    }
+
+    It 'searches the folder the checkouts are in, not the example''s' {
+        New-MachineLocalFile -ExamplePath $example -LocalPath $local -SearchRoot 'D:\git'
+
+        (Import-PowerShellDataFile $local).SearchRoots | Should -Be @('D:\git')
+    }
+
+    It 'keeps the rest of the example' {
+        New-MachineLocalFile -ExamplePath $example -LocalPath $local -SearchRoot 'D:\git'
+
+        [IO.File]::ReadAllText($local) | Should -Match 'OptionalTools = @\(\)'
+    }
+
+    It 'refuses an example whose SearchRoots it cannot recognise rather than guessing' {
+        $odd = Join-Path $work 'odd.example'
+        [IO.File]::WriteAllText($odd, "@{`n    SearchRoots = @(`n        # where checkouts live`n        'C:\source'`n    )`n}`n")
+
+        { New-MachineLocalFile -ExamplePath $odd -LocalPath $local -SearchRoot 'D:\git' } | Should -Throw '*SearchRoots*'
     }
 }
 
