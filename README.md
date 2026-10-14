@@ -39,6 +39,8 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
 
    `setup.ps1` elevates itself, but **not for the symlinks** — those work unelevated once Developer Mode is on. It elevates so winget installs the manifest machine-wide; unelevated it would quietly fall back to `--scope user`. See [ADR 0002](docs/adr/0002-mklink-not-new-item.md).
 
+   `setup.ps1` installs NVM for Windows but no Node, so it reports the npm tools as failed. Open a new elevated PowerShell and run `nvm install lts`, `nvm use lts` and `dotfiles-tools`, which installs them.
+
    To see what it would do without doing any of it:
 
    ```powershell
@@ -58,7 +60,7 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
    .\powershell\install-overlays.ps1 -Repo <owner>/<private-repo>
    ```
 
-   It clones the repo beside this one, lists its overlays in `ai\secrets\machine.local.psd1` (created from the example if missing; check its `SearchRoots`), and runs `sync.ps1` to apply them.
+   It clones the repo beside this one, lists its overlays in `ai\secrets\machine.local.psd1` (created from the example if missing, with `SearchRoots` set to the folder this checkout is in), and runs `sync.ps1` to apply them.
 
 ## Private configuration: overlays
 

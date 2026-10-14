@@ -137,6 +137,26 @@ function Get-OverlayRepoRoots {
     return @($roots.Keys)
 }
 
+# Creates a machine.local.psd1 from the example, searching $SearchRoot for checkouts in place of
+# the example's folder, which is one machine's and not every machine's. An example whose
+# SearchRoots entry this cannot recognise is an error rather than a guess.
+function New-MachineLocalFile {
+    param(
+        [Parameter(Mandatory)][string]$ExamplePath,
+        [Parameter(Mandatory)][string]$LocalPath,
+        [Parameter(Mandatory)][string]$SearchRoot
+    )
+
+    $text = [IO.File]::ReadAllText($ExamplePath)
+    $pattern = "(?m)^([ \t]*SearchRoots\s*=\s*)@\(\s*'(?:[^']|'')*'\s*\)"
+    if ([regex]::Matches($text, $pattern).Count -ne 1) {
+        throw "$ExamplePath has no single-path SearchRoots entry to replace; create $LocalPath by hand"
+    }
+    $root = $SearchRoot -replace "'", "''"
+    $text = [regex]::Replace($text, $pattern, { param($m) "$($m.Groups[1].Value)@('$root')" })
+    [IO.File]::WriteAllText($LocalPath, $text)
+}
+
 # Writes the Overlays entry of a machine.local.psd1, replacing the one there or adding one before
 # the closing brace. The rest of the file, comments included, is left as it was. An Overlays entry
 # this cannot recognise is an error rather than a guess.

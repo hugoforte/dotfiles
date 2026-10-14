@@ -266,6 +266,34 @@ Describe 'Get-OverlayRepoRoots' {
     }
 }
 
+Describe 'New-MachineLocalFile' {
+
+    BeforeEach {
+        $work = New-WorkDir
+        $local = Join-Path $work 'machine.local.psd1'
+        $example = Join-Path (Split-Path $PSScriptRoot -Parent) 'ai\secrets\machine.local.psd1.example'
+    }
+
+    It 'searches the folder the checkouts are in, not the example''s' {
+        New-MachineLocalFile -ExamplePath $example -LocalPath $local -SearchRoot 'D:\git'
+
+        (Import-PowerShellDataFile $local).SearchRoots | Should -Be @('D:\git')
+    }
+
+    It 'keeps the rest of the example' {
+        New-MachineLocalFile -ExamplePath $example -LocalPath $local -SearchRoot 'D:\git'
+
+        [IO.File]::ReadAllText($local) | Should -Match 'OptionalTools = @\(\)'
+    }
+
+    It 'refuses an example whose SearchRoots it cannot recognise rather than guessing' {
+        $odd = Join-Path $work 'odd.example'
+        [IO.File]::WriteAllText($odd, "@{`n    SearchRoots = @(`n        # where checkouts live`n        'C:\source'`n    )`n}`n")
+
+        { New-MachineLocalFile -ExamplePath $odd -LocalPath $local -SearchRoot 'D:\git' } | Should -Throw '*SearchRoots*'
+    }
+}
+
 Describe 'Set-OverlayListInFile' {
 
     BeforeEach {
