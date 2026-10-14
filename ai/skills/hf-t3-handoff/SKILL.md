@@ -1,15 +1,17 @@
 ---
 name: hf-t3-handoff
-description: Hand the current T3 Code thread over to a fresh one — write the handoff, start a new thread titled with the next number that runs it, and archive this one. The new thread starts on this computer unless another is named. Use when asked to hand off, continue in a new thread, continue on another computer, or start over with a clean context inside T3 Code.
-argument-hint: "What will the next session be used for? Name another computer to continue there."
+description: Hand the current T3 Code thread over to a fresh one — write the handoff, start a new thread titled with the next number that runs it, and archive this one. The new thread starts on this computer, in this project and on this provider instance, unless another is named. Use when asked to hand off, continue in a new thread, continue on another computer, in another project or on another provider instance, or start over with a clean context inside T3 Code.
+argument-hint: "What will the next session be used for? Name another computer, project folder or provider instance to continue there."
 disable-model-invocation: true
 ---
 
 # T3 handoff
 
-A handoff, then a new T3 Code thread that picks it up, then this thread archived. The new thread gets this thread's project, branch or worktree, model, and access mode.
+A handoff, then a new T3 Code thread that picks it up, then this thread archived. The new thread gets this thread's project, branch or worktree, model, provider instance, and access mode, unless the user names another project or provider instance.
 
 The new thread starts on this computer. It starts on another one only when the user names it, in the arguments or earlier in the conversation ("hand off to the zenbook"): then every `t3.mjs` command below takes `--to <computer>`. Never pick another computer yourself. There the thread starts in the checkout of that computer's T3 project for the same repository, since a branch or worktree of this computer means nothing there.
+
+The same goes for another project or another provider instance on this computer, such as a thread started in the wrong project or under the wrong Claude account. Only when the user names them, every `t3.mjs` command below takes `--project <folder>`, the folder of the T3 project to start in, or `--provider <instance-id>`, or both; neither goes with `--to`. In another project the thread starts in that project's checkout, since this thread's branch or worktree belongs to this one. On another instance it keeps the model and its options. Instance ids are the keys of `providerInstances` in `~/.t3/userdata/settings.json`, such as `claudeAgent_work`; when the user names an instance by its display name, run `check --provider <your best guess>`, which lists every enabled instance with its display name when the guess is wrong.
 
 Threads of a rig work are titled `RIG - [KEY] Short description`, and each handoff counts up: `… Short description 1`, then `… 2`. A thread whose title is not in that form yet is renamed to it before it is archived.
 
@@ -23,7 +25,7 @@ Threads of a rig work are titled `RIG - [KEY] Short description`, and each hando
 ## 0. Check the setup
 
 ```bash
-node ~/.claude/skills/hf-t3-handoff/t3.mjs check [--to <computer>]
+node ~/.claude/skills/hf-t3-handoff/t3.mjs check [--to <computer>] [--project <folder>] [--provider <instance-id>]
 ```
 
 It checks each requirement and prints `ok` or `FAIL`. Every failure comes with the command or step that fixes it. If any line fails, show the user the output as it is, offer to run the fixes that are commands, and stop: nothing has been committed or written yet. Do not start the handoff with a requirement missing, because a handoff that cannot open its new thread leaves the user to paste the prompt by hand.
@@ -47,12 +49,12 @@ Inside a rig work, take the title's parts from `rig status`:
 - **Description**: the work's title, cut to about five words, leading with the product when the work is about one (`IM unable to add product`). It must not end in a number, because a trailing number is read as the count.
 
 ```bash
-node ~/.claude/skills/hf-t3-handoff/t3.mjs continue --prompt-file <file> --key <key> --description "<description>" [--to <computer>] --dry-run
+node ~/.claude/skills/hf-t3-handoff/t3.mjs continue --prompt-file <file> --key <key> --description "<description>" [--to <computer>] [--project <folder>] [--provider <instance-id>] --dry-run
 ```
 
 When the thread's title is already standard, the script keeps its key and description and ignores these two. Outside a rig work, leave both out: the title then counts up as it is, so "Foo" becomes "Foo 2".
 
-The dry run names the thread it would start and where (this thread's branch or worktree, or the other computer and the project folder there), any rename, and the thread it would archive. If any of it looks wrong, stop and tell the user. If the dry run is right, run the same command without `--dry-run`. This is the last tool call. Once the old thread is archived its session may stop, so anything you run after it can be cut off partway.
+The dry run names the thread it would start and where (this thread's branch or worktree, the other computer and the project folder there, or the folder `--project` named), its model and, with `--provider`, the instance's display name, any rename, and the thread it would archive. If any of it looks wrong, stop and tell the user. If the dry run is right, run the same command without `--dry-run`. This is the last tool call. Once the old thread is archived its session may stop, so anything you run after it can be cut off partway.
 
 If the script fails, it prints the problem and its fix the same way `check` does.
 
@@ -62,4 +64,4 @@ One or two lines: the new thread's title, the computer it is on when that is not
 
 ## How it works
 
-`t3.mjs` drives the local T3 Code server through the HTTP API T3's own client uses: it mints a ten-minute bearer token with T3's `auth session issue` CLI, then dispatches `thread.create`, `thread.turn.start`, `thread.meta.update` (the rename) and `thread.archive` to `/api/orchestration/dispatch`. With `--to`, the new thread's commands go to the other computer's server instead, at the origin and with the token its entry in `computers.local.json` gives, into the project whose repository matches this thread's project; the rename and the archive still go to this one. That API is internal to an alpha app and may change between T3 versions. When the script reports an unexpected response, it comes from that API, not from this skill.
+`t3.mjs` drives the local T3 Code server through the HTTP API T3's own client uses: it mints a ten-minute bearer token with T3's `auth session issue` CLI, then dispatches `thread.create`, `thread.turn.start`, `thread.meta.update` (the rename) and `thread.archive` to `/api/orchestration/dispatch`. With `--to`, the new thread's commands go to the other computer's server instead, at the origin and with the token its entry in `computers.local.json` gives, into the project whose repository matches this thread's project; the rename and the archive still go to this one. `--project` picks the project whose workspace root is the folder, compared as an absolute path with either slash (and without case on Windows), and `--provider` reads the instances from T3's `settings.json`, as T3 does: an instance is off when it or its config says `enabled: false`, and a driver's default instance has the driver's name for its id. That API is internal to an alpha app and may change between T3 versions. When the script reports an unexpected response, it comes from that API, not from this skill.
