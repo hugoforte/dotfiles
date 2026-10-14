@@ -1,0 +1,6 @@
+#!/bin/sh
+
+# Git Bash entry point for ai/secrets/check-encrypted.sh; check-encrypted.cmd is the one for
+# PowerShell and cmd. On PATH so a repo's own check can audit its secrets without knowing where
+# dotfiles is checked out:   check-encrypted personal/ai/secrets
+exec sh "$(dirname "$0")/../ai/secrets/check-encrypted.sh" "$@"

@@ -17,7 +17,7 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
 | Claude Code settings (model, plugins, allowlist) | `ai/claude/settings.json` | merged into `~/.claude/settings.json` and each extra Claude config folder's | `ai/install.sh` |
 | Extra Claude config folders, one login each | an overlay's `ai/claude/config-dirs` | the folders it names get the same as `~/.claude` | `ai/install.sh` |
 | Skill secrets (encrypted with SOPS + age) | `ai/secrets/<skill>/`, here or in an overlay | `%USERPROFILE%\.agent-secrets\`, then symlinked into every checkout that has the skill (shipped skills read them in place) | `powershell/deploy-secrets.ps1` |
-| Commands for every shell, agents' included (`md-lint`) | `bin/` | the user PATH | `powershell/setup.ps1`, `powershell/sync.ps1` |
+| Commands for every shell, agents' included (`md-lint`, `check-encrypted`) | `bin/` | the user PATH | `powershell/setup.ps1`, `powershell/sync.ps1` |
 | Tools and programs a machine needs | `powershell/tools.psd1` | installed via winget, npm, uv and GitHub releases | `powershell/install-tools.ps1` |
 | Default markdownlint rules | `powershell/markdownlint.jsonc` | passed to `markdownlint-cli2` by `bin/md-lint` | none (used in place) |
 | Automatic pull-and-relink | `powershell/sync.ps1` | Windows scheduled task "Dotfiles Sync" | `powershell/install-sync-task.ps1` |
