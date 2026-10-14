@@ -41,7 +41,7 @@ Personal, symlink-based setup for a Windows development machine: PowerShell prof
 
    `setup.ps1` elevates itself, but **not for the symlinks** — those work unelevated once Developer Mode is on. It elevates so winget installs the manifest machine-wide; unelevated it would quietly fall back to `--scope user`. See [ADR 0002](docs/adr/0002-mklink-not-new-item.md).
 
-   `setup.ps1` installs NVM for Windows but no Node, so it reports the npm tools as failed. Open a new elevated PowerShell and run `nvm install lts`, `nvm use lts` and `dotfiles-tools`, which installs them.
+   `setup.ps1` installs NVM for Windows but no Node, so it reports the npm tools as failed. Open a new elevated PowerShell and run `nvm install lts`, `nvm use lts`, `npm config set prefix "$env:APPDATA\npm" --location=user` and `dotfiles-tools`, which installs them. The prefix keeps global npm packages in one folder for every Node version NVM holds; without it each version has its own, and npm loses sight of the ones installed under another.
 
    To see what it would do without doing any of it:
 
