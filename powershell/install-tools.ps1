@@ -28,6 +28,7 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "output.ps1")
 . (Join-Path $PSScriptRoot "tool-selection.ps1")
 . (Join-Path $PSScriptRoot "overlays.ps1")
+. (Join-Path $PSScriptRoot "native.ps1")
 
 $manifestPath = Join-Path $PSScriptRoot "tools.psd1"
 $localPath = Join-Path (Split-Path $PSScriptRoot -Parent) "ai\secrets\machine.local.psd1"
@@ -104,6 +105,20 @@ function Test-NpmPackage {
     return ((Get-NpmGlobals) -contains $Id)
 }
 
+# Through Invoke-Native: uv writes its notes to stderr, which would otherwise stop this script.
+$script:uvTools = $null
+function Get-UvTools {
+    if ($null -ne $script:uvTools) { return $script:uvTools }
+    $list = Invoke-Native uv tool list
+    $script:uvTools = @(if ($list.Ok) { Get-UvToolNames -ListOutput $list.Output })
+    return $script:uvTools
+}
+
+function Test-UvTool {
+    param([string]$Id)
+    return ((Get-UvTools) -contains $Id)
+}
+
 $script:installedPrograms = $null
 function Get-InstalledProgramNames {
     if ($null -ne $script:installedPrograms) { return $script:installedPrograms }
@@ -141,6 +156,13 @@ function Install-NpmPackage {
     return ($LASTEXITCODE -eq 0)
 }
 
+function Install-UvTool {
+    param([string]$Id)
+    $install = Invoke-Native uv tool install $Id
+    if (-not $install.Ok) { Say "  $Id`: $($install.Output)" Yellow }
+    return $install.Ok
+}
+
 # Downloads the latest release's installer asset and runs it with the entry's InstallArgs. The
 # reason for a failure is printed; the caller records the one outcome.
 function Install-GitHubRelease {
@@ -174,6 +196,11 @@ function Install-GitHubRelease {
 
 if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
     Warn "winget not found; winget entries cannot be installed on this machine"
+}
+# uv arrives through winget on the same run as the tools it installs, so on the run that
+# installs it this shell cannot see it yet; the next run can.
+if (@($tools | Where-Object { $_.Source -eq 'uv' }).Count -and -not (Get-Command uv -ErrorAction SilentlyContinue)) {
+    Warn "uv not found; uv entries cannot be installed until it is (winget install astral-sh.uv, then open a new shell)"
 }
 
 foreach ($path in $manifestPaths) { Say "Reading $path" Cyan }
@@ -224,6 +251,7 @@ foreach ($tool in $tools) {
     switch ($source) {
         'winget' { $present = Test-WingetPackage $id }
         'npm'    { $present = Test-NpmPackage $id }
+        'uv'     { $present = Test-UvTool $id }
         'github-release' { $present = Test-GitHubRelease $tool }
         default  { Warn "$id has unknown Source '$source'"; continue }
     }
@@ -245,6 +273,7 @@ foreach ($tool in $tools) {
     switch ($source) {
         'winget' { $installed = Install-WingetPackage $id }
         'npm'    { $installed = Install-NpmPackage $id }
+        'uv'     { $installed = Install-UvTool $id }
         'github-release' { $installed = Install-GitHubRelease $tool }
     }
 

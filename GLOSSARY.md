@@ -80,6 +80,10 @@ _Avoid_: source root, projects directory, workspace
 A private directory laid out like this repo's root, which the tooling reads from as well as from the repo: registries merge, `aws/config` comes from exactly one place, each overlay's `git/gitconfig` is included, and its `ai/skills/` are linked beside this repo's. Listed per machine in `machine.local.psd1`, so no tracked file names one. An overlay is cut by audience (one person, or one employer), and one private repo may hold several.
 _Avoid_: private repo (a repo may hold several overlays), layer, plugin
 
+**Route folder**:
+An extra Claude config folder (a `CLAUDE_CONFIG_DIR`) with its own login, for work that bills a different Claude subscription than `~/.claude`. An overlay names it in `ai/claude/config-dirs`; `ai/install.sh` gives it everything it gives `~/.claude` and touches nothing else in it.
+_Avoid_: profile, account folder, claude home (unqualified)
+
 ### Skills
 
 **Shipped skill**:
@@ -131,7 +135,7 @@ A named group of manifest entries (`Optional = '<name>'`) that only machines opt
 _Avoid_: profile, feature flag, extra
 
 **Install method**:
-What an entry's `Source` field names: `winget`, `npm`, `github-release` (a repo's latest release asset, run silently) or `manual`. The field is called `Source` for history; in prose it is the install method, because a source is a file in this repo.
+What an entry's `Source` field names: `winget`, `npm`, `uv` (a Python tool, `uv tool install`), `github-release` (a repo's latest release asset, run silently) or `manual`. The field is called `Source` for history; in prose it is the install method, because a source is a file in this repo.
 _Avoid_: source (that is the repo file a managed path points at), provider, package manager
 
 ### Reporting

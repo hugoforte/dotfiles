@@ -8,6 +8,7 @@
 #   git/gitconfig                                 a fragment; every overlay's is included
 #   ai/skills/<name>/                             skills, linked by ai/install.sh; a name ships from one place
 #   bruno/<collection>/                           Bruno collections, linked into ~/bruno by ai/install.sh; a name ships from one place
+#   ai/claude/config-dirs                         extra Claude config folders, one per line; ai/install.sh gives each what ~/.claude gets
 #   powershell/tools.psd1                         tools, merged by install-tools.ps1; an id is declared in one place
 #   machines/<COMPUTERNAME>.psd1                  the machine's OptionalTools, read by install-tools.ps1; one source
 

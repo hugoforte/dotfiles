@@ -2,8 +2,9 @@
 #
 # Every entry is a hashtable:
 #
-#   Id          winget package id, npm package name, GitHub owner/repo, or a slug for a manual step
-#   Source      'winget' | 'npm' | 'github-release' | 'manual'
+#   Id          winget package id, npm package name, uv tool (PyPI) name, GitHub owner/repo, or a
+#               slug for a manual step
+#   Source      'winget' | 'npm' | 'uv' | 'github-release' | 'manual'
 #   Unattended  $false to keep sync.ps1 from installing it behind your back (default $true)
 #   Optional    the name of the option this entry belongs to; omit for every machine
 #   Note        what it is, or - for manual entries - what you have to do
@@ -63,7 +64,7 @@
 
         @{ Id = 'astral-sh.uv'
            Source = 'winget'
-           Note = 'Python package and tool runner' }
+           Note = 'Python package and tool runner; every uv entry below needs it' }
 
         @{ Id = 'Python.Python.3.12'
            Source = 'winget'
@@ -107,6 +108,13 @@
            Source = 'npm'
            Note = 'Browser automation any agent can drive from a shell (playwright-cli); skills that need a browser use it rather than one agent''s own browser tool' }
 
+        # --- uv tools ---------------------------------------------------------------------
+
+        @{ Id = 'claude-swap'
+           Source = 'uv'
+           Optional = 'claude-swap'
+           Note = 'Keeps several Claude logins for ~/.claude and switches between them (cswap); cswap auto moves to another account before the 5-hour or 7-day limit. See README, "Claude accounts"' }
+
         # --- github-release ---------------------------------------------------------------
 
         @{ Id = 'hugoforte/openwhispr'
@@ -144,5 +152,10 @@
            Source = 'manual'
            Optional = 'openwhispr'
            Note = 'Open OpenWhispr and set it up: pick the dictation hotkey and a local Whisper model; under cleanup choose a local model; under Voice Assistant choose Local CLI Agent > Claude Code. Needs `claude` logged in to the subscription' }
+
+        @{ Id = 'claude-swap-accounts'
+           Source = 'manual'
+           Optional = 'claude-swap'
+           Note = 'Sign each account into ~/.claude in turn (claude auth login) and run `cswap add` after each, then run powershell\install-cswap-task.ps1 so `cswap auto` rotates them from sign-in. If cswap is not found, run `uv tool update-shell` and open a new shell. See README, "Claude accounts"' }
     )
 }

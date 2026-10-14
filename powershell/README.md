@@ -16,7 +16,7 @@ Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in tu
 - `native.ps1`: `Invoke-Native`, which runs a native command and judges it by its exit code, because Windows PowerShell 5.1 under `$ErrorActionPreference = "Stop"` turns any line it writes to stderr — git's progress, say — into a terminating error
 - `tools.psd1`: the tools and programs a machine needs, declared
 - `install-tools.ps1`: installs what `tools.psd1` and each overlay's `powershell/tools.psd1` declare (`-Check` reports only)
-- `tool-selection.ps1`: which manifest entries a machine gets (an optional entry only where `machine.local.psd1` or an overlay's `machines/<COMPUTERNAME>.psd1` lists its option under `OptionalTools`), how the manifests merge, and the pure parts of the `github-release` install method
+- `tool-selection.ps1`: which manifest entries a machine gets (an optional entry only where `machine.local.psd1` or an overlay's `machines/<COMPUTERNAME>.psd1` lists its option under `OptionalTools`), how the manifests merge, and the pure parts of the `github-release` and `uv` install methods
 - `markdownlint.jsonc`: default markdownlint rules, used by `bin/md-lint` when a repo has none of its own
 - `user-path.ps1`: `Add-UserPathEntry`, which puts the repo's `bin/` on the user PATH for `setup.ps1` and `sync.ps1`
 - `setup.ps1`: symlink/setup automation (`-Check` reports the managed links and changes nothing)
@@ -24,6 +24,7 @@ Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in tu
 - `deploy-secrets.ps1`: decrypts `ai/secrets/` and symlinks the files into every checkout that has the skill (`-Check` for report only); see `ai/secrets/README.md`
 - `install-overlays.ps1`: puts this machine on an overlay repo (`-Repo owner/name`, optionally `-Only <overlay>`): clones or pulls it beside this checkout, lists its overlays in `ai/secrets/machine.local.psd1` (creating it from the example, with `SearchRoots` set to the folder this checkout is in, when there is none) after checking they do not clash with the repo, then runs `sync.ps1`
 - `install-sync-task.ps1`: registers the "Dotfiles Sync" scheduled task that runs `sync.ps1` at logon and every 4 hours (`-Uninstall` removes it)
+- `install-cswap-task.ps1`: registers and starts the "Claude Swap Auto" scheduled task that runs `cswap auto` hidden at sign-in, for a machine with the `claude-swap` option (`-Uninstall` removes it); see the top-level README, "Claude accounts"
 
 ## Setup
 
