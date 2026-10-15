@@ -154,8 +154,10 @@ rm -rf "$second/ai/skills/shared"
 assert_eq "but not a link someone pointed elsewhere at a managed name" "$work/theirs" "$(readlink "$home/.claude/skills/late")"
 rm -f "$home/.claude/skills/late"
 
-# An overlay listed with a trailing separator, which the PowerShell reader accepts.
-printf "@{\n    Overlays = @(\n        '%s'\n    )\n}\n" "$(win "$first")\\" > "$repo/ai/secrets/machine.local.psd1"
+# An overlay listed with a trailing separator, which the PowerShell reader accepts: \ on
+# Windows, / elsewhere, where \ is part of a file name.
+if command -v cygpath > /dev/null 2>&1; then separator='\'; else separator='/'; fi
+printf "@{\n    Overlays = @(\n        '%s'\n    )\n}\n" "$(win "$first")$separator" > "$repo/ai/secrets/machine.local.psd1"
 overlays
 assert_eq "a trailing separator still gives the overlay's own path" "$first/ai/skills/private-thing" "$(readlink "$home/.claude/skills/private-thing")"
 out="$(check)"; rc=$?

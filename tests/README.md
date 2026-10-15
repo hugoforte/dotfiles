@@ -69,8 +69,8 @@ upgrade path and this is the note saying so.
 Not a default anyone forgot to change ([ADR 0006](../docs/adr/0006-ci-adds-macos-for-the-mac.md)).
 Each job is the evidence for the machines on its OS. The macOS job runs the sh suite under
 `/bin/sh` with BSD tools and plain `ln -s`, which is what a Mac runs; it runs no Pester, since
-the PowerShell scripts configure Windows. A sh test that only means something on one OS skips
-itself elsewhere and says so, rather than passing.
+the PowerShell scripts configure Windows. A sh test whose input is spelled
+differently per OS, such as a path separator, spells it the way that OS does.
 
 The Windows job stays as it was. Both defects this repo has actually shipped were invisible on
 any other platform:
