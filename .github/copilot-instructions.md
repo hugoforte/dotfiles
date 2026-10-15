@@ -58,7 +58,7 @@ dotfiles/
 ### Prerequisites
 
 - Windows: PowerShell 5.1+, Git, optional AWS CLI, Administrator for symlinks
-- macOS/Linux (AI tooling): sh-compatible shell, Git, optional jq, optional Claude CLI
+- macOS (AI tooling): sh-compatible shell, Git, optional jq, optional Claude CLI
 
 ### Setup Commands
 
