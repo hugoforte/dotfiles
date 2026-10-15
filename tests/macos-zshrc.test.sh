@@ -30,4 +30,7 @@ assert_eq "it puts bin/ first on PATH" "$REPO_ROOT/bin" "$(in_zsh 'print -r -- $
 assert_eq "bin/ commands resolve from there" "$REPO_ROOT/bin/md-lint" "$(in_zsh 'whence -p md-lint')"
 assert_eq "dotfiles-check is defined" "function" "$(in_zsh 'whence -w dotfiles-check' | sed 's/.*: //')"
 
+printf 'export LOCAL_ONLY=yes\n' > "$home/.zshrc.local"
+assert_eq "it sources ~/.zshrc.local, for lines that are this Mac's alone" "yes" "$(in_zsh 'print -r -- $LOCAL_ONLY')"
+
 assert_summary "macos/zshrc"

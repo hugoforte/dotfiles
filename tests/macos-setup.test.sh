@@ -58,11 +58,12 @@ overlays() {
 }
 overlays "$personal" "$second"
 
-# The stubs. `brew bundle check` fails while $work/brew-missing exists.
+# The stubs. `brew bundle check` fails while $work/brew-missing exists, and `brew bundle` while
+# $work/brew-fails does.
 printf '#!/bin/sh\necho "${STUB_UNAME:-Darwin}"\n' > "$stubs/uname"
 printf '#!/bin/sh\n[ "$*" = "--get LocalHostName" ] && echo "${STUB_HOSTNAME-macbook}"\n' > "$stubs/scutil"
-printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\ncase "$*" in "bundle check"*) [ ! -e "%s" ] ;; esac\n' \
-    "$brew_log" "$work/brew-missing" > "$stubs/brew"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\ncase "$*" in "bundle check"*) [ ! -e "%s" ] ;; "bundle --no-upgrade"*) [ ! -e "%s" ] ;; esac\n' \
+    "$brew_log" "$work/brew-missing" "$work/brew-fails" > "$stubs/brew"
 chmod +x "$stubs/uname" "$stubs/scutil" "$stubs/brew"
 
 HOME="$home"; export HOME
@@ -88,8 +89,8 @@ assert_eq "~/.aws/config is linked to the one overlay that has it" "$personal/aw
 assert_eq "~/.gitconfig-overlays includes each overlay's git/gitconfig, in order" \
     "$(printf '[include]\n\tpath = %s\n[include]\n\tpath = %s' "$personal/git/gitconfig" "$second/git/gitconfig")" \
     "$(grep -v '^#' "$home/.gitconfig-overlays")"
-assert_eq "brew bundle applies each overlay's Brewfile, then the machine's" \
-    "$(printf 'bundle --file=%s\nbundle --file=%s\nbundle --file=%s' "$personal/macos/Brewfile" "$second/macos/Brewfile" "$personal/machines/MACBOOK.Brewfile")" \
+assert_eq "brew bundle applies each overlay's Brewfile, then the machine's, upgrading nothing" \
+    "$(printf 'bundle --no-upgrade --file=%s\nbundle --no-upgrade --file=%s\nbundle --no-upgrade --file=%s' "$personal/macos/Brewfile" "$second/macos/Brewfile" "$personal/machines/MACBOOK.Brewfile")" \
     "$(cat "$brew_log")"
 assert_eq "ai/install.sh runs: ~/.claude/CLAUDE.md is linked" "$repo/ai/CLAUDE.md" "$(readlink "$home/.claude/CLAUDE.md")"
 
@@ -98,8 +99,8 @@ assert_eq "ai/install.sh runs: ~/.claude/CLAUDE.md is linked" "$repo/ai/CLAUDE.m
 rm -f "$brew_log"
 out="$(check)"; rc=$?
 assert_eq "--check is clean once installed" "0" "$rc"
-assert_eq "--check only asks brew, never installs" \
-    "$(printf 'bundle check --file=%s\nbundle check --file=%s\nbundle check --file=%s' "$personal/macos/Brewfile" "$second/macos/Brewfile" "$personal/machines/MACBOOK.Brewfile")" \
+assert_eq "--check only asks brew, never installs, and an outdated entry is no drift" \
+    "$(printf 'bundle check --no-upgrade --file=%s\nbundle check --no-upgrade --file=%s\nbundle check --no-upgrade --file=%s' "$personal/macos/Brewfile" "$second/macos/Brewfile" "$personal/machines/MACBOOK.Brewfile")" \
     "$(cat "$brew_log")"
 
 rm "$home/.zshrc"
@@ -112,6 +113,7 @@ install
 printf '# edited\n' >> "$home/.gitconfig-overlays"
 out="$(check)"; rc=$?
 assert_eq "--check fails on a stale ~/.gitconfig-overlays" "1" "$rc"
+assert_eq "--check leaves it as it was" "y" "$(says "$(cat "$home/.gitconfig-overlays")" "# edited")"
 install
 out="$(check)"; rc=$?
 assert_eq "install rewrites ~/.gitconfig-overlays" "0" "$rc"
@@ -133,7 +135,7 @@ rm -f "$brew_log"
 # In a subshell: macOS's /bin/sh keeps an assignment written before a function call after it.
 (STUB_HOSTNAME=""; export STUB_HOSTNAME; install)
 assert_eq "a Mac with no LocalHostName applies the overlays' Brewfiles alone" \
-    "$(printf 'bundle --file=%s\nbundle --file=%s' "$personal/macos/Brewfile" "$second/macos/Brewfile")" \
+    "$(printf 'bundle --no-upgrade --file=%s\nbundle --no-upgrade --file=%s' "$personal/macos/Brewfile" "$second/macos/Brewfile")" \
     "$(cat "$brew_log")"
 out="$(STUB_HOSTNAME="" check)"; rc=$?
 assert_eq "and --check fails, since the Mac is not named yet" "1" "$rc"
@@ -146,7 +148,50 @@ assert_eq "a machine Brewfile in two overlays fails" "1" "$rc"
 assert_eq "and names both" "y" "$(says "$out" "$second/machines/MACBOOK.Brewfile")"
 rm -r "$second/machines"
 
+# --- install failures ------------------------------------------------------------------------
+
+touch "$work/brew-fails"
+out="$(run)"; rc=$?
+assert_eq "a failed brew bundle fails install" "1" "$rc"
+assert_eq "and names the Brewfile" "y" "$(says "$out" "brew bundle failed for $personal/macos/Brewfile")"
+rm "$work/brew-fails"
+
+rm "$home/.gitconfig-overlays"
+mkdir "$home/.gitconfig-overlays"
+out="$(run)"; rc=$?
+assert_eq "a ~/.gitconfig-overlays that cannot be written fails install" "1" "$rc"
+rmdir "$home/.gitconfig-overlays"
+install
+
+# --- reading machine.local.psd1 --------------------------------------------------------------
+
+mv "$repo/ai/secrets/machine.local.psd1" "$work/machine.local.psd1.saved"
+out="$(run)"; rc=$?
+assert_eq "a Mac with no machine.local.psd1 yet sets up without overlays" "0" "$rc"
+mv "$work/machine.local.psd1.saved" "$repo/ai/secrets/machine.local.psd1"
+
+printf '@{\n    Overlays = @(\n        "%s"\n    )\n}\n' "$(win "$personal")" > "$repo/ai/secrets/machine.local.psd1"
+rm "$home/.aws/config"
+install
+assert_eq "a double-quoted overlay path is read too" "$personal/aws/config" "$(readlink "$home/.aws/config")"
+overlays "$personal" "$second"
+install
+
+# --- a checkout reached through a symlink ----------------------------------------------------
+
+# zshrc finds the checkout by resolving the ~/.zshrc link to its physical path, so dotfiles-check
+# runs setup.sh from there; a setup run through the symlink must leave links that check accepts.
+ln -s "$repo" "$work/via-link"
+(cd "$work" && sh "$work/via-link/macos/setup.sh" > /dev/null 2>&1)
+assert_eq "setup run through a symlinked checkout links the physical path" "$(cd "$repo" && pwd -P)/macos/zshrc" "$(readlink "$home/.zshrc")"
+out="$(check)"; rc=$?
+assert_eq "and --check from the physical path is clean" "0" "$rc"
+rm "$work/via-link"
+
 # --- refusals --------------------------------------------------------------------------------
+
+out="$(run --check extra)"; rc=$?
+assert_eq "an argument it does not take is refused" "1" "$rc"
 
 mkdir -p "$repo/aws"
 printf '[profile other]\n' > "$repo/aws/config"
