@@ -12,15 +12,8 @@ export ZSH="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Source helper functions
 . "$ZSH/ai/helpers/output.sh"
 . "$ZSH/ai/helpers/settings-reconcile.sh"
-
-# On Git Bash (MSYS), `ln -s` silently copies unless native symlinks are enabled.
-# Native symlinks need Windows Developer Mode or an elevated shell.
-# NTFS ignores case in a path, and Git Bash keeps whatever capitals a path was typed with, so
-# there two spellings of one checkout must compare equal.
-FOLD_PATH_CASE=false
-case "$(uname -s)" in
-    MINGW*|MSYS*) export MSYS="winsymlinks:nativestrict"; FOLD_PATH_CASE=true ;;
-esac
+. "$ZSH/ai/helpers/managed-link.sh"
+. "$ZSH/ai/helpers/overlays.sh"
 
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
@@ -146,132 +139,9 @@ rig_root() {
     return 1
 }
 
-# The overlay directories ai/secrets/machine.local.psd1 lists, one per line, in the order
-# listed. Reads the `Overlays = @( ... )` entry up to its closing parenthesis and takes each
-# single-quoted path from it. powershell/overlays.ps1 is the full reader; this is only enough
-# to find the directories to audit.
+# The overlay directories this machine lists, one per line, in the order listed.
 overlay_dirs() {
-    local_psd1="$ZSH/ai/secrets/machine.local.psd1"
-    [ -f "$local_psd1" ] || return 0
-    awk '/^[[:space:]]*#/ { next }
-         /Overlays[[:space:]]*=/ { on = 1; sub(/.*Overlays[[:space:]]*=/, "") }
-         on { print }
-         on && /\)/ { exit }' "$local_psd1" |
-        grep -o "'[^']*'" | tr -d "'" |
-        while IFS= read -r dir; do
-            case "$dir" in
-                [A-Za-z]:*) command -v cygpath > /dev/null 2>&1 && dir="$(cygpath -u "$dir")" ;;
-            esac
-            # A trailing separator would make every link source path differ from what readlink
-            # reports, so --check would see drift forever and the prune would never match.
-            echo "${dir%/}"
-        done
-}
-
-# ---------------------------------------------------------------------------
-# Link primitives
-# ---------------------------------------------------------------------------
-
-# link <src> <dst>: point dst at src, backing up whatever real file was already there.
-#
-# A symlink at dst holds no content of its own, so it is replaced without a backup. A real file
-# is someone's work: it is moved aside, never deleted, under the same <leaf>.backup.<timestamp>
-# name powershell/managed-link.ps1 uses, so one convention shows up in both languages.
-link() {
-    src="$1"; dst="$2"
-    if [ -L "$dst" ]; then
-        rm -f "$dst"
-    elif [ -e "$dst" ]; then
-        backup="$dst.backup.$(date +%Y%m%d_%H%M%S)"
-        if ! mv "$dst" "$backup"; then
-            error "Could not move $dst aside to $backup - leaving it alone"
-            return 1
-        fi
-        warning "$dst was not a symlink - backed it up to $backup"
-    fi
-    ln -s "$src" "$dst"
-}
-
-# same_path <a> <b>: true when both spell the same path (without case on Windows)
-same_path() {
-    if [ "$FOLD_PATH_CASE" = "true" ]; then
-        [ "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')" ]
-    else
-        [ "$1" = "$2" ]
-    fi
-}
-
-# is_link_to <src> <dst>: true when dst is a symlink to src
-is_link_to() {
-    [ -L "$2" ] && same_path "$(readlink "$2")" "$1"
-}
-
-# unlink_managed <src> <dst>: remove dst only if it is a symlink to src. A link someone pointed
-# elsewhere at the same name is theirs: it is left in place, said, and the call returns 1.
-unlink_managed() {
-    [ -L "$2" ] || return 0
-    if is_link_to "$1" "$2"; then
-        rm -f "$2"
-    else
-        warning "$2 -> $(readlink "$2") (expected $1), left in place"
-        return 1
-    fi
-}
-
-# is_orphan_link <entry> <source_dir>: true when <entry> is a symlink into
-# <source_dir> that no longer resolves. A skill or agent deleted from the repo
-# leaves exactly this behind on every machine that had linked it, and a
-# dangling link is not harmless: the agents still list the name and then fail
-# to read it. Links pointing anywhere else are somebody else's business.
-is_orphan_link() {
-    [ -L "$1" ] || return 1
-    [ -e "$1" ] && return 1
-    case "$(readlink "$1")" in
-        "$2"/*) return 0 ;;
-    esac
-    return 1
-}
-
-# prune_orphans <dir> <source_dir>: delete the orphans in <dir>
-prune_orphans() {
-    [ -d "$1" ] || return 0
-    for entry in "$1"/*; do
-        is_orphan_link "$entry" "$2" || continue
-        rm -f "$entry"
-        success "Removed stale link $entry"
-    done
-}
-
-CHECK_FAILED=0
-
-# check_link <src> <dst>: report the state of one managed link
-check_link() {
-    src="$1"; dst="$2"
-    if [ -L "$dst" ]; then
-        actual="$(readlink "$dst")"
-        if [ "$actual" = "$src" ]; then
-            success "$dst"
-        else
-            warning "$dst -> $actual (expected $src)"
-            CHECK_FAILED=1
-        fi
-    elif [ -e "$dst" ]; then
-        warning "$dst is a regular file or directory, not a symlink"
-        CHECK_FAILED=1
-    else
-        warning "$dst missing"
-        CHECK_FAILED=1
-    fi
-}
-
-# check_orphans <dir> <source_dir>: report the orphans in <dir> as drift
-check_orphans() {
-    [ -d "$1" ] || return 0
-    for entry in "$1"/*; do
-        is_orphan_link "$entry" "$2" || continue
-        warning "$entry is a stale link to something no longer in the repo"
-        CHECK_FAILED=1
-    done
+    psd1_paths "$ZSH/ai/secrets/machine.local.psd1" Overlays
 }
 
 # ---------------------------------------------------------------------------

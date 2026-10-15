@@ -1,0 +1,245 @@
+#!/bin/sh
+
+# Sets up a Mac from this repo, and reports whether one is set up. The macOS entry point beside
+# powershell/setup.ps1 (docs/adr/0007-a-parallel-macos-entry-point.md).
+#
+#   macos/setup.sh                    link, write, brew bundle, then ai/install.sh; report each
+#   macos/setup.sh --brew-if-changed  the same, with brew bundle only when a Brewfile changed
+#                                     since the last bundle that succeeded (macos/sync.sh)
+#   macos/setup.sh --check            report only; exit 1 if anything would change
+#
+# What it manages:
+#   ~/.zshrc               -> macos/zshrc
+#   ~/.gitconfig           -> macos/gitconfig
+#   ~/.aws/config          -> the one aws/config in this repo or an overlay, if any
+#   ~/.gitconfig-overlays     written: an include of each overlay's git/gitconfig
+#   Brewfiles                 each overlay's macos/Brewfile, then the one overlay's
+#                             machines/<KEY>.Brewfile, KEY being the LocalHostName uppercased
+#                             (docs/adr/0008-a-brewfile-per-overlay.md); each path and checksum
+#                             is kept in ~/Library/Application Support/dotfiles/brewfiles.cksum
+#                             once every bundle succeeded, for --brew-if-changed
+#   ai/install.sh             run, or run with --check
+#
+# Idempotent. A real file where a link goes is backed up first (docs/adr/0003).
+
+# Physical, as macos/zshrc resolves it for dotfiles-check: a checkout reached through a symlink
+# would otherwise be linked under one spelling and checked under another.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+REPO="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+
+. "$REPO/ai/helpers/output.sh"
+. "$REPO/ai/helpers/managed-link.sh"
+. "$REPO/ai/helpers/overlays.sh"
+
+show_help() {
+    echo "Usage: $0 [--check | --brew-if-changed]"
+    echo ""
+    echo "Links ~/.zshrc, ~/.gitconfig and ~/.aws/config, writes ~/.gitconfig-overlays, applies"
+    echo "each overlay's Brewfile and this Mac's, then runs ai/install.sh."
+    echo ""
+    echo "  --check            Report what would change without changing anything (exit 1 if anything would)"
+    echo "  --brew-if-changed  Run brew bundle only when a Brewfile changed since it last succeeded"
+    echo "  -h, --help         Show this help"
+}
+
+MODE=install
+BREW_IF_CHANGED=false
+case "${1:-}" in
+    '')                ;;
+    --check)           MODE=check ;;
+    --brew-if-changed) BREW_IF_CHANGED=true ;;
+    -h|--help)         show_help; exit 0 ;;
+    *)                 echo "Unknown option: $1"; show_help; exit 1 ;;
+esac
+[ $# -le 1 ] || { echo "Unknown option: $2"; show_help; exit 1; }
+
+[ "$(uname -s)" = "Darwin" ] || die "macos/setup.sh is for macOS; on Windows run powershell/setup.ps1"
+
+# What install could not do. --check counts drift in CHECK_FAILED, which managed-link.sh sets.
+FAILED=0
+
+# The overlay directories this machine lists, one per line. One that does not exist is an
+# error, as it is to powershell/overlays.ps1: skipping it would drop everything it carries.
+OVERLAYS="$(psd1_paths "$REPO/ai/secrets/machine.local.psd1" Overlays)"
+while IFS= read -r overlay; do
+    [ -z "$overlay" ] || [ -d "$overlay" ] || die "overlay $overlay listed in ai/secrets/machine.local.psd1 does not exist"
+done <<EOF
+$OVERLAYS
+EOF
+
+# one_source <relative path> <roots, one per line>: the one root's file at that path, or nothing
+# when no root has it. Two roots having it is an error naming both: a link has one target.
+one_source() {
+    found=""
+    while IFS= read -r root; do
+        [ -n "$root" ] && [ -f "$root/$1" ] || continue
+        if [ -n "$found" ]; then
+            error "$1 is provided by more than one source: $found and $root/$1"
+            return 1
+        fi
+        found="$root/$1"
+    done <<EOF
+$2
+EOF
+    printf '%s' "$found"
+}
+
+# The machine key, as an overlay's machines/ names its files: the LocalHostName, uppercased.
+MACHINE="$(scutil --get LocalHostName 2>/dev/null | tr '[:lower:]' '[:upper:]')"
+
+aws_source="$(one_source aws/config "$REPO
+$OVERLAYS")" || exit 1
+machine_brewfile=""
+if [ -n "$MACHINE" ]; then
+    machine_brewfile="$(one_source "machines/$MACHINE.Brewfile" "$OVERLAYS")" || exit 1
+fi
+
+# --- Links ---------------------------------------------------------------------------------------
+
+# managed <label> <src> <dst>: link dst to src, or with --check report it
+managed() {
+    if [ "$MODE" = "check" ]; then
+        check_link "$2" "$3"
+    elif is_link_to "$2" "$3"; then
+        success "$1 already linked"
+    else
+        mkdir -p "$(dirname "$3")"
+        if link "$2" "$3"; then success "$1 linked"; else FAILED=1; fi
+    fi
+}
+
+case $MODE in
+    install) info "Setting up this Mac from $REPO…" ;;
+    check)   info "Checking this Mac against $REPO…" ;;
+esac
+
+managed "~/.zshrc" "$REPO/macos/zshrc" "$HOME/.zshrc"
+managed "~/.gitconfig" "$REPO/macos/gitconfig" "$HOME/.gitconfig"
+if [ -n "$aws_source" ]; then
+    managed "~/.aws/config" "$aws_source" "$HOME/.aws/config"
+else
+    info "AWS config: neither this repo nor an overlay has aws/config; skipped"
+fi
+
+# --- ~/.gitconfig-overlays -----------------------------------------------------------------------
+
+# The contents of ~/.gitconfig-overlays: one include per overlay that ships git/gitconfig, in
+# overlay order, so a later overlay overrides an earlier one. macos/gitconfig includes it last.
+gitconfig_overlays() {
+    printf '# Generated by macos/setup.sh from the Overlays in ai/secrets/machine.local.psd1. Do not edit.\n'
+    while IFS= read -r overlay; do
+        if [ -n "$overlay" ] && [ -f "$overlay/git/gitconfig" ]; then
+            printf '[include]\n\tpath = %s\n' "$overlay/git/gitconfig"
+        fi
+    done <<EOF
+$OVERLAYS
+EOF
+}
+
+include_file="$HOME/.gitconfig-overlays"
+if [ -f "$include_file" ] && [ "$(cat "$include_file")" = "$(gitconfig_overlays)" ]; then
+    success "~/.gitconfig-overlays"
+elif [ "$MODE" = "check" ]; then
+    warning "~/.gitconfig-overlays missing or out of date"
+    CHECK_FAILED=1
+else
+    if gitconfig_overlays > "$include_file"; then
+        success "~/.gitconfig-overlays written"
+    else
+        error "could not write $include_file"
+        FAILED=1
+    fi
+fi
+
+# --- Brewfiles -----------------------------------------------------------------------------------
+
+# Before ai/install.sh, whose settings merge needs the jq a Brewfile installs.
+brewfiles="$(while IFS= read -r overlay; do
+    [ -n "$overlay" ] && [ -f "$overlay/macos/Brewfile" ] && printf '%s\n' "$overlay/macos/Brewfile"
+done <<EOF
+$OVERLAYS
+EOF
+)"
+[ -n "$machine_brewfile" ] && brewfiles="${brewfiles:+$brewfiles
+}$machine_brewfile"
+
+if [ -z "$MACHINE" ]; then
+    warning "this Mac has no LocalHostName, so no machines/<KEY>.Brewfile applies; name it with sudo scutil --set LocalHostName <name>"
+    CHECK_FAILED=1
+fi
+
+if [ -n "$brewfiles" ] && ! command -v brew > /dev/null 2>&1; then
+    if [ "$MODE" = "check" ]; then
+        warning "brew not found, so no Brewfile is applied; install Homebrew from https://brew.sh"
+        CHECK_FAILED=1
+    else
+        error "brew not found; install Homebrew from https://brew.sh, then run this again"
+        FAILED=1
+    fi
+    brewfiles=""
+fi
+
+# The Brewfiles as last applied with every bundle succeeding: each path and its checksum. A run
+# that finds the same skips brew under --brew-if-changed.
+brew_stamp_file="$HOME/Library/Application Support/dotfiles/brewfiles.cksum"
+brew_stamp="$(while IFS= read -r brewfile; do
+    [ -n "$brewfile" ] && printf '%s %s\n' "$brewfile" "$(cksum < "$brewfile")"
+done <<EOF
+$brewfiles
+EOF
+)"
+if [ "$BREW_IF_CHANGED" = "true" ] && [ -f "$brew_stamp_file" ] && [ "$(cat "$brew_stamp_file")" = "$brew_stamp" ]; then
+    success "Brewfiles unchanged since they were last applied"
+    brewfiles=""
+fi
+
+bundle_failed=false
+# --no-upgrade both ways: an entry is installed when missing and never upgraded, as a manifest's
+# is on Windows, so an outdated formula is neither drift nor something a run replaces.
+while IFS= read -r brewfile; do
+    [ -n "$brewfile" ] || continue
+    if [ "$MODE" = "check" ]; then
+        if brew bundle check --no-upgrade --file="$brewfile" > /dev/null 2>&1; then
+            success "$brewfile"
+        else
+            warning "$brewfile is not fully installed (brew bundle check --no-upgrade --verbose --file=$brewfile)"
+            CHECK_FAILED=1
+        fi
+    elif brew bundle --no-upgrade --file="$brewfile"; then
+        success "$brewfile applied"
+    else
+        error "brew bundle failed for $brewfile"
+        bundle_failed=true
+        FAILED=1
+    fi
+done <<EOF
+$brewfiles
+EOF
+
+if [ "$MODE" = "install" ] && [ -n "$brewfiles" ] && [ "$bundle_failed" = "false" ]; then
+    mkdir -p "$(dirname "$brew_stamp_file")"
+    printf '%s\n' "$brew_stamp" > "$brew_stamp_file"
+fi
+
+# --- AI tooling ----------------------------------------------------------------------------------
+
+if [ "$MODE" = "check" ]; then
+    sh "$REPO/ai/install.sh" --check || CHECK_FAILED=1
+else
+    sh "$REPO/ai/install.sh" || FAILED=1
+fi
+
+echo ""
+if [ "$MODE" = "check" ]; then
+    if [ "$CHECK_FAILED" = "1" ]; then
+        warning "Drift found - run macos/setup.sh to fix"
+        exit 1
+    fi
+    success "This Mac is set up"
+    exit 0
+fi
+if [ "$FAILED" = "1" ]; then
+    error "Setup finished with failures (above)"
+    exit 1
+fi
+success "Setup complete; open a new terminal to pick up ~/.zshrc"

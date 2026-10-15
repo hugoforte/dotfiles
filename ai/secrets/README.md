@@ -21,12 +21,12 @@ C:\source\<checkout>\.claude\skills\<skill>\<file>   every matching checkout
 - **Registry**: `registry.psd1` lists each managed skill, the marker path that identifies a checkout using it, the expected origin URL, and the files.
 - **Per machine**: `machine.local.psd1` (git-ignored, copy the example) lists the directories whose children are checkouts, e.g. `C:\source`, the machine's overlays, and the optional tools it installs (`OptionalTools`, read by `install-tools.ps1`, which also reads them from an overlay's `machines/<COMPUTERNAME>.psd1`).
 - **Overlays**: private directories laid out like this repo's root, usually in a private repo. Each may carry its own `ai/secrets/registry.psd1`, `ai/secrets/<skill>/` and `.sops.yaml`. The registries of this repo and every overlay merge; a skill decrypts from the directory that registered it, and the same skill id in two registries is an error. No tracked file here names an overlay. The same overlays also supply `aws/config` (from exactly one place) and git config fragments to `powershell/setup.ps1`, and skills and Bruno collections to `ai/install.sh`.
-- **Deploy**: `powershell/deploy-secrets.ps1` merges the registries, decrypts, discovers checkouts one level under each search root, verifies each one's origin contains the registry's `Remote`, and links the files in. `sync.ps1` runs it after `install.sh` on machines whose `machine.local.psd1` declares `SearchRoots`.
+- **Deploy**: `powershell/deploy-secrets.ps1` merges the registries, decrypts, discovers checkouts one level under each search root, verifies each one's origin contains the registry's `Remote`, and links the files in. `sync.ps1` runs it after `install.sh` on machines whose `machine.local.psd1` declares `SearchRoots`. On a Mac, `macos/deploy-secrets.sh` does the same into `~/.agent-secrets/`, readable by its owner alone, and `macos/sync.sh` runs it on the same condition. It reads the registries with awk, so each entry must put each key on a line of its own with a quoted value, `Files` as one `@(...)` on one line, as they all do, and a `Remote` beside every `Marker`; an entry it cannot read is an error.
 
 Safety properties of the deploy script:
 
 - Idempotent. Re-running changes nothing when everything is in place.
-- A real file found where a link should go is moved to `%USERPROFILE%\.agent-secrets\backups\<checkout>\<skill>\`, never left inside the checkout and never deleted.
+- A real file found where a link should go is moved to `%USERPROFILE%\.agent-secrets\backups\<checkout>\<skill>\` (`~/.agent-secrets/backups/<checkout>/<skill>/` on a Mac), never left inside the checkout and never deleted.
 - A failed decrypt leaves the previous decrypted copy untouched.
 - `-Check` reports what would change and exits 1 on drift.
 - An overlay listed in `machine.local.psd1` that does not exist is an error, not a skip.
@@ -41,6 +41,13 @@ Everything below works the same inside an overlay, with two differences: run the
 ```powershell
 .\powershell\deploy-secrets.ps1           # decrypt, discover, link
 .\powershell\deploy-secrets.ps1 -Check    # report only
+```
+
+On a Mac:
+
+```sh
+sh macos/deploy-secrets.sh                # decrypt, discover, link
+sh macos/deploy-secrets.sh --check        # report only
 ```
 
 ## Add or update a secret file
@@ -82,9 +89,9 @@ sops updatekeys -y ai/secrets/*/.secrets.env ai/secrets/*/keys.local.json
 git commit -am "Add <hostname> as secrets recipient" && git push
 ```
 
-Back on the new machine: `.\powershell\install-overlays.ps1 -Repo <owner>/<private-repo>`, which clones the overlays, lists them in `machine.local.psd1` and deploys.
+Back on the new machine: `.\powershell\install-overlays.ps1 -Repo <owner>/<private-repo>`, which clones the overlays, lists them in `machine.local.psd1` and deploys. On a Mac, clone the overlay repo, list its overlays and `SearchRoots` in `machine.local.psd1` by hand, and run `sh macos/deploy-secrets.sh`.
 
-**No other machine available?** Use the recovery key: paste it into `%APPDATA%\sops\age\keys.txt` on the new machine, do the `updatekeys` step there, push, then delete `keys.txt`.
+**No other machine available?** Use the recovery key: paste it into `%APPDATA%\sops\age\keys.txt` on the new machine (`~/Library/Application Support/sops/age/keys.txt` on a Mac), do the `updatekeys` step there, push, then delete `keys.txt`.
 
 ## Remove a machine
 

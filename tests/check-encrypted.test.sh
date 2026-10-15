@@ -112,8 +112,7 @@ esac
 repo="$work/repo"
 mkdir -p "$repo/ai/helpers" "$repo/ai/secrets" "$repo/ai/skills/kept" "$work/home"
 cp "$REPO_ROOT/ai/install.sh" "$repo/ai/install.sh"
-cp "$REPO_ROOT/ai/helpers/output.sh" "$repo/ai/helpers/output.sh"
-cp "$REPO_ROOT/ai/helpers/settings-reconcile.sh" "$repo/ai/helpers/settings-reconcile.sh"
+cp "$REPO_ROOT"/ai/helpers/*.sh "$repo/ai/helpers/"
 cp "$REPO_ROOT/ai/secrets/check-encrypted.sh" "$repo/ai/secrets/check-encrypted.sh"
 printf -- '---\nname: kept\n---\n' > "$repo/ai/skills/kept/SKILL.md"
 HOME="$work/home"; export HOME

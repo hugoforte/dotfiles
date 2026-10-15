@@ -89,27 +89,38 @@ call() {
 
 # The examples live under the temp directory, so they are absolute on every platform.
 root="$(cd "${TMPDIR:-/tmp}" && pwd -W 2>/dev/null || pwd)"
+# The separator Node reads on this platform: \ on Windows, where pwd -W answered, / elsewhere.
+case "$root" in [A-Za-z]:*) s='\' ;; *) s='/' ;; esac
 # native <part...>: a folder under the root, as Node spells it in a message.
 native() {
     call "(await import('node:path')).resolve(String.raw\`$root\`, ...'$*'.split(' '))"
 }
-projects="[{id:'example',title:'example',workspaceRoot:String.raw\`$root\\projects\\example\`},{id:'other',title:'other',workspaceRoot:'$root/projects/other/'}]"
+example="String.raw\`$root${s}projects${s}example\`"
+# Object literals go through variables: macOS's /bin/sh (bash 3.2) brace-expands a {a,b} written
+# inside "$( ... "..." )" when no whitespace separates the comma from the braces, which would
+# split one before Node saw it.
+projects="[{id:'example',title:'example',workspaceRoot:$example},{id:'other',title:'other',workspaceRoot:'$root/projects/other/'}]"
+copy="{id:'copy',title:'copy',workspaceRoot:$example}"
 
 assert_eq "--project finds the project whose workspace root is the folder" \
     "example" \
-    "$(call "t3.projectForFolder(String.raw\`$root\\projects\\example\`, $projects).id")"
+    "$(call "t3.projectForFolder($example, $projects).id")"
 assert_eq "--project matches with either slash and a trailing one" \
     "other" \
     "$(call "t3.projectForFolder('$root/projects/other', $projects).id")"
-assert_eq "--project matches without case on Windows" \
-    "example" \
-    "$(call "t3.projectForFolder(process.platform === 'win32' ? String.raw\`$root\\PROJECTS\\Example\` : String.raw\`$root/projects/example\`, $projects).id")"
+if [ "$s" = '\' ]; then
+    assert_eq "--project matches without case on Windows" \
+        "example" \
+        "$(call "t3.projectForFolder(String.raw\`$root\\PROJECTS\\Example\`, $projects).id")"
+else
+    printf '  SKIP  --project matches without case on Windows: not on Windows\n'
+fi
 assert_eq "--project for a folder T3 has no project for says how to add one" \
     "error: T3 Code has no project for $(native projects missing)" \
-    "$(call "t3.projectForFolder(String.raw\`$root\\projects\\missing\`, $projects)")"
+    "$(call "t3.projectForFolder(String.raw\`$root${s}projects${s}missing\`, $projects)")"
 assert_eq "--project for a folder with two T3 projects names both" \
     "error: T3 Code has 2 projects for $(native projects example): \"example\" (example), \"copy\" (copy)" \
-    "$(call "t3.projectForFolder(String.raw\`$root\\projects\\example\`, [...$projects, {id:'copy',title:'copy',workspaceRoot:String.raw\`$root\\projects\\example\`}])")"
+    "$(call "t3.projectForFolder($example, [...$projects, $copy])")"
 
 settings="{providers:{codex:{enabled:false},grok:{enabled:false}},providerInstances:{claudeAgent:{driver:'claudeAgent',displayName:'Claude'},claudeAgent_work:{driver:'claudeAgent',displayName:'Claude Work',enabled:true,config:{homePath:'~/.claude-work'}},claudeAgent_old:{driver:'claudeAgent',displayName:'Claude Old',enabled:false},codex_spare:{driver:'codex',config:{enabled:true}},codex_managed:{driver:'codex',enabled:true,config:{enabled:false}},grok_unset:{driver:'grok'}}}"
 
@@ -153,15 +164,19 @@ destination() {
     call "(({ projectId, branch, worktreePath, place }) => [projectId, branch, worktreePath, place].join('|'))(await t3.destination(undefined, $current, undefined, $1))"
 }
 
+# Through variables, as $copy above.
+here_project="{id:'here',workspaceRoot:'D:/projects/here'}"
+there_project="{id:'there',workspaceRoot:'D:/projects/there'}"
+
 assert_eq "without --project the next thread keeps this project and branch" \
     "here|feature||feature" \
     "$(destination undefined)"
 assert_eq "--project for this thread's own project keeps the branch" \
     "here|feature||D:/projects/here, feature" \
-    "$(destination "{id:'here',workspaceRoot:'D:/projects/here'}")"
+    "$(destination "$here_project")"
 assert_eq "--project for another project starts in its checkout" \
     "there|||D:/projects/there" \
-    "$(destination "{id:'there',workspaceRoot:'D:/projects/there'}")"
+    "$(destination "$there_project")"
 
 assert_eq "without --provider the model selection is this thread's, untouched" \
     "true" \

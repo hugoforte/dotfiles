@@ -1,0 +1,22 @@
+# A Mac's tools are Brewfiles, one per overlay and one per machine
+
+A Mac installs its tools with `brew bundle`, from each overlay's `macos/Brewfile` in overlay
+order, then from the one `machines/<KEY>.Brewfile` an overlay ships for it, `<KEY>` being the
+Mac's `LocalHostName` uppercased. `macos/setup.sh --check` asks `brew bundle check` of each.
+Both run with `--no-upgrade`: as with a manifest on Windows, an entry is installed when missing
+and never upgraded, so an outdated formula is neither drift nor something a run replaces.
+Anything Homebrew cannot install is a manual step in the machine's notes.
+
+`powershell/tools.psd1` stays Windows-only. Extending it to macOS was the alternative that keeps
+one list of tools, and it was rejected because the list is not really one list. Its entries are
+winget ids, npm packages and GitHub release assets with Windows install methods, and
+`Unattended` flags that exist because of UAC; a Mac entry would share the name and nothing else.
+A Brewfile is Homebrew's own format, `brew bundle` already installs, checks and reports it, and
+none of `install-tools.ps1`'s machinery (options, deferred entries) has a use on a single Mac.
+A second Mac with a different job gets its own machine Brewfile before options come to macOS
+as code.
+
+This repo ships no Brewfile of its own: like `aws/config`, which tools a machine wants is a
+private choice, so the Brewfiles live in overlays. The machine key follows the Windows one,
+`machines/<COMPUTERNAME>.psd1`, and comes from `scutil` because a Mac's other names
+(`ComputerName`, `HostName`) may hold spaces or be unset.
