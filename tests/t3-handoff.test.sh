@@ -1,7 +1,8 @@
 #!/bin/sh
 
-# Suite for handoffTitles and matchingProject in ai/skills/hf-t3-handoff/t3.mjs,
-# the parts of the T3 handoff that are functions of their arguments. Everything
+# Suite for ai/skills/hf-t3-handoff/t3.mjs: the parts of the T3 handoff that are
+# functions of their arguments, such as the titles, the project matching and
+# where T3 Code is installed on each platform. Everything
 # else in that script talks to a running T3 Code server and is not run here.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -169,6 +170,28 @@ assert_eq "without --provider the model selection is this thread's, untouched" \
 assert_eq "--provider keeps the model and its options and changes only the instance" \
     '{"instanceId":"claudeAgent_work","model":"claude-model","options":[{"id":"effort","value":"medium"}]}' \
     "$(call "JSON.stringify(t3.modelSelectionOn(($current).modelSelection, { id: 'claudeAgent_work' }))")"
+
+# app <platform> [T3_EXE]: prints "<exe>|<serverBin>" for that platform.
+app() {
+    call "(({ exe, serverBin }) => exe + '|' + serverBin)(t3.t3App('$1', { LOCALAPPDATA: String.raw\`C:\\Users\\me\\AppData\\Local\`, ${2:+T3_EXE: String.raw\`$2\`} }))"
+}
+
+assert_eq "on Windows T3 Code is the per-user install, its server in resources beside it" \
+    'C:\Users\me\AppData\Local\Programs\t3code\T3 Code (Alpha).exe|C:\Users\me\AppData\Local\Programs\t3code\resources\server.asar\apps\server\dist\bin.mjs' \
+    "$(app win32)"
+assert_eq "on macOS T3 Code is the app bundle, its server in the bundle's Resources" \
+    '/Applications/T3 Code (Alpha).app/Contents/MacOS/T3 Code (Alpha)|/Applications/T3 Code (Alpha).app/Contents/Resources/server.asar/apps/server/dist/bin.mjs' \
+    "$(app darwin)"
+assert_eq "on macOS T3_EXE moves the server with it" \
+    '/Users/me/Applications/T3.app/Contents/MacOS/T3|/Users/me/Applications/T3.app/Contents/Resources/server.asar/apps/server/dist/bin.mjs' \
+    "$(app darwin /Users/me/Applications/T3.app/Contents/MacOS/T3)"
+
+assert_eq "a Mac's .local host name is reached without it" \
+    "Hugos-MacBook-Pro" \
+    "$(call "t3.reachableName('Hugos-MacBook-Pro.local')")"
+assert_eq "a host name without .local is reached as it is" \
+    "ZENBOOK" \
+    "$(call "t3.reachableName('ZENBOOK')")"
 
 # cli <args...>: runs t3.mjs and prints the first line it wrote to stderr. Each case
 # here is refused while the arguments are read, before anything reaches T3 Code.

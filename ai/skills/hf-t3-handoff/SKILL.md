@@ -18,7 +18,7 @@ Threads of a rig work are titled `RIG - [KEY] Short description`, and each hando
 ## What it needs
 
 - **rig**, set up, with its `rig-handoff` skill linked into `~/.claude/skills`.
-- **T3 Code**, installed and running, with this skill run from a Claude thread in it.
+- **T3 Code**, installed and running, with this skill run from a Claude thread in it. On Windows it is found in `%LOCALAPPDATA%\Programs\t3code`, on macOS as `/Applications/T3 Code (Alpha).app`; set `T3_EXE` to its executable when it is elsewhere.
 - **Node 22.13 or later**, which can read T3's database to find the current thread.
 - **For another computer**: T3 Code running there with its server network-accessible, the repository added as a project in it, and that computer's entry in `~/.agent-secrets/hf-t3-handoff/computers.local.json` on this one. That file is a skill secret: `deploy-secrets.ps1` decrypts it from `ai/secrets/hf-t3-handoff/` in the personal overlay, so one copy lists every machine and reaches each of them by sync. Running `node ~/.claude/skills/hf-t3-handoff/t3.mjs token` on a computer prints its entry, token included, and the entry goes into the overlay's file with `sops edit` (see the `hf-dotfiles-secrets` skill), never into the decrypted copy. That is the user's to run and to paste: the token is a password, so never ask for it in chat and never print the file.
 
