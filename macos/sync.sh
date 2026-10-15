@@ -33,15 +33,17 @@ log() {
 }
 
 # log_result <output>: its warnings and errors, without the colour codes. The escape is made by
-# printf because BSD sed has no \x1b.
+# printf because BSD sed has no \x1b, and sed runs bytewise (LC_ALL=C) because BSD sed in a UTF-8
+# locale refuses input it cannot decode.
 ESC="$(printf '\033')"
 log_result() {
-    printf '%s\n' "$1" | sed "s/$ESC\[[0-9;]*m//g" | grep -E '^\[(!!|XX)\]' |
+    printf '%s\n' "$1" | LC_ALL=C sed "s/$ESC\[[0-9;]*m//g" | grep -E '^\[(!!|XX)\]' |
         while IFS= read -r line; do log "  $line"; done
 }
 
 # A LaunchAgent starts with PATH=/usr/bin:/bin:/usr/sbin:/sbin, without Homebrew's jq and sops.
-for brew in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+# A PATH that already finds brew, as a terminal's does, is left as it is.
+command -v brew > /dev/null 2>&1 || for brew in /opt/homebrew/bin/brew /usr/local/bin/brew; do
     if [ -x "$brew" ]; then
         eval "$("$brew" shellenv)"
         break
