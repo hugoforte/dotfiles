@@ -47,6 +47,8 @@ testable yet:
 | `powershell/user-path.ps1`'s `Add-PathEntry` | the PATH list is an argument; `Add-UserPathEntry` applies it and is not run | this change |
 | `powershell/tool-selection.ps1` | which entries a machine gets, the release asset, the installed-program match and the reading of `uv tool list` are functions of their arguments; `install-tools.ps1` reads the registry, runs uv and downloads | this change |
 | `ai/install.sh`'s extra Claude config folders | `HOME` and the overlay list are fixtures, so the folders it fills are temp directories | this change |
+| `macos/setup.sh` | `HOME` and the overlay list are fixtures, and `uname`, `scutil` and `brew` are stubs on `PATH`, so it runs on any OS and installs nothing | this change |
+| `macos/zshrc` | sourced by `zsh -f` through a fixture `~/.zshrc` link; skipped where zsh is missing | this change |
 
 **Everything else is untestable on purpose, not by oversight.** `setup.ps1`, `sync.ps1`,
 `install-sync-task.ps1`, `install-cswap-task.ps1`, and `install-tools.ps1` / `deploy-secrets.ps1` without `-Check` read

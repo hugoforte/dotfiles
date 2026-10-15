@@ -1,6 +1,6 @@
 # dotfiles
 
-One repo that configures every Windows development machine its owner uses. Files live here once and reach each machine by symlink, so an edit in the checkout is live immediately and reaches the other machines through git.
+One repo that configures every development machine its owner uses, Windows through `powershell/` and macOS through `macos/`. Files live here once and reach each machine by symlink, so an edit in the checkout is live immediately and reaches the other machines through git.
 
 ## Language
 
@@ -33,7 +33,7 @@ _Avoid_: installed file, real file (that means "not a symlink")
 ### The two kinds of managed thing
 
 **Managed link**:
-A target that is a symlink to a source. Four of them are `setup.ps1`'s; the rest are `ai/install.sh`'s. `powershell/managed-link.ps1` is the one implementation.
+A target that is a symlink to a source. Four of them are `setup.ps1`'s on Windows and three `macos/setup.sh`'s on a Mac; the rest are `ai/install.sh`'s. `powershell/managed-link.ps1` is the one implementation in PowerShell and `ai/helpers/managed-link.sh` the one in sh, with the same backup policy.
 _Avoid_: symlink (that is the mechanism, not the concept), dotfile link
 
 **Managed key**:
@@ -65,8 +65,12 @@ _Avoid_: update, refresh
 ### Machines
 
 **Machine**:
-One Windows install with a checkout of this repo. Its identity is its SSH key, and it opts into skill secrets by declaring `SearchRoots` in its `machine.local.psd1`; the same file lists its overlays and options.
+One Windows or macOS install with a checkout of this repo. Its identity is its SSH key, and it opts into skill secrets by declaring `SearchRoots` in its `machine.local.psd1`; the same file lists its overlays and options.
 _Avoid_: host, box, device
+
+**Machine key**:
+The name a machine's own files in an overlay's `machines/` go by: the Windows computer name, or a Mac's `LocalHostName`, uppercased (`MACBOOK`). Set once, as the first step of rebuilding a machine.
+_Avoid_: hostname (a Mac has three names), machine name
 
 **Checkout**:
 A working copy of *another* project's repo, found one level under a search root, which may host a project skill needing secrets. This repo's own working copy is "the repo" or "the dotfiles checkout" — never a bare "checkout".
@@ -137,6 +141,10 @@ _Avoid_: profile, feature flag, extra
 **Install method**:
 What an entry's `Source` field names: `winget`, `npm`, `uv` (a Python tool, `uv tool install`), `github-release` (a repo's latest release asset, run silently) or `manual`. The field is called `Source` for history; in prose it is the install method, because a source is a file in this repo.
 _Avoid_: source (that is the repo file a managed path points at), provider, package manager
+
+**Overlay Brewfile**:
+An overlay's `macos/Brewfile`, or its `machines/<KEY>.Brewfile` for one Mac: the Homebrew bundle a Mac applies with `brew bundle`, in overlay order and the machine's last. The macOS counterpart of a manifest, kept separate from it because the two share tool names and nothing else ([ADR 0008](docs/adr/0008-a-brewfile-per-overlay.md)). This repo ships none.
+_Avoid_: manifest (that is `tools.psd1`), package list
 
 ### Reporting
 

@@ -1,0 +1,21 @@
+# Linked to ~/.zshrc by macos/setup.sh. Minimal on purpose: a helper from powershell/profile.ps1
+# is ported only once it is missed.
+
+# This checkout: the folder above the file the link points at.
+DOTFILES="${${(%):-%x}:A:h:h}"
+
+# Homebrew: /opt/homebrew on Apple silicon, /usr/local on Intel.
+for brew in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    if [[ -x $brew ]]; then
+        eval "$($brew shellenv)"
+        break
+    fi
+done
+unset brew
+
+# bin/ holds the commands agents need too (md-lint, check-encrypted, agent-guard).
+typeset -U path
+path=("$DOTFILES/bin" $path)
+
+# Report whether this Mac is in line with the repo; changes nothing.
+dotfiles-check() { sh "$DOTFILES/macos/setup.sh" --check "$@"; }
