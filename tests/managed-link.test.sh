@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Fixture suite for the managed link in ai/install.sh: link, unlink_managed, check_link.
+# Fixture suite for ai/helpers/managed-link.sh: link, unlink_managed, check_link.
 #
 # These three hold the sh half of the cross-language policy in hugoforte/dotfiles#6: a real
 # file at a managed path is backed up and then linked, a symlink is replaced outright, and a
@@ -9,11 +9,8 @@
 # One difference: unlink_managed removes only a link to the source it is given, where
 # Remove-ManagedLink removes any symlink at the path.
 #
-# ai/install.sh is a script, not a library - sourcing it would install into ~/.claude. The
-# link primitives are sed'd out into a fixture and sourced from there instead. The extraction
-# is asserted before anything is sourced, so a rename upstream turns this suite red rather
-# than quietly testing an empty file. Everything else happens in a temp directory this suite
-# creates and removes.
+# The helper only defines functions, so it is sourced as it is. Everything else happens in a
+# temp directory this suite creates and removes.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -86,37 +83,8 @@ run_check() {
     check_out="$(cat "$work/check.out")"
 }
 
-# ---------------------------------------------------------------------------
-# The fixture: ai/install.sh's link primitives, and nothing else
-# ---------------------------------------------------------------------------
-
-fixture="$work/link-primitives.sh"
-{
-    printf '#!/bin/sh\n'
-    printf '. "%s/ai/helpers/output.sh"\n' "$REPO_ROOT"
-    # ai/install.sh exports this itself: on Git Bash `ln -s` copies instead of linking without it.
-    printf 'case "$(uname -s)" in MINGW*|MSYS*) export MSYS="winsymlinks:nativestrict" ;; esac\n'
-    sed -n '/^# Link primitives$/,/^# Components:/p' "$REPO_ROOT/ai/install.sh"
-} > "$fixture"
-
-found="$(grep -cE '^(link|unlink_managed|check_link)\(\) \{' "$fixture")"
-assert_eq "the extraction found all three link primitives" "3" "$found"
-
-# Without its end marker sed would run to EOF and the fixture would carry the installer's
-# top-level code, which mutates the real machine the moment it is sourced.
-runaway="$(grep -c '^MODE=install' "$fixture")"
-assert_eq "the extraction stops short of the installer's top-level code" "0" "$runaway"
-
-if sh -n "$fixture" 2>/dev/null; then syntax=ok; else syntax=bad; fi
-assert_eq "the extracted fixture is valid POSIX sh" "ok" "$syntax"
-
-if [ "$found" != "3" ] || [ "$runaway" != "0" ] || [ "$syntax" != "ok" ]; then
-    printf '  ABORT the fixture is not the link primitives; refusing to source it\n'
-    assert_summary "managed-link"
-    exit 1
-fi
-
-. "$fixture"
+. "$REPO_ROOT/ai/helpers/output.sh"
+. "$REPO_ROOT/ai/helpers/managed-link.sh"
 
 # ---------------------------------------------------------------------------
 # Fake repo and fake home

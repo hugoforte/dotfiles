@@ -27,8 +27,7 @@ mkdir -p "$repo/ai/helpers" "$repo/ai/skills/own" "$repo/ai/agents" "$repo/ai/se
          "$home/.claude/skills" "$rig/bin" "$rig/skills/rig" "$rig/skills/rig-doomed"
 
 cp "$REPO_ROOT/ai/install.sh" "$repo/ai/install.sh"
-cp "$REPO_ROOT/ai/helpers/output.sh" "$repo/ai/helpers/output.sh"
-cp "$REPO_ROOT/ai/helpers/settings-reconcile.sh" "$repo/ai/helpers/settings-reconcile.sh"
+cp "$REPO_ROOT"/ai/helpers/*.sh "$repo/ai/helpers/"
 printf 'exit 0\n' > "$repo/ai/secrets/check-encrypted.sh"
 printf -- '---\nname: own\n---\n' > "$repo/ai/skills/own/SKILL.md"
 : > "$rig/bin/rig.mjs"

@@ -29,8 +29,7 @@ mkdir -p "$repo/ai/helpers" "$repo/ai/skills/own" "$repo/ai/agents" "$repo/ai/se
          "$second/ai/skills/other"
 
 cp "$REPO_ROOT/ai/install.sh" "$repo/ai/install.sh"
-cp "$REPO_ROOT/ai/helpers/output.sh" "$repo/ai/helpers/output.sh"
-cp "$REPO_ROOT/ai/helpers/settings-reconcile.sh" "$repo/ai/helpers/settings-reconcile.sh"
+cp "$REPO_ROOT"/ai/helpers/*.sh "$repo/ai/helpers/"
 printf 'exit 0\n' > "$repo/ai/secrets/check-encrypted.sh"
 for skill in "$repo/ai/skills/own" "$first/ai/skills/private-thing" "$first/ai/skills/doomed" \
              "$second/ai/skills/other"; do

@@ -29,8 +29,7 @@ mkdir -p "$repo/ai/helpers" "$repo/ai/skills/own" "$repo/ai/agents" "$repo/ai/cl
          "$home" "$cwd" "$overlay/ai/claude" "$extra"
 
 cp "$REPO_ROOT/ai/install.sh" "$repo/ai/install.sh"
-cp "$REPO_ROOT/ai/helpers/output.sh" "$repo/ai/helpers/output.sh"
-cp "$REPO_ROOT/ai/helpers/settings-reconcile.sh" "$repo/ai/helpers/settings-reconcile.sh"
+cp "$REPO_ROOT"/ai/helpers/*.sh "$repo/ai/helpers/"
 printf 'exit 0\n' > "$repo/ai/secrets/check-encrypted.sh"
 printf '# instructions\n' > "$repo/ai/CLAUDE.md"
 printf -- '---\nname: helper\n---\n' > "$repo/ai/agents/helper.md"
