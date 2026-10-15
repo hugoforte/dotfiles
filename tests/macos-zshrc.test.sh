@@ -25,6 +25,7 @@ ln -s "$REPO_ROOT/macos/zshrc" "$home/.zshrc"
 # in_zsh <command>: run it after sourcing ~/.zshrc, in a zsh that reads no other startup file
 in_zsh() { HOME="$home" zsh -f -c ". \"\$HOME/.zshrc\" && $1" 2>&1; }
 
+assert_eq "sourcing it succeeds, with no ~/.zshrc.local" "0" "$(HOME="$home" zsh -f -c '. "$HOME/.zshrc"' > /dev/null 2>&1; echo $?)"
 assert_eq "it finds this checkout through the ~/.zshrc link" "$REPO_ROOT" "$(in_zsh 'print -r -- $DOTFILES')"
 assert_eq "it puts bin/ first on PATH" "$REPO_ROOT/bin" "$(in_zsh 'print -r -- $path[1]')"
 assert_eq "bin/ commands resolve from there" "$REPO_ROOT/bin/md-lint" "$(in_zsh 'whence -p md-lint')"
