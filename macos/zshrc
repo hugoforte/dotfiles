@@ -25,4 +25,6 @@ dotfiles-sync() { sh "$DOTFILES/macos/sync.sh"; }
 
 # Lines that are this Mac's alone, and what installers such as nvm or conda want to append: this
 # file is a link into a public repo, so they go in ~/.zshrc.local instead.
-[[ -r ~/.zshrc.local ]] && source ~/.zshrc.local
+if [[ -r ~/.zshrc.local ]]; then
+    source ~/.zshrc.local
+fi
