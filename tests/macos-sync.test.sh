@@ -16,8 +16,10 @@ case "$(uname -s)" in
     MINGW*|MSYS*) MSYS="winsymlinks:nativestrict"; export MSYS ;;
 esac
 
+# Physical, as setup.sh links its checkout (see macos-setup.test.sh).
 work="$(mktemp -d)" || exit 1
 trap 'rm -rf "$work"' EXIT INT TERM
+work="$(cd "$work" && pwd -P)"
 
 home="$work/home dir"
 stubs="$work/stubs"
