@@ -16,7 +16,8 @@ trap 'rm -rf "$work"' EXIT INT TERM
 home="$work/home dir"
 stubs="$work/stubs"
 mkdir -p "$home" "$stubs"
-printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\n' "$work/launchctl.log" > "$stubs/launchctl"
+# launchctl logs each call; `print` answers that the job is not loaded.
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\n[ "$1" != print ]\n' "$work/launchctl.log" > "$stubs/launchctl"
 chmod +x "$stubs/launchctl"
 
 HOME="$home"; export HOME
@@ -37,9 +38,8 @@ assert_eq "quietly, since it logs to its own file" "y" "$(has "<string>--quiet</
 assert_eq "at load" "y" "$(has "<key>RunAtLoad</key>")"
 assert_eq "and every 4 hours" "y" "$(has "<integer>14400</integer>")"
 assert_eq "anything sync.sh does not catch lands in its log" "y" "$(has "<string>$home/Library/Logs/dotfiles-sync.log</string>")"
-assert_eq "it unloads any old agent, then loads this one" \
-    "$(printf 'bootout gui/%s/com.hugoforte.dotfiles-sync\nbootstrap gui/%s %s' "$uid" "$uid" "$plist")" \
-    "$(cat "$work/launchctl.log")"
+assert_eq "it unloads any old agent first" "bootout gui/$uid/com.hugoforte.dotfiles-sync" "$(head -n 1 "$work/launchctl.log")"
+assert_eq "and loads this one last" "bootstrap gui/$uid $plist" "$(tail -n 1 "$work/launchctl.log")"
 if command -v plutil > /dev/null 2>&1; then
     assert_eq "plutil accepts the plist" "0" "$(plutil -lint "$plist" > /dev/null 2>&1; echo $?)"
 fi

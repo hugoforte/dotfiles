@@ -15,7 +15,9 @@
 #   ~/.gitconfig-overlays     written: an include of each overlay's git/gitconfig
 #   Brewfiles                 each overlay's macos/Brewfile, then the one overlay's
 #                             machines/<KEY>.Brewfile, KEY being the LocalHostName uppercased
-#                             (docs/adr/0008-a-brewfile-per-overlay.md)
+#                             (docs/adr/0008-a-brewfile-per-overlay.md); each path and checksum
+#                             is kept in ~/Library/Application Support/dotfiles/brewfiles.cksum
+#                             once every bundle succeeded, for --brew-if-changed
 #   ai/install.sh             run, or run with --check
 #
 # Idempotent. A real file where a link goes is backed up first (docs/adr/0003).

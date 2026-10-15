@@ -57,8 +57,15 @@ cat > "$PLIST" <<EOF
 </plist>
 EOF
 
-# bootout fails when the agent is not loaded, which on a first install it is not.
+# bootout fails when the agent is not loaded, which on a first install it is not. It returns
+# before launchd has let go of the job, and a bootstrap then fails (5: Input/output error), so
+# wait for the job to be gone, for ten seconds at most.
 launchctl bootout "$DOMAIN/$LABEL" > /dev/null 2>&1
+waited=0
+while launchctl print "$DOMAIN/$LABEL" > /dev/null 2>&1 && [ "$waited" -lt 20 ]; do
+    sleep 0.5
+    waited=$((waited + 1))
+done
 launchctl bootstrap "$DOMAIN" "$PLIST" || die "launchctl could not load $PLIST"
 
 success "Installed the LaunchAgent $LABEL"

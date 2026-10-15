@@ -116,5 +116,27 @@ git -C "$work/private" remote set-url origin "$work/private.git"
 printf "@{\n    SearchRoots = @('%s')\n    Overlays = @(\n        '%s'\n    )\n}\n" "$(win "$work")" "$(win "$personal")" > "$repo/ai/secrets/machine.local.psd1"
 out="$(sync)"; rc=$?
 assert_eq "with SearchRoots it deploys the secrets" "y" "$(says "$(cat "$log")" "deploy-secrets.sh ok")"
+assert_eq "and succeeds" "0" "$rc"
+
+# A secret this Mac cannot decrypt: the stub sops writes nothing.
+mkdir -p "$personal/ai/secrets/tool"
+printf 'ENC:x\n' > "$personal/ai/secrets/tool/.secrets.env"
+printf "@{\n    Skills = @(\n        @{\n            Id    = 'tool'\n            Files = @('.secrets.env')\n        }\n    )\n}\n" > "$personal/ai/secrets/registry.psd1"
+: > "$log"
+out="$(sync)"; rc=$?
+assert_eq "a failed secrets deploy fails the run" "1" "$rc"
+assert_eq "and is logged" "y" "$(says "$(cat "$log")" "deploy-secrets.sh failed")"
+assert_eq "with the output that says why" "y" "$(says "$(cat "$log")" "is this machine a recipient")"
+assert_eq "including the lines that are not warnings" "y" "$(says "$(cat "$log")" "Decrypting to")"
+rm -r "$personal/ai/secrets"
+
+# This repo cannot be pulled, as at a login with no network yet.
+git -C "$repo" remote set-url origin "$work/gone.git"
+: > "$log"
+out="$(sync)"; rc=$?
+assert_eq "a failed pull of this repo fails the run" "1" "$rc"
+assert_eq "and is logged" "y" "$(says "$(cat "$log")" "git pull failed")"
+assert_eq "and nothing is applied from a repo it could not update" "n" "$(says "$(cat "$log")" "macos/setup.sh")"
+git -C "$repo" remote set-url origin "$work/dotfiles.git"
 
 assert_summary "macos/sync.sh"

@@ -159,6 +159,18 @@ set -- "$work/backups/checkout"/secret.env.backup.*
 assert_eq "... and puts it in the folder, made if missing, under the same name" "plaintext" "$(cat "$1")"
 assert_eq "... and says where it went" "y" "$(mentions "$out" "$work/backups/checkout/secret.env.backup.")"
 
+# Two backups of the same name in the same second, as two checkouts called the same under two
+# search roots give: neither may replace the other. date is a function here, so the second is fixed.
+date() { echo 20260101_000000; }
+mkdir -p "$home/one" "$home/two"
+printf 'first\n' > "$home/one/same.env"
+printf 'second\n' > "$home/two/same.env"
+link "$repo/CLAUDE.md" "$home/one/same.env" "$work/backups/same" > /dev/null
+link "$repo/CLAUDE.md" "$home/two/same.env" "$work/backups/same" > /dev/null
+unset -f date
+assert_eq "a backup never replaces an earlier one of the same name" "first second" \
+    "$(cat "$work/backups/same"/* | tr '\n' ' ' | sed 's/ $//')"
+
 # ---------------------------------------------------------------------------
 # unlink_managed
 # ---------------------------------------------------------------------------

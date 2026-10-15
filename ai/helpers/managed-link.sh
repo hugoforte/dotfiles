@@ -35,6 +35,11 @@ link() {
             mkdir -p "$3" || { error "Could not make $3 for a backup of $dst - leaving it alone"; return 1; }
             backup="$3/${backup##*/}"
         fi
+        # mv replaces what is there; a backup taken in the same second as another is numbered.
+        backup_base="$backup"; backup_n=1
+        while [ -e "$backup" ] || [ -L "$backup" ]; do
+            backup="$backup_base.$backup_n"; backup_n=$((backup_n + 1))
+        done
         if ! mv "$dst" "$backup"; then
             error "Could not move $dst aside to $backup - leaving it alone"
             return 1

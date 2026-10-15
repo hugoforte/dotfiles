@@ -32,12 +32,15 @@ log() {
     [ "$QUIET" = "true" ] || printf '%s\n' "$line"
 }
 
-# log_result <output>: its warnings and errors, without the colour codes. The escape is made by
+# log_result <ok|failed> <output>: a child script's output, without the colour codes. Its warnings
+# and errors when it succeeded; every line when it failed, since the reason may be a line of
+# brew's or git's with no prefix, as sync.ps1 logs a failed install.sh. The escape is made by
 # printf because BSD sed has no \x1b, and sed runs bytewise (LC_ALL=C) because BSD sed in a UTF-8
 # locale refuses input it cannot decode.
 ESC="$(printf '\033')"
 log_result() {
-    printf '%s\n' "$1" | LC_ALL=C sed "s/$ESC\[[0-9;]*m//g" | grep -E '^\[(!!|XX)\]' |
+    if [ "$1" = "ok" ]; then keep='^\[(!!|XX)\]'; else keep='.'; fi
+    printf '%s\n' "$2" | LC_ALL=C sed "s/$ESC\[[0-9;]*m//g" | grep -E "$keep" |
         while IFS= read -r line; do log "  $line"; done
 }
 
@@ -86,21 +89,23 @@ EOF
 
 if out="$(sh "$REPO/macos/setup.sh" --brew-if-changed 2>&1)"; then
     log "macos/setup.sh ok"
+    log_result ok "$out"
 else
     log "macos/setup.sh failed"
+    log_result failed "$out"
     failed=1
 fi
-log_result "$out"
 
 # Skill secrets only on a Mac whose machine.local.psd1 declares SearchRoots, as on Windows.
 if [ -f "$LOCAL_PSD1" ] && grep -q '^[[:space:]]*SearchRoots[[:space:]]*=' "$LOCAL_PSD1"; then
     if out="$(sh "$REPO/macos/deploy-secrets.sh" 2>&1)"; then
         log "deploy-secrets.sh ok"
+        log_result ok "$out"
     else
         log "deploy-secrets.sh failed"
+        log_result failed "$out"
         failed=1
     fi
-    log_result "$out"
 else
     log "deploy-secrets.sh skipped (no SearchRoots in ai/secrets/machine.local.psd1)"
 fi

@@ -152,6 +152,56 @@ assert_eq "an entry it cannot read fails rather than being skipped" "1" "$rc"
 assert_eq "and names the registry" "y" "$(says "$out" "$repo/ai/secrets/registry.psd1")"
 rm "$repo/ai/secrets/registry.psd1"
 
+# --- registries as PowerShell reads them -----------------------------------------------------
+
+# A registry the repo itself carries, for one project skill, in the spelling under test.
+# registry <Remote line>: write it with that Remote line, deploy, and leave the output in $out
+mkdir -p "$repo/ai/secrets/cs"
+printf 'ENC:CS=1\n' > "$repo/ai/secrets/cs/.secrets.env"
+checkout tool "https://github.com/example/tool.git" ".claude/skills/cs"
+checkout fork "https://github.com/attacker/fork.git" ".claude/skills/cs"
+registry() {
+    printf "@{\n    Skills = @(\n        @{\n            Id     = 'cs'\n            Marker = '.claude/skills/cs'\n            %s\n            Files  = @('.secrets.env')\n        }\n    )\n}\n" "$1" > "$repo/ai/secrets/registry.psd1"
+    rm -f "$src/tool/.claude/skills/cs/.secrets.env" "$src/fork/.claude/skills/cs/.secrets.env"
+    out="$(run)"; rc=$?
+}
+
+registry 'Remote = "example/tool"'
+assert_eq "a double-quoted Remote is read: the matching checkout is linked" "y" "$(exists "$src/tool/.claude/skills/cs/.secrets.env")"
+assert_eq "and a checkout of another origin is not" "n" "$(exists "$src/fork/.claude/skills/cs/.secrets.env")"
+registry "remote = 'example/tool'"
+assert_eq "a key in another case is read: a checkout of another origin is not linked" "n" "$(exists "$src/fork/.claude/skills/cs/.secrets.env")"
+registry "Remote = 'Example/Tool'"
+assert_eq "an origin matches its Remote without case, as on Windows" "y" "$(exists "$src/tool/.claude/skills/cs/.secrets.env")"
+registry ""
+assert_eq "a Marker with no Remote fails rather than matching every origin" "1" "$rc"
+assert_eq "and links nothing" "n" "$(exists "$src/fork/.claude/skills/cs/.secrets.env")"
+registry 'Remote = example/tool'
+assert_eq "a value it cannot read fails the run" "1" "$rc"
+assert_eq "and names the registry" "y" "$(says "$out" "$repo/ai/secrets/registry.psd1")"
+rm -rf "$repo/ai/secrets/registry.psd1" "$repo/ai/secrets/cs" "$src/tool" "$src/fork"
+
+# --- machine.local.psd1 and file modes -------------------------------------------------------
+
+# A search root under ~, as a Mac's machine.local.psd1 would write it.
+mkdir -p "$home/src"
+mv "$src/app" "$home/src/app"
+printf "@{\n    SearchRoots = @('~/src')\n    Overlays = @(\n        '%s'\n    )\n}\n" "$(win "$personal")" > "$repo/ai/secrets/machine.local.psd1"
+rm "$home/src/app/.claude/skills/db-query/.secrets.env"
+out="$(run)"; rc=$?
+assert_eq "a search root under ~/ is the home directory's" "$secrets/db-query/.secrets.env" "$(readlink "$home/src/app/.claude/skills/db-query/.secrets.env")"
+
+case "$(uname -s)" in
+    MINGW*|MSYS*) ;;
+    *)
+        chmod 644 "$secrets/db-query/.secrets.env"
+        chmod 755 "$secrets"
+        run > /dev/null
+        assert_eq "a decrypted file found readable by others is made its owner's alone" "rw-------" "$(ls -l "$secrets/db-query/.secrets.env" | cut -c2-10)"
+        assert_eq "and so is ~/.agent-secrets" "rwx------" "$(ls -ld "$secrets" | cut -c2-10)"
+        ;;
+esac
+
 printf "@{\n    Overlays = @('%s')\n}\n" "$(win "$personal")" > "$repo/ai/secrets/machine.local.psd1"
 out="$(run)"; rc=$?
 assert_eq "no SearchRoots fails" "1" "$rc"

@@ -13,8 +13,9 @@
 # where a link goes is moved to ~/.agent-secrets/backups/, never left in the checkout. A failed
 # decrypt leaves the previous decrypted copy in place. Any warning exits 1.
 #
-# The registries are read by awk, so an entry must put each key on a line of its own, Files as
-# one @(...) on one line, as every registry here does. An entry it cannot read is an error.
+# The registries are read by awk, so an entry must put each key on a line of its own with a
+# quoted value, Files as one @(...) on one line, as every registry here does, and a Remote beside
+# every Marker. An entry it cannot read is an error.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -60,35 +61,50 @@ EOF
 
 # registry_entries <registry.psd1>: one line per skill, its fields separated by $FS:
 #   <id> <marker> <remote> <files, space-separated> <registry path>
-# An entry without an Id or a Files list prints "!" and the registry path instead.
+# Keys are read without case and values in either quote, as PowerShell reads them. An entry it
+# cannot read prints "!" and the registry path instead: no Id, no one-line Files, a key whose
+# value is not a quoted string, or a Marker with no Remote, which would match every origin.
 registry_entries() {
-    awk -v registry="$1" -v fs="$FS" '
+    awk -v registry="$1" -v fs="$FS" -v sq="'" '
+        # every quoted string in text, space-separated
         function quoted(text,    out) {
             out = ""
-            while (match(text, /'"'"'[^'"'"']*'"'"'/)) {
+            while (match(text, sq "[^" sq "]*" sq "|\"[^\"]*\"")) {
                 out = out (out == "" ? "" : " ") substr(text, RSTART + 1, RLENGTH - 2)
                 text = substr(text, RSTART + RLENGTH)
             }
             return out
         }
-        function value(key) {
-            if (!match($0, "(^|[^A-Za-z])" key "[[:space:]]*=[[:space:]]*'"'"'[^'"'"']*'"'"'")) return ""
-            return quoted(substr($0, RSTART, RLENGTH))
+        # what follows "<key> =" on this line, or "" when the key is not on it
+        function after(key,    lower) {
+            lower = tolower($0)
+            if (!match(lower, "(^|[^a-z])" key "[[:space:]]*=")) return ""
+            return substr($0, RSTART + RLENGTH) "\n"
+        }
+        # the quoted value of key on this line; a key whose value is not one marks the entry bad
+        function value(key, current,    rest) {
+            if ((rest = after(key)) == "") return current
+            if (match(rest, "^[[:space:]]*(" sq "[^" sq "]*" sq "|\"[^\"]*\")")) return quoted(substr(rest, RSTART, RLENGTH))
+            bad = 1
+            return current
         }
         function emit() {
             if (!open) return
-            if (id == "" || files == "") print "!" fs registry
+            if (bad || id == "" || files == "" || (marker != "" && remote == "")) print "!" fs registry
             else print id fs marker fs remote fs files fs registry
             open = 0
         }
         /^[[:space:]]*#/ { next }
-        /Skills[[:space:]]*=/ { skills = 1 }
-        skills && /@\{/ { emit(); open = 1; id = marker = remote = files = "" }
+        tolower($0) ~ /skills[[:space:]]*=/ { skills = 1 }
+        skills && /@\{/ { emit(); open = 1; bad = 0; id = marker = remote = files = "" }
         open {
-            if ((v = value("Id")) != "") id = v
-            if ((v = value("Marker")) != "") marker = v
-            if ((v = value("Remote")) != "") remote = v
-            if (match($0, /(^|[^A-Za-z])Files[[:space:]]*=[[:space:]]*@\([^)]*\)/)) files = quoted(substr($0, RSTART, RLENGTH))
+            id = value("id", id)
+            marker = value("marker", marker)
+            remote = value("remote", remote)
+            if ((rest = after("files")) != "") {
+                if (match(rest, /^[[:space:]]*@\([^)]*\)/)) files = quoted(substr(rest, RSTART, RLENGTH))
+                else bad = 1
+            }
         }
         END { emit() }
     ' "$1"
@@ -101,7 +117,7 @@ while IFS= read -r root; do
     entries="$(registry_entries "$registry")"
     case "$entries" in
         '!'*|*"
-!"*) die "$registry has an entry without an Id or a one-line Files = @(...); write each key on a line of its own" ;;
+!"*) die "$registry has an entry this cannot read: each key on a line of its own with a quoted value, an Id, Files as one @(...) on one line, and a Remote beside every Marker" ;;
     esac
     [ -n "$entries" ] && SKILLS="${SKILLS:+$SKILLS
 }$entries"
@@ -135,14 +151,21 @@ while IFS="$FS" read -r id marker remote files registry; do
         if [ ! -f "$encrypted" ]; then warn "$id/$file missing from $secrets_dir"; continue; fi
 
         mkdir -p "$SECRETS_HOME/$id"
-        tmp="$decrypted.tmp"
-        if ! sops decrypt --output "$tmp" "$encrypted" > /dev/null 2>&1 || [ ! -f "$tmp" ]; then
+        # umask covers what is made now; a folder made by hand earlier is closed here too.
+        [ "$MODE" = "check" ] || chmod 700 "$SECRETS_HOME" "$SECRETS_HOME/$id"
+        # A name of its own, so a sync and a deploy run by hand never write the same file.
+        if ! tmp="$(mktemp "$decrypted.XXXXXX")"; then
+            warn "$id/$file: could not make a temporary file in $SECRETS_HOME/$id"
+            continue
+        fi
+        if ! sops decrypt --output "$tmp" "$encrypted" > /dev/null 2>&1 || [ ! -s "$tmp" ]; then
             rm -f "$tmp"
             warn "$id/$file failed to decrypt (is this machine a recipient in .sops.yaml?)"
             continue
         fi
         if [ -f "$decrypted" ] && cmp -s "$tmp" "$decrypted"; then
             rm -f "$tmp"
+            [ "$MODE" = "check" ] || chmod 600 "$decrypted"
             success "$id/$file current"
         elif [ "$MODE" = "check" ]; then
             rm -f "$tmp"
@@ -169,11 +192,14 @@ while IFS= read -r search_root; do
         while IFS="$FS" read -r id marker remote files registry; do
             [ -n "$marker" ] && [ -d "$dir/$marker" ] || continue
 
+            # Without case, as deploy-secrets.ps1's -notmatch compares.
             origin="$(git -C "$dir" remote get-url origin 2>/dev/null)"
-            case "$origin" in
-                '')          matches=false ;;
-                *"$remote"*) matches=true ;;
-                *)           matches=false ;;
+            origin_lower="$(printf '%s' "$origin" | tr '[:upper:]' '[:lower:]')"
+            remote_lower="$(printf '%s' "$remote" | tr '[:upper:]' '[:lower:]')"
+            case "$origin_lower" in
+                '')                matches=false ;;
+                *"$remote_lower"*) matches=true ;;
+                *)                 matches=false ;;
             esac
             if [ "$matches" = "false" ]; then
                 warn "$name: has $id but origin '$origin' does not match '$remote'; skipped"

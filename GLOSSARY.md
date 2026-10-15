@@ -109,7 +109,7 @@ _Avoid_: skill (unqualified), private skill
 ### Secrets
 
 **Skill secret**:
-A credential a skill needs, committed encrypted here or in an overlay. A project skill's is symlinked into every matching checkout; a shipped skill's is only decrypted, and the skill reads it from `%USERPROFILE%\.agent-secrets\<id>\`. Plaintext never enters git, in this repo or the app repos.
+A credential a skill needs, committed encrypted here or in an overlay. A project skill's is symlinked into every matching checkout; a shipped skill's is only decrypted, and the skill reads it from `%USERPROFILE%\.agent-secrets\<id>\`, or `~/.agent-secrets/<id>/` on a Mac. Plaintext never enters git, in this repo or the app repos.
 _Avoid_: credential, env file, secret (unqualified)
 
 **Recipient**:
