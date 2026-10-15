@@ -130,7 +130,8 @@ install
 # --- the machine's own Brewfile --------------------------------------------------------------
 
 rm -f "$brew_log"
-STUB_HOSTNAME="" install
+# In a subshell: macOS's /bin/sh keeps an assignment written before a function call after it.
+(STUB_HOSTNAME=""; export STUB_HOSTNAME; install)
 assert_eq "a Mac with no LocalHostName applies the overlays' Brewfiles alone" \
     "$(printf 'bundle --file=%s\nbundle --file=%s' "$personal/macos/Brewfile" "$second/macos/Brewfile")" \
     "$(cat "$brew_log")"
