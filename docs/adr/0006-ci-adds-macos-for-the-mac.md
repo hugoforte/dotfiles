@@ -21,5 +21,6 @@ Windows runner, which is 0004's own argument pointing the other way.
 - **No Linux job.** No machine this repo configures runs Linux, so a Linux runner would still
   be coverage of nothing.
 
-A sh test that only means something on one OS says so and skips itself elsewhere, rather than
-passing.
+A sh test whose input is spelled differently per OS, such as a path separator, spells it the
+way that OS does, so each job tests the same behaviour rather than one of them passing on a
+string the OS never produces.
