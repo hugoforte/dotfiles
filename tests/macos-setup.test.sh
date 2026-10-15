@@ -16,8 +16,11 @@ case "$(uname -s)" in
     MINGW*|MSYS*) MSYS="winsymlinks:nativestrict"; export MSYS ;;
 esac
 
+# Physical, as setup.sh links its checkout: the temp folder is often reached through a symlink
+# (/var -> /private/var on macOS, /tmp a mount on Windows).
 work="$(mktemp -d)" || exit 1
 trap 'rm -rf "$work"' EXIT INT TERM
+work="$(cd "$work" && pwd -P)"
 
 repo="$work/repo"
 home="$work/home dir"
