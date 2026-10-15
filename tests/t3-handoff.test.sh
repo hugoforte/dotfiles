@@ -97,7 +97,8 @@ native() {
 }
 example="String.raw\`$root${s}projects${s}example\`"
 # Object literals go through variables: macOS's /bin/sh (bash 3.2) brace-expands a {a,b} written
-# inside "$( ... "..." )", which would split one before Node saw it.
+# inside "$( ... "..." )" when no whitespace separates the comma from the braces, which would
+# split one before Node saw it.
 projects="[{id:'example',title:'example',workspaceRoot:$example},{id:'other',title:'other',workspaceRoot:'$root/projects/other/'}]"
 copy="{id:'copy',title:'copy',workspaceRoot:$example}"
 
@@ -107,9 +108,13 @@ assert_eq "--project finds the project whose workspace root is the folder" \
 assert_eq "--project matches with either slash and a trailing one" \
     "other" \
     "$(call "t3.projectForFolder('$root/projects/other', $projects).id")"
-assert_eq "--project matches without case on Windows" \
-    "example" \
-    "$(call "t3.projectForFolder(process.platform === 'win32' ? String.raw\`$root\\PROJECTS\\Example\` : String.raw\`$root/projects/example\`, $projects).id")"
+if [ "$s" = '\' ]; then
+    assert_eq "--project matches without case on Windows" \
+        "example" \
+        "$(call "t3.projectForFolder(String.raw\`$root\\PROJECTS\\Example\`, $projects).id")"
+else
+    printf '  SKIP  --project matches without case on Windows: not on Windows\n'
+fi
 assert_eq "--project for a folder T3 has no project for says how to add one" \
     "error: T3 Code has no project for $(native projects missing)" \
     "$(call "t3.projectForFolder(String.raw\`$root${s}projects${s}missing\`, $projects)")"

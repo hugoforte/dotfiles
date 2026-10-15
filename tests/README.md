@@ -39,7 +39,7 @@ testable yet:
 | `ai/secrets/check-encrypted.sh` | a pure function of a directory tree | #12 |
 | `powershell/managed-link.ps1` | three verbs, and both paths are arguments | #6 |
 | `powershell/git.ps1` | the merge verdict is a function of two refs, and `-Yes` opens the delete | #21 |
-| `ai/install.sh`'s `link` / `unlink_managed` / `check_link` | the same contract in sh, extracted to a fixture rather than run | #6 |
+| `ai/helpers/managed-link.sh`'s `link` / `unlink_managed` / `check_link` | the same contract in sh, in a helper that only defines functions, so it is sourced as it is | #6 |
 | `ai/skills/hf-t3-handoff/t3.mjs`'s `handoffTitles` and `matchingProject` | exported, and the script only acts when run directly | #14 |
 | `ai/skills/hf-t3-handoff/t3.mjs`'s `projectForFolder`, `providerInstance`, `destination` and `modelSelectionOn` | exported; projects and settings are arguments, and `destination` reads no server without `--to` | this change |
 | `powershell/native.ps1` | the command is an argument, and the verdict is the exit code | #15 |
@@ -110,7 +110,7 @@ Two traps that have already cost time here:
 - **Pester's `TestDrive` is per file, not per test.** Without a `BeforeEach` handing each test
   its own directory, a test sees the links the previous one left behind. `ManagedLink.Tests.ps1`
   calls `New-WorkDir` for exactly this reason.
-- **POSIX sh has no `local`.** `ai/install.sh`'s `link()` and `check_link()` assign `src`, `dst`,
+- **POSIX sh has no `local`.** `ai/helpers/managed-link.sh`'s `link()` and `check_link()` assign `src`, `dst`,
   `backup` and `actual` in the *caller's* shell, so a test using those names as its own
   variables gets silently corrupted. `managed-link.test.sh` uses `repo` and `saved`.
 

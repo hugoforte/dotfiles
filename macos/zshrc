@@ -18,7 +18,11 @@ typeset -U path
 path=("$DOTFILES/bin" $path)
 
 # Report whether this Mac is in line with the repo; changes nothing.
-dotfiles-check() { sh "$DOTFILES/macos/setup.sh" --check "$@"; }
+dotfiles-check() { sh "$DOTFILES/macos/setup.sh" --check; }
 
 # Pull the repo and its overlays and re-apply them now, as the LaunchAgent does every 4 hours.
-dotfiles-sync() { sh "$DOTFILES/macos/sync.sh" "$@"; }
+dotfiles-sync() { sh "$DOTFILES/macos/sync.sh"; }
+
+# Lines that are this Mac's alone, and what installers such as nvm or conda want to append: this
+# file is a link into a public repo, so they go in ~/.zshrc.local instead.
+[[ -r ~/.zshrc.local ]] && source ~/.zshrc.local

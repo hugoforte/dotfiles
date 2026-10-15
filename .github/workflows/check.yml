@@ -14,7 +14,7 @@ name: Check
 # sync.ps1 finds and uses.
 #
 # The macOS job is the evidence for the Mac, which runs the sh half of this repo with no MSYS
-# in the way: plain `ln -s`, BSD userland, /bin/sh as the LaunchAgent runs it. It runs that
+# in the way: plain `ln -s`, BSD userland, and /bin/sh, bash 3.2 in POSIX mode. It runs that
 # half only; the PowerShell scripts configure Windows and have nothing to prove on a Mac.
 #
 # Nothing here may run an installer. setup.ps1, sync.ps1, install-sync-task.ps1, and
@@ -99,9 +99,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # `sh` here is /bin/sh, the shell the Mac's LaunchAgent runs, not Git Bash.
+      # `sh` here is /bin/sh, the shell a Mac runs these scripts with, not Git Bash. -e as GitHub's
+      # default sh shell has, so a missing jq stops the step rather than failing tests obscurely.
       - name: Shell syntax
-        shell: sh {0}
+        shell: sh -e {0}
         run: |
           status=0
           for f in $(git ls-files '*.sh'); do
@@ -110,7 +111,7 @@ jobs:
           exit $status
 
       - name: Shell tests
-        shell: sh {0}
+        shell: sh -e {0}
         run: |
           jq --version
           sh tests/run.sh

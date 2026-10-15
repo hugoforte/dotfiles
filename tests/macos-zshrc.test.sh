@@ -31,4 +31,7 @@ assert_eq "bin/ commands resolve from there" "$REPO_ROOT/bin/md-lint" "$(in_zsh 
 assert_eq "dotfiles-check is defined" "function" "$(in_zsh 'whence -w dotfiles-check' | sed 's/.*: //')"
 assert_eq "dotfiles-sync is defined" "function" "$(in_zsh 'whence -w dotfiles-sync' | sed 's/.*: //')"
 
+printf 'export LOCAL_ONLY=yes\n' > "$home/.zshrc.local"
+assert_eq "it sources ~/.zshrc.local, for lines that are this Mac's alone" "yes" "$(in_zsh 'print -r -- $LOCAL_ONLY')"
+
 assert_summary "macos/zshrc"

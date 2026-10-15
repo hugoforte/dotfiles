@@ -20,8 +20,10 @@
 #
 # Idempotent. A real file where a link goes is backed up first (docs/adr/0003).
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Physical, as macos/zshrc resolves it for dotfiles-check: a checkout reached through a symlink
+# would otherwise be linked under one spelling and checked under another.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+REPO="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
 . "$REPO/ai/helpers/output.sh"
 . "$REPO/ai/helpers/managed-link.sh"
@@ -47,6 +49,7 @@ case "${1:-}" in
     -h|--help)         show_help; exit 0 ;;
     *)                 echo "Unknown option: $1"; show_help; exit 1 ;;
 esac
+[ $# -le 1 ] || { echo "Unknown option: $2"; show_help; exit 1; }
 
 [ "$(uname -s)" = "Darwin" ] || die "macos/setup.sh is for macOS; on Windows run powershell/setup.ps1"
 
@@ -79,7 +82,7 @@ EOF
     printf '%s' "$found"
 }
 
-# The machine key, as personal/machines names its files: the LocalHostName, uppercased.
+# The machine key, as an overlay's machines/ names its files: the LocalHostName, uppercased.
 MACHINE="$(scutil --get LocalHostName 2>/dev/null | tr '[:lower:]' '[:upper:]')"
 
 aws_source="$(one_source aws/config "$REPO
@@ -138,7 +141,12 @@ elif [ "$MODE" = "check" ]; then
     warning "~/.gitconfig-overlays missing or out of date"
     CHECK_FAILED=1
 else
-    gitconfig_overlays > "$include_file" && success "~/.gitconfig-overlays written"
+    if gitconfig_overlays > "$include_file"; then
+        success "~/.gitconfig-overlays written"
+    else
+        error "could not write $include_file"
+        FAILED=1
+    fi
 fi
 
 # --- Brewfiles -----------------------------------------------------------------------------------
@@ -184,16 +192,18 @@ if [ "$BREW_IF_CHANGED" = "true" ] && [ -f "$brew_stamp_file" ] && [ "$(cat "$br
 fi
 
 bundle_failed=false
+# --no-upgrade both ways: an entry is installed when missing and never upgraded, as a manifest's
+# is on Windows, so an outdated formula is neither drift nor something a run replaces.
 while IFS= read -r brewfile; do
     [ -n "$brewfile" ] || continue
     if [ "$MODE" = "check" ]; then
-        if brew bundle check --file="$brewfile" > /dev/null 2>&1; then
+        if brew bundle check --no-upgrade --file="$brewfile" > /dev/null 2>&1; then
             success "$brewfile"
         else
-            warning "$brewfile is not fully installed (brew bundle check --verbose --file=$brewfile)"
+            warning "$brewfile is not fully installed (brew bundle check --no-upgrade --verbose --file=$brewfile)"
             CHECK_FAILED=1
         fi
-    elif brew bundle --file="$brewfile"; then
+    elif brew bundle --no-upgrade --file="$brewfile"; then
         success "$brewfile applied"
     else
         error "brew bundle failed for $brewfile"

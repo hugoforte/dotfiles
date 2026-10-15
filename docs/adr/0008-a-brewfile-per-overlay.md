@@ -3,6 +3,8 @@
 A Mac installs its tools with `brew bundle`, from each overlay's `macos/Brewfile` in overlay
 order, then from the one `machines/<KEY>.Brewfile` an overlay ships for it, `<KEY>` being the
 Mac's `LocalHostName` uppercased. `macos/setup.sh --check` asks `brew bundle check` of each.
+Both run with `--no-upgrade`: as with a manifest on Windows, an entry is installed when missing
+and never upgraded, so an outdated formula is neither drift nor something a run replaces.
 Anything Homebrew cannot install is a manual step in the machine's notes.
 
 `powershell/tools.psd1` stays Windows-only. Extending it to macOS was the alternative that keeps

@@ -7,7 +7,7 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
 | Area | Source in repo | Installed to | Installer |
 |---|---|---|---|
 | PowerShell profile + helper functions | `powershell/` | `$PROFILE` and the all-hosts profile (symlinks) | `powershell/setup.ps1` |
-| AWS CLI profiles (SSO, no secrets) | an overlay's `aws/config` | `%USERPROFILE%\.aws\config` (symlink) | `powershell/setup.ps1`, `powershell/sync.ps1` |
+| AWS CLI profiles (SSO, no secrets) | an overlay's `aws/config` | `%USERPROFILE%\.aws\config`, `~/.aws/config` on a Mac (symlink) | `powershell/setup.ps1`, `powershell/sync.ps1`, `macos/setup.sh` |
 | Git identity | `git/`, and `macos/gitconfig` on a Mac | `~/.gitconfig` (symlink) | `powershell/setup.ps1`, `macos/setup.sh` |
 | Per-org git identities and other overlay git config | an overlay's `git/gitconfig` | included by `~/.gitconfig-overlays` (generated) | `powershell/setup.ps1`, `powershell/sync.ps1`, `macos/setup.sh` |
 | zsh profile on a Mac: Homebrew, `bin/` on PATH, `dotfiles-check` | `macos/zshrc` | `~/.zshrc` (symlink) | `macos/setup.sh` |
@@ -86,7 +86,7 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
    sh macos/setup.sh --check
    ```
 
-   `setup.sh` links `~/.zshrc`, `~/.gitconfig` and `~/.aws/config` (when a source exists), writes `~/.gitconfig-overlays`, applies each overlay's Brewfile and this Mac's with `brew bundle`, then runs `ai/install.sh`. It backs up any real file it displaces and is safe to re-run. `--check` changes nothing and exits 1 if anything would change; `dotfiles-check` in a new terminal runs it.
+   `setup.sh` links `~/.zshrc`, `~/.gitconfig` and `~/.aws/config` (when a source exists), writes `~/.gitconfig-overlays`, applies each overlay's Brewfile and this Mac's with `brew bundle`, then runs `ai/install.sh`. It backs up any real file it displaces and is safe to re-run. `--check` changes nothing and exits 1 if anything would change; `dotfiles-check` in a new terminal runs it. `~/.zshrc` is a link into this repo, so lines that are this Mac's alone, and what installers such as nvm want to append, go in `~/.zshrc.local`, which it sources.
 
 5. Keep the Mac in sync:
 
