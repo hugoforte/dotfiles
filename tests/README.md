@@ -64,10 +64,16 @@ suite is around thirty assertions of "did this equal that", so `assert.sh` carri
 If the suite outgrows a helper — setup/teardown hooks, tagging, parallelism — `bats` is the
 upgrade path and this is the note saying so.
 
-## CI runs windows-latest, and only that
+## CI runs windows-latest and macos-latest, and only those
 
-Not a default anyone forgot to change. Both defects this repo has actually shipped were
-invisible on any other platform:
+Not a default anyone forgot to change ([ADR 0006](../docs/adr/0006-ci-adds-macos-for-the-mac.md)).
+Each job is the evidence for the machines on its OS. The macOS job runs the sh suite under
+`/bin/sh` with BSD tools and plain `ln -s`, which is what a Mac runs; it runs no Pester, since
+the PowerShell scripts configure Windows. A sh test that only means something on one OS skips
+itself elsewhere and says so, rather than passing.
+
+The Windows job stays as it was. Both defects this repo has actually shipped were invisible on
+any other platform:
 
 - `Write-Host` writes to the information stream, which **Windows PowerShell 5.1** does not
   capture through `| Out-String`. The scheduled task logged a hardcoded `"ok"` for runs that
@@ -75,7 +81,7 @@ invisible on any other platform:
 - **jq on Windows emits CRLF**, and `.gitattributes` here is `* text=auto eol=lf`.
   `settings_write_json` strips `\r` for that reason alone.
 
-A Linux runner passes both vacuously. That is worse than not testing them, because it looks
+A Linux or macOS runner passes both vacuously. That is worse than not testing them, because it looks
 like coverage. For the same reason the workflow's PowerShell steps use `shell: powershell`
 (5.1), never `pwsh` (7.x) — 5.1 is what the scheduled task runs.
 

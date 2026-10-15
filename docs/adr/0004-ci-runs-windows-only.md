@@ -1,5 +1,8 @@
 # CI runs windows-latest, and only windows-latest
 
+Superseded by [0006](0006-ci-adds-macos-for-the-mac.md), which adds a `macos-latest` job and
+keeps this record's argument.
+
 `.github/workflows/check.yml` has one job on one OS. A cross-platform matrix is the obvious thing
 to reach for and would be worse than useless here.
 
