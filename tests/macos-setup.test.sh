@@ -58,11 +58,12 @@ overlays() {
 }
 overlays "$personal" "$second"
 
-# The stubs. `brew bundle check` fails while $work/brew-missing exists.
+# The stubs. `brew bundle check` fails while $work/brew-missing exists, and `brew bundle` while
+# $work/brew-fails does.
 printf '#!/bin/sh\necho "${STUB_UNAME:-Darwin}"\n' > "$stubs/uname"
 printf '#!/bin/sh\n[ "$*" = "--get LocalHostName" ] && echo "${STUB_HOSTNAME-macbook}"\n' > "$stubs/scutil"
-printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\ncase "$*" in "bundle check"*) [ ! -e "%s" ] ;; esac\n' \
-    "$brew_log" "$work/brew-missing" > "$stubs/brew"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\ncase "$*" in "bundle check"*) [ ! -e "%s" ] ;; "bundle --file"*) [ ! -e "%s" ] ;; esac\n' \
+    "$brew_log" "$work/brew-missing" "$work/brew-fails" > "$stubs/brew"
 chmod +x "$stubs/uname" "$stubs/scutil" "$stubs/brew"
 
 HOME="$home"; export HOME
@@ -145,6 +146,29 @@ out="$(run)"; rc=$?
 assert_eq "a machine Brewfile in two overlays fails" "1" "$rc"
 assert_eq "and names both" "y" "$(says "$out" "$second/machines/MACBOOK.Brewfile")"
 rm -r "$second/machines"
+
+# --- --brew-if-changed, as the sync runs it --------------------------------------------------
+
+install
+rm -f "$brew_log"
+run --brew-if-changed > /dev/null; rc=$?
+assert_eq "--brew-if-changed succeeds" "0" "$rc"
+assert_eq "--brew-if-changed leaves brew alone when no Brewfile changed since install" "" "$(cat "$brew_log" 2>/dev/null)"
+
+printf 'brew "ripgrep"\n' >> "$second/macos/Brewfile"
+run --brew-if-changed > /dev/null
+assert_eq "--brew-if-changed applies the Brewfiles once one changed" "3" "$(grep -c '^bundle --file=' "$brew_log")"
+rm -f "$brew_log"
+run --brew-if-changed > /dev/null
+assert_eq "and not again on the next run" "" "$(cat "$brew_log" 2>/dev/null)"
+
+printf 'brew "fd"\n' >> "$personal/macos/Brewfile"
+touch "$work/brew-fails"
+out="$(run --brew-if-changed)"; rc=$?
+assert_eq "a failed brew bundle fails the run" "1" "$rc"
+rm -f "$work/brew-fails" "$brew_log"
+run --brew-if-changed > /dev/null
+assert_eq "and is tried again on the next" "3" "$(grep -c '^bundle --file=' "$brew_log")"
 
 # --- refusals --------------------------------------------------------------------------------
 

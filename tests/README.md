@@ -49,6 +49,9 @@ testable yet:
 | `ai/install.sh`'s extra Claude config folders | `HOME` and the overlay list are fixtures, so the folders it fills are temp directories | this change |
 | `macos/setup.sh` | `HOME` and the overlay list are fixtures, and `uname`, `scutil` and `brew` are stubs on `PATH`, so it runs on any OS and installs nothing | this change |
 | `macos/zshrc` | sourced by `zsh -f` through a fixture `~/.zshrc` link; skipped where zsh is missing | this change |
+| `macos/deploy-secrets.sh` | `HOME`, the registries and the checkouts are fixtures, and `sops` is a stub that "decrypts" by dropping a prefix | this change |
+| `macos/sync.sh` | the repo and the overlay repo are clones of fixture origins, so its pulls are real; `brew` and `sops` are stubs | this change |
+| `macos/install-sync-agent.sh` | `HOME` is a fixture and `launchctl` a stub; where `plutil` exists the plist must pass its lint | this change |
 
 **Everything else is untestable on purpose, not by oversight.** `setup.ps1`, `sync.ps1`,
 `install-sync-task.ps1`, `install-cswap-task.ps1`, and `install-tools.ps1` / `deploy-secrets.ps1` without `-Check` read

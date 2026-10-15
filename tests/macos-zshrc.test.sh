@@ -29,5 +29,6 @@ assert_eq "it finds this checkout through the ~/.zshrc link" "$REPO_ROOT" "$(in_
 assert_eq "it puts bin/ first on PATH" "$REPO_ROOT/bin" "$(in_zsh 'print -r -- $path[1]')"
 assert_eq "bin/ commands resolve from there" "$REPO_ROOT/bin/md-lint" "$(in_zsh 'whence -p md-lint')"
 assert_eq "dotfiles-check is defined" "function" "$(in_zsh 'whence -w dotfiles-check' | sed 's/.*: //')"
+assert_eq "dotfiles-sync is defined" "function" "$(in_zsh 'whence -w dotfiles-sync' | sed 's/.*: //')"
 
 assert_summary "macos/zshrc"

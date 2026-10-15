@@ -19,3 +19,6 @@ path=("$DOTFILES/bin" $path)
 
 # Report whether this Mac is in line with the repo; changes nothing.
 dotfiles-check() { sh "$DOTFILES/macos/setup.sh" --check "$@"; }
+
+# Pull the repo and its overlays and re-apply them now, as the LaunchAgent does every 4 hours.
+dotfiles-sync() { sh "$DOTFILES/macos/sync.sh" "$@"; }

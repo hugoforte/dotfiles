@@ -18,17 +18,23 @@ esac
 
 CHECK_FAILED=0
 
-# link <src> <dst>: point dst at src, backing up whatever real file was already there.
+# link <src> <dst> [backup dir]: point dst at src, backing up whatever real file was already there.
 #
 # A symlink at dst holds no content of its own, so it is replaced without a backup. A real file
 # is someone's work: it is moved aside, never deleted, under the same <leaf>.backup.<timestamp>
-# name powershell/managed-link.ps1 uses, so one convention shows up in both languages.
+# name powershell/managed-link.ps1 uses, so one convention shows up in both languages. It goes
+# beside dst, or into the backup dir when one is given, as deploy-secrets does to keep displaced
+# plaintext out of a checkout.
 link() {
     src="$1"; dst="$2"
     if [ -L "$dst" ]; then
         rm -f "$dst"
     elif [ -e "$dst" ]; then
         backup="$dst.backup.$(date +%Y%m%d_%H%M%S)"
+        if [ -n "$3" ]; then
+            mkdir -p "$3" || { error "Could not make $3 for a backup of $dst - leaving it alone"; return 1; }
+            backup="$3/${backup##*/}"
+        fi
         if ! mv "$dst" "$backup"; then
             error "Could not move $dst aside to $backup - leaving it alone"
             return 1

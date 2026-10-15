@@ -59,7 +59,7 @@ One unit `ai/install.sh` installs, checks and uninstalls: CLAUDE.md, agents, ski
 _Avoid_: module, feature, part
 
 **Sync**:
-The scheduled pull-and-relink: `git pull --ff-only`, then the installers. A machine is synced by it; a machine that matches the repo is *in sync*, which is a state, not this.
+The scheduled pull-and-relink: `git pull --ff-only`, then the installers. On Windows a scheduled task runs `powershell/sync.ps1`; on a Mac a LaunchAgent runs `macos/sync.sh` ([ADR 0009](docs/adr/0009-a-launchagent-syncs-the-mac.md)). A machine is synced by it; a machine that matches the repo is *in sync*, which is a state, not this.
 _Avoid_: update, refresh
 
 ### Machines

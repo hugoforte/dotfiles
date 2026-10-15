@@ -149,6 +149,16 @@ printf 'hand-written\n' > "$chained"
 if link "$repo/CLAUDE.md" "$chained" > /dev/null; then took=y; else took=n; fi
 assert_eq "a caller's 'link … && success' branch runs after a backup" "y" "$took"
 
+# A backup folder, as deploy-secrets uses to keep displaced plaintext out of a checkout.
+elsewhere="$home/secret.env"
+printf 'plaintext\n' > "$elsewhere"
+out="$(link "$repo/CLAUDE.md" "$elsewhere" "$work/backups/checkout")"; rc=$?
+assert_eq "linking with a backup folder succeeds" "0" "$rc"
+assert_eq "... leaves no backup beside the target" "0" "$(backup_count "$elsewhere")"
+set -- "$work/backups/checkout"/secret.env.backup.*
+assert_eq "... and puts it in the folder, made if missing, under the same name" "plaintext" "$(cat "$1")"
+assert_eq "... and says where it went" "y" "$(mentions "$out" "$work/backups/checkout/secret.env.backup.")"
+
 # ---------------------------------------------------------------------------
 # unlink_managed
 # ---------------------------------------------------------------------------

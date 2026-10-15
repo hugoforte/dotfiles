@@ -18,11 +18,12 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
 | Claude Code sub-agents | `ai/agents/*.md` | `~/.claude/agents/` and each extra Claude config folder's (symlinks) | `ai/install.sh` |
 | Claude Code settings (model, plugins, allowlist) | `ai/claude/settings.json` | merged into `~/.claude/settings.json` and each extra Claude config folder's | `ai/install.sh` |
 | Extra Claude config folders, one login each | an overlay's `ai/claude/config-dirs` | the folders it names get the same as `~/.claude` | `ai/install.sh` |
-| Skill secrets (encrypted with SOPS + age) | `ai/secrets/<skill>/`, here or in an overlay | `%USERPROFILE%\.agent-secrets\`, then symlinked into every checkout that has the skill (shipped skills read them in place) | `powershell/deploy-secrets.ps1` |
+| Skill secrets (encrypted with SOPS + age) | `ai/secrets/<skill>/`, here or in an overlay | `%USERPROFILE%\.agent-secrets\` (`~/.agent-secrets/` on a Mac), then symlinked into every checkout that has the skill (shipped skills read them in place) | `powershell/deploy-secrets.ps1`, `macos/deploy-secrets.sh` |
 | Commands for every shell, agents' included (`md-lint`, `check-encrypted`) | `bin/` | the user PATH | `powershell/setup.ps1`, `powershell/sync.ps1` |
 | Tools and programs a machine needs | `powershell/tools.psd1`, here or in an overlay | installed via winget, npm, uv and GitHub releases | `powershell/install-tools.ps1` |
 | Default markdownlint rules | `powershell/markdownlint.jsonc` | passed to `markdownlint-cli2` by `bin/md-lint` | none (used in place) |
 | Automatic pull-and-relink | `powershell/sync.ps1` | Windows scheduled task "Dotfiles Sync" | `powershell/install-sync-task.ps1` |
+| Automatic pull-and-relink on a Mac | `macos/sync.sh` | LaunchAgent `com.hugoforte.dotfiles-sync`, logging to `~/Library/Logs/dotfiles-sync.log` | `macos/install-sync-agent.sh` |
 | Claude account rotation (`cswap auto`), on machines with the `claude-swap` option | none | Windows scheduled task "Claude Swap Auto", at sign-in | `powershell/install-cswap-task.ps1` |
 | Copilot repo instructions and prompts | `.github/` | used in place by GitHub Copilot | none |
 | Engineering-skill config for this repo | `AGENTS.md`, `docs/agents/` | used in place by Claude Code | none |
@@ -87,6 +88,16 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
 
    `setup.sh` links `~/.zshrc`, `~/.gitconfig` and `~/.aws/config` (when a source exists), writes `~/.gitconfig-overlays`, applies each overlay's Brewfile and this Mac's with `brew bundle`, then runs `ai/install.sh`. It backs up any real file it displaces and is safe to re-run. `--check` changes nothing and exits 1 if anything would change; `dotfiles-check` in a new terminal runs it.
 
+5. Keep the Mac in sync:
+
+   ```sh
+   sh macos/install-sync-agent.sh
+   ```
+
+   It installs a LaunchAgent that runs `macos/sync.sh` at login and every 4 hours ([ADR 0009](docs/adr/0009-a-launchagent-syncs-the-mac.md)): pull this repo and each overlay repo, run `setup.sh` (with `brew bundle` only when a Brewfile changed), and deploy the skill secrets. `dotfiles-sync` runs it now. Safe to re-run; `--uninstall` removes it.
+
+6. Skill secrets: add the Mac as a SOPS recipient in each overlay (see [ai/secrets/README.md](ai/secrets/README.md), "Add a machine"), set `SearchRoots` in `machine.local.psd1`, and run `sh macos/deploy-secrets.sh`. The sync deploys them from then on.
+
 ## Private configuration: overlays
 
 This repo holds nothing private. Anything that is, such as employer AWS accounts, a work email, or skill secrets whose key names say too much, lives in an **overlay**: a directory in a private repo, laid out like this repo's root. A machine lists its overlays in the git-ignored `ai/secrets/machine.local.psd1`, so no tracked file here names one. One private repo may hold several overlays, one per audience, so an employer's overlay can later move to a repo the employer owns.
@@ -149,14 +160,14 @@ claude-swap rotates `~/.claude` only. A route folder with one account needs no r
 
 - Edit files in this repo, commit, push.
 - Other machines pull and re-link automatically via the scheduled task, or on demand with `dotfiles-sync` in PowerShell. Symlinked files pick up edits without re-running anything; new files need a re-link, which the sync does.
-- Every installer has a report-only mode that changes nothing and exits non-zero if anything is out of sync: `./ai/install.sh --check`, `.\powershell\setup.ps1 -Check`, `.\powershell\deploy-secrets.ps1 -Check` and `dotfiles-tools -Check`, and on a Mac `sh macos/setup.sh --check`. Each reports links that are missing, replaced by a real file, or pointing elsewhere. They answer "is this machine in sync with the repo?" — not "is this code correct?", which is what `tests/` is for.
+- Every installer has a report-only mode that changes nothing and exits non-zero if anything is out of sync: `./ai/install.sh --check`, `.\powershell\setup.ps1 -Check`, `.\powershell\deploy-secrets.ps1 -Check` and `dotfiles-tools -Check`, and on a Mac `sh macos/setup.sh --check` and `sh macos/deploy-secrets.sh --check`. Each reports links that are missing, replaced by a real file, or pointing elsewhere. They answer "is this machine in sync with the repo?" — not "is this code correct?", which is what `tests/` is for.
 - Tools are declared in [powershell/tools.psd1](powershell/tools.psd1). Add an entry, commit, push, and every machine installs it on its next sync — the sync only does this work when a manifest, or the machine's options, have actually changed. Entries marked `Unattended = $false` are skipped by the scheduled task and wait for `dotfiles-tools`; `dotfiles-tools -Check` reports what is missing without installing anything.
 - Optional tools install only on machines that ask for them. An entry with `Optional = 'openwhispr'` belongs to that option; list the name under `OptionalTools` in an overlay's `machines/<COMPUTERNAME>.psd1` (or in `ai/secrets/machine.local.psd1`) and run `dotfiles-tools` to install it, its first-run step included. Machines that don't list it are told it is available. A machine without skill secrets can write that file just for `OptionalTools`: the sync deploys secrets only when it also declares `SearchRoots`.
 
 ## Layout
 
 - [powershell/](powershell/README.md): profile, setup, sync, AWS, Git and rig helper functions
-- `macos/`: a Mac's setup and its check, `zshrc` and `gitconfig`
+- `macos/`: a Mac's setup and its check, sync and its LaunchAgent, secrets deploy, `zshrc` and `gitconfig`
 - [aws/](aws/README.md): how the AWS CLI config is supplied
 - [ai/](ai/README.md): agent skills, Claude Code config, installer
 - [.github/](.github/instructions/README.md): Copilot instructions and reusable prompts

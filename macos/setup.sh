@@ -3,8 +3,10 @@
 # Sets up a Mac from this repo, and reports whether one is set up. The macOS entry point beside
 # powershell/setup.ps1 (docs/adr/0007-a-parallel-macos-entry-point.md).
 #
-#   macos/setup.sh           link, write, brew bundle, then ai/install.sh; report each
-#   macos/setup.sh --check   report only; exit 1 if anything would change
+#   macos/setup.sh                    link, write, brew bundle, then ai/install.sh; report each
+#   macos/setup.sh --brew-if-changed  the same, with brew bundle only when a Brewfile changed
+#                                     since the last bundle that succeeded (macos/sync.sh)
+#   macos/setup.sh --check            report only; exit 1 if anything would change
 #
 # What it manages:
 #   ~/.zshrc               -> macos/zshrc
@@ -26,21 +28,24 @@ REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$REPO/ai/helpers/overlays.sh"
 
 show_help() {
-    echo "Usage: $0 [--check]"
+    echo "Usage: $0 [--check | --brew-if-changed]"
     echo ""
     echo "Links ~/.zshrc, ~/.gitconfig and ~/.aws/config, writes ~/.gitconfig-overlays, applies"
     echo "each overlay's Brewfile and this Mac's, then runs ai/install.sh."
     echo ""
-    echo "  --check     Report what would change without changing anything (exit 1 if anything would)"
-    echo "  -h, --help  Show this help"
+    echo "  --check            Report what would change without changing anything (exit 1 if anything would)"
+    echo "  --brew-if-changed  Run brew bundle only when a Brewfile changed since it last succeeded"
+    echo "  -h, --help         Show this help"
 }
 
 MODE=install
+BREW_IF_CHANGED=false
 case "${1:-}" in
-    '')        ;;
-    --check)   MODE=check ;;
-    -h|--help) show_help; exit 0 ;;
-    *)         echo "Unknown option: $1"; show_help; exit 1 ;;
+    '')                ;;
+    --check)           MODE=check ;;
+    --brew-if-changed) BREW_IF_CHANGED=true ;;
+    -h|--help)         show_help; exit 0 ;;
+    *)                 echo "Unknown option: $1"; show_help; exit 1 ;;
 esac
 
 [ "$(uname -s)" = "Darwin" ] || die "macos/setup.sh is for macOS; on Windows run powershell/setup.ps1"
@@ -164,6 +169,21 @@ if [ -n "$brewfiles" ] && ! command -v brew > /dev/null 2>&1; then
     brewfiles=""
 fi
 
+# The Brewfiles as last applied with every bundle succeeding: each path and its checksum. A run
+# that finds the same skips brew under --brew-if-changed.
+brew_stamp_file="$HOME/Library/Application Support/dotfiles/brewfiles.cksum"
+brew_stamp="$(while IFS= read -r brewfile; do
+    [ -n "$brewfile" ] && printf '%s %s\n' "$brewfile" "$(cksum < "$brewfile")"
+done <<EOF
+$brewfiles
+EOF
+)"
+if [ "$BREW_IF_CHANGED" = "true" ] && [ -f "$brew_stamp_file" ] && [ "$(cat "$brew_stamp_file")" = "$brew_stamp" ]; then
+    success "Brewfiles unchanged since they were last applied"
+    brewfiles=""
+fi
+
+bundle_failed=false
 while IFS= read -r brewfile; do
     [ -n "$brewfile" ] || continue
     if [ "$MODE" = "check" ]; then
@@ -177,11 +197,17 @@ while IFS= read -r brewfile; do
         success "$brewfile applied"
     else
         error "brew bundle failed for $brewfile"
+        bundle_failed=true
         FAILED=1
     fi
 done <<EOF
 $brewfiles
 EOF
+
+if [ "$MODE" = "install" ] && [ -n "$brewfiles" ] && [ "$bundle_failed" = "false" ]; then
+    mkdir -p "$(dirname "$brew_stamp_file")"
+    printf '%s\n' "$brew_stamp" > "$brew_stamp_file"
+fi
 
 # --- AI tooling ----------------------------------------------------------------------------------
 
