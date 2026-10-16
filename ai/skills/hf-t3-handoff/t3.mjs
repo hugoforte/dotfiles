@@ -105,9 +105,15 @@ export function reachableName(host) {
     return host.replace(/\.local$/i, '');
 }
 
-/** A node of `tailscale status --json` by its MagicDNS name, the first label of its DNSName, else its HostName. */
+/**
+ * A node of `tailscale status --json` by its MagicDNS name, the first label of
+ * its DNSName, else by its HostName when that is a host name at all: Tailscale
+ * reports a device's own label there, such as "Living Room TV".
+ */
 function tailscaleNodeName(node) {
-    return node?.DNSName?.split('.')[0] || node?.HostName || undefined;
+    const label = node?.DNSName?.split('.')[0];
+    if (label) return label;
+    return /^[a-z0-9-]+$/i.test(node?.HostName ?? '') ? node.HostName : undefined;
 }
 
 /**
@@ -154,13 +160,21 @@ export function sessionThread(sessionId, threadIds) {
     return candidates[0];
 }
 
-/** `tailscale status --json`, parsed, or undefined when tailscale is not on PATH or does not answer. */
+/**
+ * `tailscale status --json`, parsed, or undefined when tailscale is not found or
+ * does not answer. On macOS the app's own CLI is tried too, since the App Store
+ * build puts none on PATH and an app started from the Dock gets launchd's PATH.
+ */
 function tailscaleStatus() {
-    try {
-        return JSON.parse(execFileSync('tailscale', ['status', '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: PROBE_TIMEOUT_MS }));
-    } catch {
-        return undefined;
+    const clis = process.platform === 'darwin' ? ['tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale'] : ['tailscale'];
+    for (const cli of clis) {
+        try {
+            return JSON.parse(execFileSync(cli, ['status', '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: PROBE_TIMEOUT_MS }));
+        } catch {
+            // Not there, or not answering: try the next, then go without.
+        }
     }
+    return undefined;
 }
 
 /** An error that says what went wrong and, when there is one, what fixes it. */
@@ -278,7 +292,7 @@ async function serverOrigin() {
 }
 
 /** Fails with `problem` when nothing answers at `origin`, or with what `unresolved` returns when its host does not resolve. */
-async function probe(origin, problem, fix, unresolved) {
+export async function probe(origin, problem, fix, unresolved) {
     try {
         await fetch(`${origin}/.well-known/t3/environment`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
     } catch (error) {
@@ -568,10 +582,14 @@ async function continueThread(flags) {
 async function printToken(ttl = '365d') {
     const { port } = new URL(await serverOrigin());
     const { token, expiresAt } = issueSession(ttl);
-    const name = tokenName(tailscaleStatus(), hostname());
+    const status = tailscaleStatus();
+    const name = tokenName(status, hostname());
     console.log(`This computer's entry for ${COMPUTERS_FILE} on the computer that hands off to it:\n`);
     console.log(`  ${JSON.stringify(name.toLowerCase())}: ${JSON.stringify({ origin: `http://${name}:${port}`, token })}\n`);
     console.log(`The token opens T3 Code on this computer until ${expiresAt}: keep it out of git and out of chat.`);
+    console.log(tailscaleNodeName(status?.Self)
+        ? 'The origin names this computer by its Tailscale name.'
+        : 'Tailscale did not answer, so the origin names this computer by its host name, which the other computer may not resolve.');
     console.log('If the other computer knows this one by another name or address, change the origin to match.');
 }
 

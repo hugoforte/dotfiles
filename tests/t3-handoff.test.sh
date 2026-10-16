@@ -211,6 +211,7 @@ assert_eq "a host name without .local is reached as it is" \
 # Statuses as `tailscale status --json` prints them, cut to the fields read.
 tailnet="{Self:{HostName:'Hugos-MacBook-Pro',DNSName:'macbook.tail0.ts.net.'},Peer:{a:{HostName:'HugoDesktop',DNSName:'hugodesktop.tail0.ts.net.'},b:{HostName:'zenbook',DNSName:''}}}"
 no_dns="{Self:{HostName:'Hugos-MacBook-Pro',DNSName:''}}"
+labelled="{Self:{HostName:'Living Room TV',DNSName:''},Peer:{a:{HostName:'Living Room TV',DNSName:''}}}"
 
 assert_eq "token names this computer by its MagicDNS name when Tailscale has one" \
     "macbook" \
@@ -221,9 +222,28 @@ assert_eq "token names this computer by its Tailscale host name without MagicDNS
 assert_eq "token names this computer by its host name without Tailscale" \
     "Hugos-MacBook-Pro" \
     "$(call "t3.tokenName(undefined, 'Hugos-MacBook-Pro.local')")"
+assert_eq "token passes over a Tailscale host name that is a device label, not a host name" \
+    "Hugos-MacBook-Pro" \
+    "$(call "t3.tokenName($labelled, 'Hugos-MacBook-Pro.local')")"
 assert_eq "the peers are named as the Tailscale name of each" \
     "hugodesktop,zenbook" \
     "$(call "t3.tailscalePeerNames($tailnet).join(',')")"
+assert_eq "a peer known only by a device label is not offered as a name" \
+    "" \
+    "$(call "t3.tailscalePeerNames($labelled).join(',')")"
+
+# probe <origin>: what the probe fails with, the "unresolved" marker only for a name that does not resolve.
+probe() {
+    call "t3.probe('$1', 'no answer', undefined, () => new Error('unresolved'))"
+}
+
+assert_eq "a probe of a host that does not resolve fails as unresolved" \
+    "error: unresolved" \
+    "$(probe http://t3-handoff-test.invalid:3773)"
+# Port 2 is one fetch allows (unlike 1 and 9) and nothing on a test machine listens on, so the connection is refused.
+assert_eq "a probe that nothing answers keeps its own problem" \
+    "error: no answer" \
+    "$(probe http://127.0.0.1:2)"
 
 # fetch_error <cause code>: a rejection shaped like Node's fetch's.
 fetch_error() {
@@ -280,6 +300,16 @@ assert_eq "--provider needs an instance id" \
 assert_eq "--thread needs a thread id" \
     "t3: --thread needs a value" \
     "$(cli check --thread)"
+
+# check --thread, in an empty home with no T3 Code, so every other requirement fails fast.
+home="$(mktemp -d)"
+native_home="$(cd "$home" && pwd -W 2>/dev/null || pwd)"
+assert_eq "check uses the thread --thread names rather than looking it up" \
+    "  ok    this thread is found" \
+    "$(HOME="$native_home" USERPROFILE="$native_home" T3CODE_HOME="$native_home" T3_EXE="$native_home/none" CLAUDE_CODE_SESSION_ID= \
+        node "$module" check --thread abc 2>/dev/null | grep 'this thread is found')"
+rm -rf "$home"
+
 assert_eq "--project and --to do not go together" \
     "t3: --project and --provider choose on this computer, so they do not go with --to" \
     "$(cli continue --prompt-file x --to elsewhere --project .)"
