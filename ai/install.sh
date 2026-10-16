@@ -19,6 +19,14 @@ CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 SETTINGS_FRAGMENT="$ZSH/ai/claude/settings.json"
 
+# Where the settings' hook commands find their programs (see settings-reconcile.sh). An app
+# started from the Dock has launchd's PATH, which lacks bin/, so a hook named bare would not be
+# found and the call would go through. On Windows the C:/ form, which every shell there reads.
+HOOK_BIN="$ZSH/bin"
+if command -v cygpath > /dev/null 2>&1; then
+    HOOK_BIN="$(cygpath -m "$HOOK_BIN")"
+fi
+
 # Overlays may name extra Claude config folders (each one a CLAUDE_CONFIG_DIR with its own login),
 # one per line in <overlay>/ai/claude/config-dirs. See config_dir_path.
 CONFIG_DIRS_FILE="ai/claude/config-dirs"
@@ -500,7 +508,7 @@ install_settings() {
         if [ -f "$dir/settings.json" ]; then
             cp "$dir/settings.json" "$dir/settings.json.backup.$(date +%Y%m%d_%H%M%S)"
         fi
-        if reconcile_settings merge "$dir/settings.json" "$SETTINGS_FRAGMENT"; then
+        if reconcile_settings merge "$dir/settings.json" "$SETTINGS_FRAGMENT" "$HOOK_BIN"; then
             success "Merged ai/claude/settings.json into $dir/settings.json"
         fi
     done <<EOF
@@ -513,19 +521,43 @@ uninstall_settings() {
 check_settings() {
     while IFS= read -r dir; do
         # The drift lines name keys, not files, so say which folder they were about.
-        if ! reconcile_settings check "$dir/settings.json" "$SETTINGS_FRAGMENT"; then
+        if ! reconcile_settings check "$dir/settings.json" "$SETTINGS_FRAGMENT" "$HOOK_BIN"; then
             warning "$dir/settings.json is out of line with ai/claude/settings.json"
             CHECK_FAILED=1
         fi
+        check_hooks_run "$dir/settings.json"
     done <<EOF
 $CLAUDE_DIRS
+EOF
+}
+
+# check_hooks_run <settings file>: run each hook command there that names a bin/ program, on a
+# harmless Bash call, and fail the check on one that does not exit 0. A hook that is not found,
+# or whose node is not, exits non-zero, and Claude Code lets the call through. This runs with
+# this shell's PATH, which may hold more than an app's.
+check_hooks_run() {
+    [ -f "$1" ] && jq empty "$1" > /dev/null 2>&1 || return 0
+    hook_commands="$(jq -r --arg prefix "\"$HOOK_BIN/" \
+        '[.. | objects | select(.type == "command") | .command | strings
+          | select(startswith($prefix))] | unique[]' "$1")"
+    [ -n "$hook_commands" ] || return 0
+    while IFS= read -r hook_command; do
+        if printf '%s' '{"tool_name":"Bash","tool_input":{"command":"true"}}' \
+            | sh -c "$hook_command" > /dev/null 2>&1; then
+            success "hook runs: $hook_command"
+        else
+            error "hook does not run: $hook_command (in $1)"
+            CHECK_FAILED=1
+        fi
+    done <<EOF
+$hook_commands
 EOF
 }
 
 # Copy the managed keys from ~/.claude's live file back into the repo fragment. Only ~/.claude:
 # the extra folders get the same keys from the fragment, so they are not a second source.
 export_settings() {
-    reconcile_settings export "$SETTINGS_FILE" "$SETTINGS_FRAGMENT" || exit 1
+    reconcile_settings export "$SETTINGS_FILE" "$SETTINGS_FRAGMENT" "$HOOK_BIN" || exit 1
     success "Wrote managed keys from $SETTINGS_FILE to ai/claude/settings.json (review with git diff)"
 }
 

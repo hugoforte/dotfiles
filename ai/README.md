@@ -99,6 +99,8 @@ Both write directions union arrays and neither deletes, so:
 - `./ai/install.sh --settings-export` copies the managed leaf paths from the live file back into the repo fragment — live scalars win, arrays union — and leaves every unmanaged key, such as `permissions.deny`, where it is. Review with `git diff`, then commit. This is how a change made through Claude reaches other machines.
 - To remove an allowlist entry everywhere, delete it from the fragment and from each machine's live file; no direction deletes.
 
+Hook commands are the one value written differently on each side. The fragment names a hook program in `bin/`, such as `agent-guard`, by its bare name; merge writes it into the live file as its quoted absolute path, so the hook runs with whatever PATH the agent was started with. An app started from the Dock gets launchd's PATH, which lacks `bin/`, and a hook that is not found lets the tool call through. Merge rewrites a bare entry already in the live file, so it is not kept beside the absolute one; check expects the absolute form; export writes the bare name back, so no machine's path reaches the repo. `--check` also runs each such hook on a harmless Bash call and fails on one that does not exit 0 — not found, or its `node` not found — with this shell's PATH, which may hold more than an app's.
+
 ## Agents and CLAUDE.md
 
 `CLAUDE.md` names the seven agents and when to use them. Agents write plans, notes and reviews under `~/ai-notes/`. Both are plain markdown; edit in the repo and the symlink makes it live.

@@ -128,5 +128,52 @@ assert_eq "nested scalar drift detected" "1" "$rc"
 case "$out" in *"a.b.c"*) dotted=y ;; *) dotted=n ;; esac
 assert_eq "reports dotted nested path" "y" "$dotted"
 
+printf '=== 13. merge writes a hook naming a bin/ program as its quoted absolute path ===\n'
+bin="$work/bin dir"
+hook_fragment='{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"agent-guard"}]}]}}'
+absolute_command="\"$bin/agent-guard\""
+setup_bin() {
+    mkdir -p "$bin"
+    : > "$bin/agent-guard"
+}
+setup "$hook_fragment" ''
+setup_bin
+reconcile_settings merge "$work/live.json" "$work/fragment.json" "$bin" > /dev/null 2>&1
+assert_eq "absolute command written" "$absolute_command" \
+    "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$work/live.json")"
+
+printf '=== 14. merge turns a bare entry already in the live file into the absolute one ===\n'
+setup "$hook_fragment" "$hook_fragment"
+setup_bin
+reconcile_settings merge "$work/live.json" "$work/fragment.json" "$bin" > /dev/null 2>&1
+assert_eq "one PreToolUse entry, not two" "1" "$(jq '.hooks.PreToolUse | length' "$work/live.json")"
+assert_eq "and it is the absolute one" "$absolute_command" \
+    "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$work/live.json")"
+
+printf '=== 15. a hook naming no bin/ program is left as written ===\n'
+setup '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"say done"}]}]}}' ''
+setup_bin
+reconcile_settings merge "$work/live.json" "$work/fragment.json" "$bin" > /dev/null 2>&1
+assert_eq "command untouched" "say done" "$(jq -r '.hooks.Stop[0].hooks[0].command' "$work/live.json")"
+
+printf '=== 16. check passes on the merged file and fails on a bare one ===\n'
+setup "$hook_fragment" ''
+setup_bin
+reconcile_settings merge "$work/live.json" "$work/fragment.json" "$bin" > /dev/null 2>&1
+reconcile_settings check "$work/live.json" "$work/fragment.json" "$bin" > /dev/null 2>&1
+assert_eq "merged file is clean" "0" "$?"
+setup "$hook_fragment" "$hook_fragment"
+setup_bin
+reconcile_settings check "$work/live.json" "$work/fragment.json" "$bin" > /dev/null 2>&1
+assert_eq "bare live entry is drift" "1" "$?"
+
+printf '=== 17. export writes the bare name back, never the machine path ===\n'
+setup "$hook_fragment" ''
+setup_bin
+reconcile_settings merge "$work/live.json" "$work/fragment.json" "$bin" > /dev/null 2>&1
+reconcile_settings export "$work/live.json" "$work/fragment.json" "$bin" > /dev/null 2>&1
+assert_eq "fragment unchanged by the round trip" "$(printf '%s' "$hook_fragment" | jq -c .)" \
+    "$(jq -c . "$work/fragment.json")"
+
 printf '\n'
 assert_summary "settings-reconcile"

@@ -4,9 +4,16 @@
 # and the three directions that move them between the repo fragment and a live
 # settings file.
 #
-#   reconcile_settings merge  <target> <fragment>   fragment -> target
-#   reconcile_settings check  <target> <fragment>   report drift, return 1 if any
-#   reconcile_settings export <target> <fragment>   target -> fragment
+#   reconcile_settings merge  <target> <fragment> [bin]   fragment -> target
+#   reconcile_settings check  <target> <fragment> [bin]   report drift, return 1 if any
+#   reconcile_settings export <target> <fragment> [bin]   target -> fragment
+#
+# The fragment names a hook program in this repo's bin/ by its bare name; a live
+# file names it by its quoted absolute path under [bin], so the hook runs
+# whatever PATH the agent was started with. merge writes the absolute form, and
+# rewrites a bare entry already in the live file so it is not kept beside it;
+# check expects the absolute form; export writes the bare name back, so no
+# machine path reaches the repo. Without [bin], commands pass through as written.
 #
 # A managed key is a leaf path of the fragment - arrays count as leaves, objects
 # do not. Nothing outside that set is read or written in any direction, so the
@@ -35,7 +42,30 @@ def reconciled($base; $incoming):
         ($base + $incoming) | unique
     else $incoming
     end;
+
+def is_hook_command:
+    type == "object" and .type == "command" and (.command | type) == "string";
+
+def absolute_hooks($bin; $programs):
+    if $bin == "" then . else
+        walk(if is_hook_command and (.command as $c | any($programs[]; . == $c))
+             then .command = "\"\($bin)/\(.command)\"" else . end)
+    end;
+
+def bare_hooks($bin):
+    if $bin == "" then . else
+        walk(if is_hook_command
+                and (.command | startswith("\"\($bin)/") and endswith("\""))
+             then .command |= (ltrimstr("\"\($bin)/") | rtrimstr("\"")) else . end)
+    end;
 '
+
+# settings_bin_programs <bin>: the names of the files in <bin>, as a JSON array.
+settings_bin_programs() {
+    for settings_program in "$1"/*; do
+        [ -f "$settings_program" ] && basename "$settings_program"
+    done | jq -R . | jq -sc .
+}
 
 # settings_file_ready <file>: jq installed, file present, contents valid JSON.
 settings_file_ready() {
@@ -76,9 +106,10 @@ reconcile_merge() {
         info "Created $reconcile_target"
     fi
     settings_file_ready "$reconcile_target" || return 1
-    jq --slurpfile frag "$reconcile_fragment" "$SETTINGS_SPEC_JQ"'
-        $frag[0] as $f
-        | reduce ($f | managed_paths)[] as $p (.;
+    jq --slurpfile frag "$reconcile_fragment" --arg bin "$reconcile_bin" \
+        --argjson programs "$reconcile_programs" "$SETTINGS_SPEC_JQ"'
+        ($frag[0] | absolute_hooks($bin; $programs)) as $f
+        | reduce ($f | managed_paths)[] as $p (absolute_hooks($bin; $programs);
             setpath($p; reconciled(value_at(.; $p); ($f | getpath($p)))))
     ' "$reconcile_target" | settings_write_json "$reconcile_target"
 }
@@ -87,8 +118,9 @@ reconcile_check() {
     reconcile_target="$1"; reconcile_fragment="$2"
     settings_file_ready "$reconcile_fragment" || return 1
     settings_file_ready "$reconcile_target" || return 1
-    reconcile_report="$(jq -r --slurpfile frag "$reconcile_fragment" "$SETTINGS_SPEC_JQ"'
-        . as $live | $frag[0] as $f
+    reconcile_report="$(jq -r --slurpfile frag "$reconcile_fragment" --arg bin "$reconcile_bin" \
+        --argjson programs "$reconcile_programs" "$SETTINGS_SPEC_JQ"'
+        . as $live | ($frag[0] | absolute_hooks($bin; $programs)) as $f
         | ($f | managed_paths)[] as $p
         | ($p | join(".")) as $name
         | ($f | getpath($p)) as $fv
@@ -123,19 +155,24 @@ reconcile_export() {
     reconcile_target="$1"; reconcile_fragment="$2"
     settings_file_ready "$reconcile_target" || return 1
     settings_file_ready "$reconcile_fragment" || return 1
-    jq --slurpfile live "$reconcile_target" "$SETTINGS_SPEC_JQ"'
-        $live[0] as $l
+    jq --slurpfile live "$reconcile_target" --arg bin "$reconcile_bin" "$SETTINGS_SPEC_JQ"'
+        ($live[0] | bare_hooks($bin)) as $l
         | reduce (managed_paths)[] as $p (.;
             setpath($p; reconciled(getpath($p); value_at($l; $p))))
     ' "$reconcile_fragment" | settings_write_json "$reconcile_fragment"
 }
 
-# reconcile_settings <merge|check|export> <target> <fragment>
+# reconcile_settings <merge|check|export> <target> <fragment> [bin]
 # Returns 0 when the direction succeeded and found nothing wrong, 1 otherwise.
 reconcile_settings() {
-    if [ $# -ne 3 ]; then
-        error "Usage: reconcile_settings <merge|check|export> <target> <fragment>"
+    if [ $# -ne 3 ] && [ $# -ne 4 ]; then
+        error "Usage: reconcile_settings <merge|check|export> <target> <fragment> [bin]"
         return 1
+    fi
+    reconcile_bin="${4:-}"
+    reconcile_programs='[]'
+    if [ -n "$reconcile_bin" ]; then
+        reconcile_programs="$(settings_bin_programs "$reconcile_bin")" || return 1
     fi
     case "$1" in
         merge)  reconcile_merge "$2" "$3" ;;
