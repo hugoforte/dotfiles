@@ -14,7 +14,8 @@
 #   ~/.aws/config          -> the one aws/config in this repo or an overlay, if any
 #   ~/.gitconfig-overlays     written: an include of each overlay's git/gitconfig
 #   Brewfiles                 each overlay's macos/Brewfile, then the one overlay's
-#                             machines/<KEY>.Brewfile, KEY being the LocalHostName uppercased
+#                             machines/<KEY>.Brewfile, KEY being the HostName (else the
+#                             LocalHostName) uppercased
 #                             (docs/adr/0008-a-brewfile-per-overlay.md); each path and checksum
 #                             is kept in ~/Library/Application Support/dotfiles/brewfiles.cksum
 #                             once every bundle succeeded, for --brew-if-changed
@@ -84,8 +85,10 @@ EOF
     printf '%s' "$found"
 }
 
-# The machine key, as an overlay's machines/ names its files: the LocalHostName, uppercased.
-MACHINE="$(scutil --get LocalHostName 2>/dev/null | tr '[:lower:]' '[:upper:]')"
+# The machine key, as an overlay's machines/ names its files: the HostName, uppercased, up to its
+# first dot. The LocalHostName when no HostName is set: Bonjour renames that one on its own (MACBOOK
+# becomes MACBOOK-2) while another Mac on the network has it, as the old Mac does during a rebuild.
+MACHINE="$({ scutil --get HostName 2>/dev/null || scutil --get LocalHostName 2>/dev/null; } | sed 's/\..*//' | tr '[:lower:]' '[:upper:]')"
 
 aws_source="$(one_source aws/config "$REPO
 $OVERLAYS")" || exit 1
@@ -164,7 +167,7 @@ EOF
 }$machine_brewfile"
 
 if [ -z "$MACHINE" ]; then
-    warning "this Mac has no LocalHostName, so no machines/<KEY>.Brewfile applies; name it with sudo scutil --set LocalHostName <name>"
+    warning "this Mac has no HostName or LocalHostName, so no machines/<KEY>.Brewfile applies; name it with sudo scutil --set HostName <name>"
     CHECK_FAILED=1
 fi
 

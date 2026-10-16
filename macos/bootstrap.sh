@@ -63,7 +63,8 @@ trap 'kill "$keepalive" 2> /dev/null' EXIT
 # --- Name ---------------------------------------------------------------------------------------------
 
 if [ -n "$NAME" ]; then
-    if [ "$(scutil --get LocalHostName 2> /dev/null)" = "$NAME" ]; then
+    # HostName, which Bonjour never renames: the LocalHostName may be NAME-2 while another Mac has NAME.
+    if [ "$(scutil --get HostName 2> /dev/null)" = "$NAME" ]; then
         ok "This Mac is named $NAME"
     else
         for key in ComputerName LocalHostName HostName; do
