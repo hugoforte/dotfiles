@@ -1,5 +1,4 @@
-# Install the tools declared in tools.psd1, and in the powershell/tools.psd1 of each overlay, and
-# set the compatibility flag of each program an entry lists under HighDpiAware (high-dpi.ps1).
+# Install the tools declared in tools.psd1, and in the powershell/tools.psd1 of each overlay.
 #
 #   install-tools.ps1              install everything missing; report manual steps
 #   install-tools.ps1 -Check       report only; exit 1 if anything is missing
@@ -30,14 +29,12 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "tool-selection.ps1")
 . (Join-Path $PSScriptRoot "overlays.ps1")
 . (Join-Path $PSScriptRoot "native.ps1")
-. (Join-Path $PSScriptRoot "high-dpi.ps1")
 
 $manifestPath = Join-Path $PSScriptRoot "tools.psd1"
 $localPath = Join-Path (Split-Path $PSScriptRoot -Parent) "ai\secrets\machine.local.psd1"
 $stateDir = Join-Path $env:LOCALAPPDATA "dotfiles"
 $statePath = Join-Path $stateDir "tools.state"
 $missing = 0
-$unset = 0
 $failed = 0
 $deferred = 0
 
@@ -288,29 +285,6 @@ foreach ($tool in $tools) {
     }
 }
 
-# --- HighDpiAware: per-user compatibility flags, set whether or not the tool is in yet ----------
-#
-# A flag for a program not yet installed is harmless and waits for it, so a deferred install
-# arrives sharp. HKCU needs no elevation, so the scheduled task sets these too.
-
-foreach ($tool in $tools) {
-    foreach ($program in @($tool.HighDpiAware | Where-Object { $_ })) {
-        try {
-            $state = Set-HighDpiAware -Path $program -Check:$Check
-        } catch {
-            $unset++
-            if (-not $Check) { $failed++ }
-            Warn "$program could not be set to run DPI-aware ($($tool.Id)): $($_.Exception.Message)"
-            continue
-        }
-        switch ($state) {
-            'AlreadySet' { Ok "$program runs DPI-aware" }
-            'Set'        { Change "$program set to run DPI-aware ($($tool.Id))" }
-            'Missing'    { $unset++; Warn "$program is not set to run DPI-aware ($($tool.Id))" }
-        }
-    }
-}
-
 # --- Manual steps: always reported, never done -------------------------------------------------
 
 if ($manualSteps.Count -gt 0) {
@@ -340,9 +314,7 @@ if (-not $Check -and $failed -eq 0) {
 # not recorded a second time.
 Say ""
 if ($Check) {
-    if ($missing -gt 0) { Summary Warn "$missing tool(s) missing" }
-    if ($unset -gt 0) { Summary Warn "$unset program(s) not set to run DPI-aware" }
-    if ($missing -gt 0 -or $unset -gt 0) { Exit-WithResult $result 1 }
+    if ($missing -gt 0) { Summary Warn "$missing tool(s) missing"; Exit-WithResult $result 1 }
     Summary Ok "every declared tool is installed"
     Exit-WithResult $result 0
 }

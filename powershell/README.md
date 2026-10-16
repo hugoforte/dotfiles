@@ -15,8 +15,7 @@ Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in tu
 - `overlays.ps1`: reads `ai/secrets/machine.local.psd1` — whether the machine opts into skill secrets, and the overlays it lists — and applies the overlays' rules: merged skill registries, one source for `aws/config`, the contents of `~/.gitconfig-overlays`
 - `native.ps1`: `Invoke-Native`, which runs a native command and judges it by its exit code, because Windows PowerShell 5.1 under `$ErrorActionPreference = "Stop"` turns any line it writes to stderr — git's progress, say — into a terminating error
 - `tools.psd1`: the tools and programs a machine needs, declared
-- `install-tools.ps1`: installs what `tools.psd1` and each overlay's `powershell/tools.psd1` declare, and sets the DPI flag of each program an entry lists under `HighDpiAware` (`-Check` reports only)
-- `high-dpi.ps1`: `Set-HighDpiAware`, the per-user compatibility flag `HIGHDPIAWARE` under `HKCU\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers` that has Windows run a program as DPI-aware, for `install-tools.ps1`
+- `install-tools.ps1`: installs what `tools.psd1` and each overlay's `powershell/tools.psd1` declare (`-Check` reports only)
 - `tool-selection.ps1`: which manifest entries a machine gets (an optional entry only where `machine.local.psd1` or an overlay's `machines/<COMPUTERNAME>.psd1` lists its option under `OptionalTools`), how the manifests merge, and the pure parts of the `github-release` and `uv` install methods
 - `markdownlint.jsonc`: default markdownlint rules, used by `bin/md-lint` when a repo has none of its own
 - `user-path.ps1`: `Add-UserPathEntry`, which puts the repo's `bin/` on the user PATH for `setup.ps1` and `sync.ps1`
