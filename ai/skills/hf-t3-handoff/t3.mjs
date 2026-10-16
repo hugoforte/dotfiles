@@ -23,11 +23,10 @@ import { execFileSync, execSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir, hostname } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, posix, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const T3_HOME = process.env.T3CODE_HOME ?? join(homedir(), '.t3');
-const T3_EXE = process.env.T3_EXE ?? join(process.env.LOCALAPPDATA ?? '', 'Programs', 't3code', 'T3 Code (Alpha).exe');
 const RIG_HANDOFF_SKILL = join(homedir(), '.claude', 'skills', 'rig-handoff', 'SKILL.md');
 // The computers --to can name, each with the origin of its T3 Code server and a token for it:
 // { "<name>": { "origin": "http://<host>:3773", "token": "<token>" } }
@@ -78,6 +77,32 @@ export function matchingProject(project, candidates) {
     if (clones.length === 1) return clones[0];
     const titled = clones.filter((candidate) => candidate.title === project.title);
     return titled.length === 1 ? titled[0] : undefined;
+}
+
+/**
+ * T3 Code's executable and the server script packed beside it, where its
+ * installer puts them on `platform`: under %LOCALAPPDATA% on Windows, in an app
+ * bundle in /Applications on macOS, whose server is packed in the app's own
+ * app.asar rather than a server.asar. `env.T3_EXE` names the executable
+ * instead, and the server is found from it the same way.
+ */
+export function t3App(platform, env) {
+    const server = ['apps', 'server', 'dist', 'bin.mjs'];
+    if (platform === 'darwin') {
+        const exe = env.T3_EXE ?? '/Applications/T3 Code (Alpha).app/Contents/MacOS/T3 Code (Alpha)';
+        return { exe, serverBin: posix.join(exe, '..', '..', 'Resources', 'app.asar', ...server) };
+    }
+    const path = platform === 'win32' ? win32 : posix;
+    const exe = env.T3_EXE ?? path.join(env.LOCALAPPDATA ?? '', 'Programs', 't3code', 'T3 Code (Alpha).exe');
+    return { exe, serverBin: path.join(exe, '..', 'resources', 'server.asar', ...server) };
+}
+
+/**
+ * The name another computer reaches this one by, from its host name: macOS adds
+ * `.local`, its Bonjour name, which Tailscale's MagicDNS names leave off.
+ */
+export function reachableName(host) {
+    return host.replace(/\.local$/i, '');
 }
 
 /** An error that says what went wrong and, when there is one, what fixes it. */
@@ -252,12 +277,12 @@ async function currentThreadId() {
 
 /** A bearer session, ten minutes long unless told otherwise, issued by T3's own CLI from its local auth store. */
 function issueSession(ttl = '10m') {
-    if (!existsSync(T3_EXE)) throw new Problem(`T3 Code is not installed at ${T3_EXE}`, 'Install T3 Code, or set T3_EXE to its executable.');
-    const serverBin = join(T3_EXE, '..', 'resources', 'server.asar', 'apps', 'server', 'dist', 'bin.mjs');
+    const { exe, serverBin } = t3App(process.platform, process.env);
+    if (!existsSync(exe)) throw new Problem(`T3 Code is not installed at ${exe}`, 'Install T3 Code, or set T3_EXE to its executable.');
     const fix = 'Update T3 Code. If it is current, its `auth session issue` command has changed and t3.mjs needs updating.';
     let out;
     try {
-        out = execFileSync(T3_EXE, [serverBin, 'auth', 'session', 'issue', '--ttl', ttl, '--label', 'hf-t3-handoff', '--json'], {
+        out = execFileSync(exe, [serverBin, 'auth', 'session', 'issue', '--ttl', ttl, '--label', 'hf-t3-handoff', '--json'], {
             env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
             encoding: 'utf8',
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -479,8 +504,9 @@ async function continueThread(flags) {
 async function printToken(ttl = '365d') {
     const { port } = new URL(await serverOrigin());
     const { token, expiresAt } = issueSession(ttl);
+    const name = reachableName(hostname());
     console.log(`This computer's entry for ${COMPUTERS_FILE} on the computer that hands off to it:\n`);
-    console.log(`  ${JSON.stringify(hostname().toLowerCase())}: ${JSON.stringify({ origin: `http://${hostname()}:${port}`, token })}\n`);
+    console.log(`  ${JSON.stringify(name.toLowerCase())}: ${JSON.stringify({ origin: `http://${name}:${port}`, token })}\n`);
     console.log(`The token opens T3 Code on this computer until ${expiresAt}: keep it out of git and out of chat.`);
     console.log('If the other computer knows this one by another name or address, change the origin to match.');
 }
