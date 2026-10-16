@@ -42,6 +42,7 @@ testable yet:
 | `ai/helpers/managed-link.sh`'s `link` / `unlink_managed` / `check_link` | the same contract in sh, in a helper that only defines functions, so it is sourced as it is | #6 |
 | `ai/skills/hf-t3-handoff/t3.mjs`'s `handoffTitles` and `matchingProject` | exported, and the script only acts when run directly | #14 |
 | `ai/skills/hf-t3-handoff/t3.mjs`'s `projectForFolder`, `providerInstance`, `destination` and `modelSelectionOn` | exported; projects and settings are arguments, and `destination` reads no server without `--to` | this change |
+| `ai/skills/hf-t3-handoff/t3.mjs`'s `tokenName`, `tailscalePeerNames`, `doesNotResolve`, `unresolvedOrigin` and `sessionThread` | exported; the `tailscale status --json` output, the fetch error and the thread ids are arguments, so neither tailscale nor T3's database is read | #58 |
 | `powershell/native.ps1` | the command is an argument, and the verdict is the exit code | #15 |
 | `bin/md-lint.mjs`'s `markdownlintArguments` and `hasOwnConfig` | exported, and the script only acts when run directly | this change |
 | `powershell/user-path.ps1`'s `Add-PathEntry` | the PATH list is an argument; `Add-UserPathEntry` applies it and is not run | this change |

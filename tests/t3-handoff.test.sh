@@ -208,6 +208,83 @@ assert_eq "a host name without .local is reached as it is" \
     "ZENBOOK" \
     "$(call "t3.reachableName('ZENBOOK')")"
 
+# Statuses as `tailscale status --json` prints them, cut to the fields read.
+tailnet="{Self:{HostName:'Hugos-MacBook-Pro',DNSName:'macbook.tail0.ts.net.'},Peer:{a:{HostName:'HugoDesktop',DNSName:'hugodesktop.tail0.ts.net.'},b:{HostName:'zenbook',DNSName:''}}}"
+no_dns="{Self:{HostName:'Hugos-MacBook-Pro',DNSName:''}}"
+labelled="{Self:{HostName:'Living Room TV',DNSName:''},Peer:{a:{HostName:'Living Room TV',DNSName:''}}}"
+
+assert_eq "token names this computer by its MagicDNS name when Tailscale has one" \
+    "macbook" \
+    "$(call "t3.tokenName($tailnet, 'Hugos-MacBook-Pro.local')")"
+assert_eq "token names this computer by its Tailscale host name without MagicDNS" \
+    "Hugos-MacBook-Pro" \
+    "$(call "t3.tokenName($no_dns, 'other')")"
+assert_eq "token names this computer by its host name without Tailscale" \
+    "Hugos-MacBook-Pro" \
+    "$(call "t3.tokenName(undefined, 'Hugos-MacBook-Pro.local')")"
+assert_eq "token passes over a Tailscale host name that is a device label, not a host name" \
+    "Hugos-MacBook-Pro" \
+    "$(call "t3.tokenName($labelled, 'Hugos-MacBook-Pro.local')")"
+assert_eq "the peers are named as the Tailscale name of each" \
+    "hugodesktop,zenbook" \
+    "$(call "t3.tailscalePeerNames($tailnet).join(',')")"
+assert_eq "a peer known only by a device label is not offered as a name" \
+    "" \
+    "$(call "t3.tailscalePeerNames($labelled).join(',')")"
+
+# probe <origin>: what the probe fails with, the "unresolved" marker only for a name that does not resolve.
+probe() {
+    call "t3.probe('$1', 'no answer', undefined, () => new Error('unresolved'))"
+}
+
+assert_eq "a probe of a host that does not resolve fails as unresolved" \
+    "error: unresolved" \
+    "$(probe http://t3-handoff-test.invalid:3773)"
+# Port 2 is one fetch allows (unlike 1 and 9) and nothing on a test machine listens on, so the connection is refused.
+assert_eq "a probe that nothing answers keeps its own problem" \
+    "error: no answer" \
+    "$(probe http://127.0.0.1:2)"
+
+# fetch_error <cause code>: a rejection shaped like Node's fetch's.
+fetch_error() {
+    printf "Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('x'), { code: '%s' }) })" "$1"
+}
+
+assert_eq "a name that is not found does not resolve" \
+    "true" \
+    "$(call "t3.doesNotResolve($(fetch_error ENOTFOUND))")"
+assert_eq "a name the resolver could not answer for yet does not resolve" \
+    "true" \
+    "$(call "t3.doesNotResolve($(fetch_error EAI_AGAIN))")"
+assert_eq "a refused connection is not a name that does not resolve" \
+    "false" \
+    "$(call "t3.doesNotResolve($(fetch_error ECONNREFUSED))")"
+
+# unresolved <peers expression>: prints "<problem>|<fix>".
+unresolved() {
+    call "(({ message, fix }) => message + '|' + fix)(t3.unresolvedOrigin('macbook-pro', 'http://Hugos-MacBook-Pro:3773', $1))"
+}
+
+assert_eq "an origin that does not resolve says so and lists the Tailscale peers" \
+    "hugos-macbook-pro, the host in macbook-pro's origin http://Hugos-MacBook-Pro:3773, does not resolve on this computer|Change the origin in that entry to a name this computer resolves. Tailscale sees: hugodesktop, zenbook." \
+    "$(unresolved "['hugodesktop', 'zenbook']")"
+assert_eq "an origin that does not resolve, without Tailscale, says to use a name that does" \
+    "hugos-macbook-pro, the host in macbook-pro's origin http://Hugos-MacBook-Pro:3773, does not resolve on this computer|Change the origin in that entry to a name or address this computer resolves, such as its Tailscale name." \
+    "$(unresolved undefined)"
+
+assert_eq "the live thread is picked over the row T3 keeps for an imported session" \
+    "bb2e44fc" \
+    "$(call "t3.sessionThread('s1', ['import:claudeAgent_claude_kealu:s1', 'bb2e44fc'])")"
+assert_eq "an imported session's row is the thread when it is the only one" \
+    "import:claudeAgent:s1" \
+    "$(call "t3.sessionThread('s1', ['import:claudeAgent:s1'])")"
+assert_eq "two live threads for one session are named" \
+    "error: expected one T3 thread for Claude session s1, found 2: a, b" \
+    "$(call "t3.sessionThread('s1', ['a', 'import:x:s1', 'b'])")"
+assert_eq "no thread for the session says none was found" \
+    "error: expected one T3 thread for Claude session s1, found 0" \
+    "$(call "t3.sessionThread('s1', [])")"
+
 # cli <args...>: runs t3.mjs and prints the first line it wrote to stderr. Each case
 # here is refused while the arguments are read, before anything reaches T3 Code.
 cli() {
@@ -220,6 +297,19 @@ assert_eq "--project needs a folder" \
 assert_eq "--provider needs an instance id" \
     "t3: --provider needs a value" \
     "$(cli check --provider --dry-run)"
+assert_eq "--thread needs a thread id" \
+    "t3: --thread needs a value" \
+    "$(cli check --thread)"
+
+# check --thread, in an empty home with no T3 Code, so every other requirement fails fast.
+home="$(mktemp -d)"
+native_home="$(cd "$home" && pwd -W 2>/dev/null || pwd)"
+assert_eq "check uses the thread --thread names rather than looking it up" \
+    "  ok    this thread is found" \
+    "$(HOME="$native_home" USERPROFILE="$native_home" T3CODE_HOME="$native_home" T3_EXE="$native_home/none" CLAUDE_CODE_SESSION_ID= \
+        node "$module" check --thread abc 2>/dev/null | grep 'this thread is found')"
+rm -rf "$home"
+
 assert_eq "--project and --to do not go together" \
     "t3: --project and --provider choose on this computer, so they do not go with --to" \
     "$(cli continue --prompt-file x --to elsewhere --project .)"
