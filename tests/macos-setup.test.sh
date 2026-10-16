@@ -73,6 +73,8 @@ chmod +x "$stubs/uname" "$stubs/scutil" "$stubs/brew"
 HOME="$home"; export HOME
 RIG_ROOT="$work/no-rig"; export RIG_ROOT
 PATH="$stubs:$PATH"; export PATH
+# A Mac has no COMPUTERNAME; on Windows it would name the machine over the scutil stub.
+unset COMPUTERNAME
 
 run()       { (cd "$work" && sh "$repo/macos/setup.sh" "$@" 2>&1); }
 install()   { run > /dev/null; }
