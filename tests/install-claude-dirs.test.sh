@@ -201,9 +201,11 @@ on_windows ZENBOOK install
 assert_eq "a Windows machine gets the folders its COMPUTERNAME's file names" "y" "$(is_link "$home/.claude-pc/CLAUDE.md")"
 assert_eq "and not another machine's" "n" "$(exists "$home/.claude-mac")"
 
-fresh_home
-on_windows zenbook install
-assert_eq "the machine key is uppercased" "y" "$(is_link "$home/.claude-pc/CLAUDE.md")"
+# Asked of machine_key itself: on a case-insensitive file system, as on both CI runners, a
+# lowercase key would find the uppercase file anyway.
+key() { sh -c '. "$1/ai/helpers/overlays.sh"; machine_key' _ "$repo"; }
+assert_eq "the machine key is uppercased on Windows" "ZENBOOK" "$(on_windows zenbook key)"
+assert_eq "and on a Mac" "MACBOOK" "$(on_mac macbook-2 macbook.local key)"
 
 fresh_home
 on_mac macbook-2 macbook.local install

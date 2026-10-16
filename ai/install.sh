@@ -39,7 +39,7 @@ BRUNO_DIR="$HOME/bruno"
 TAB="$(printf '\t')"
 
 # The Claude config folders, one per line: ~/.claude, then each extra folder the overlays name in
-# their ai/claude/config-dirs. Each gets exactly what ~/.claude gets: CLAUDE.md, agents, skills and
+# their ai/claude/config-dirs, or in this machine's machines/<KEY>.config-dirs. Each gets exactly what ~/.claude gets: CLAUDE.md, agents, skills and
 # the managed settings. Nothing else in a folder is touched, so its login (.credentials.json),
 # .claude.json, history and projects stay Claude Code's. Set by resolve_claude_dirs; a path may
 # hold spaces, so loop over it line by line, never with `for`.
