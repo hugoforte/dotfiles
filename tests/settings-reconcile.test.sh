@@ -130,7 +130,11 @@ assert_eq "reports dotted nested path" "y" "$dotted"
 
 # The hooks of this repo's: a guard group as the fragment declares it, the same group as this
 # repo used to write it (shell form, bare name), and one pointing at another checkout's bin/.
+# In the form install.sh passes it: on Windows C:/…, which native jq is handed unconverted.
 bin="$work/repo dir/bin"
+if command -v cygpath > /dev/null 2>&1; then
+    bin="$(cygpath -m "$bin")"
+fi
 guard_hook() { printf '{"type":"command","command":"node","args":["%s"],"onFailure":"block"}' "$1"; }
 guard_group() { printf '{"matcher":"Bash","hooks":[%s]}' "$1"; }
 hook_fragment="{\"hooks\":{\"PreToolUse\":[$(guard_group "$(guard_hook agent-guard.mjs)")]}}"
