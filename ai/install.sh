@@ -626,7 +626,7 @@ fi
 # ---------------------------------------------------------------------------
 
 case $MODE in
-    install)   info "Installing AI tooling from $ZSH…" ;;
+    install)   info "Installing AI tooling from ${ZSH}…" ;;
     uninstall) info "Removing AI tooling links…" ;;
     check)     info "Checking AI tooling links…" ;;
     export)    info "Exporting settings…" ;;

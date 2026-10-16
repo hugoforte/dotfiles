@@ -109,8 +109,8 @@ managed() {
 }
 
 case $MODE in
-    install) info "Setting up this Mac from $REPO…" ;;
-    check)   info "Checking this Mac against $REPO…" ;;
+    install) info "Setting up this Mac from ${REPO}…" ;;
+    check)   info "Checking this Mac against ${REPO}…" ;;
 esac
 
 managed "~/.zshrc" "$REPO/macos/zshrc" "$HOME/.zshrc"
