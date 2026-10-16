@@ -2,7 +2,7 @@
 
 A Mac installs its tools with `brew bundle`, from each overlay's `macos/Brewfile` in overlay
 order, then from the one `machines/<KEY>.Brewfile` an overlay ships for it, `<KEY>` being the
-Mac's `LocalHostName` uppercased. `macos/setup.sh --check` asks `brew bundle check` of each.
+Mac's `HostName` uppercased (its `LocalHostName` when no `HostName` is set). `macos/setup.sh --check` asks `brew bundle check` of each.
 Both run with `--no-upgrade`: as with a manifest on Windows, an entry is installed when missing
 and never upgraded, so an outdated formula is neither drift nor something a run replaces.
 Anything Homebrew cannot install is a manual step in the machine's notes.
@@ -20,3 +20,8 @@ This repo ships no Brewfile of its own: like `aws/config`, which tools a machine
 private choice, so the Brewfiles live in overlays. The machine key follows the Windows one,
 `machines/<COMPUTERNAME>.psd1`, and comes from `scutil` because a Mac's other names
 (`ComputerName`, `HostName`) may hold spaces or be unset.
+
+Amended: the `HostName` comes first, because Bonjour renames the `LocalHostName` by itself while
+another Mac on the network holds the name (`MACBOOK` becomes `MACBOOK-2`), as the old Mac does
+while its replacement is set up; a key read from it then names no Brewfile, silently. Nothing
+renames the `HostName` but a person, and `macos/bootstrap.sh` sets it with the other two.

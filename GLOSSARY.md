@@ -69,7 +69,7 @@ One Windows or macOS install with a checkout of this repo. Its identity is its S
 _Avoid_: host, box, device
 
 **Machine key**:
-The name a machine's own files in an overlay's `machines/` go by: the Windows computer name, or a Mac's `LocalHostName`, uppercased (`MACBOOK`). Set once, as the first step of rebuilding a machine.
+The name a machine's own files in an overlay's `machines/` go by: the Windows computer name, or a Mac's `HostName` (else its `LocalHostName`), uppercased (`MACBOOK`). Set once, as the first step of rebuilding a machine.
 _Avoid_: hostname (a Mac has three names), machine name
 
 **Checkout**:

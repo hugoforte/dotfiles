@@ -14,8 +14,9 @@ done
 unset brew
 
 # bin/ holds the commands agents need too (md-lint, check-encrypted, agent-guard).
+# ~/.local/bin, after it: where per-user installers put commands, Claude Code's native one among them.
 typeset -U path
-path=("$DOTFILES/bin" $path)
+path=("$DOTFILES/bin" "$HOME/.local/bin" $path)
 
 # Report whether this Mac is in line with the repo; changes nothing.
 dotfiles-check() { sh "$DOTFILES/macos/setup.sh" --check; }

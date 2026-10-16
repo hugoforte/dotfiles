@@ -64,7 +64,8 @@ overlays "$personal" "$second"
 # The stubs. `brew bundle check` fails while $work/brew-missing exists, and `brew bundle` while
 # $work/brew-fails does.
 printf '#!/bin/sh\necho "${STUB_UNAME:-Darwin}"\n' > "$stubs/uname"
-printf '#!/bin/sh\n[ "$*" = "--get LocalHostName" ] && echo "${STUB_HOSTNAME-macbook}"\n' > "$stubs/scutil"
+# scutil: LocalHostName is STUB_HOSTNAME, and HostName is STUB_HOST_NAME, unset (exit 1) by default.
+printf '#!/bin/sh\ncase "$*" in\n  "--get LocalHostName") echo "${STUB_HOSTNAME-macbook}" ;;\n  "--get HostName") [ -n "${STUB_HOST_NAME:-}" ] && echo "$STUB_HOST_NAME" ;;\nesac\n' > "$stubs/scutil"
 printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\ncase "$*" in "bundle check"*) [ ! -e "%s" ] ;; "bundle --no-upgrade"*) [ ! -e "%s" ] ;; esac\n' \
     "$brew_log" "$work/brew-missing" "$work/brew-fails" > "$stubs/brew"
 chmod +x "$stubs/uname" "$stubs/scutil" "$stubs/brew"
@@ -143,6 +144,13 @@ assert_eq "a Mac with no LocalHostName applies the overlays' Brewfiles alone" \
 out="$(STUB_HOSTNAME="" check)"; rc=$?
 assert_eq "and --check fails, since the Mac is not named yet" "1" "$rc"
 assert_eq "and says how to name it" "y" "$(says "$out" "LocalHostName")"
+
+rm -f "$brew_log"
+# Bonjour renames the LocalHostName when another Mac on the network has it: the old one, say.
+(STUB_HOSTNAME="macbook-2"; STUB_HOST_NAME="macbook"; export STUB_HOSTNAME STUB_HOST_NAME; install)
+assert_eq "the HostName names the machine Brewfile, over a LocalHostName Bonjour renamed" \
+    "$(printf 'bundle --no-upgrade --file=%s\nbundle --no-upgrade --file=%s\nbundle --no-upgrade --file=%s' "$personal/macos/Brewfile" "$second/macos/Brewfile" "$personal/machines/MACBOOK.Brewfile")" \
+    "$(cat "$brew_log")"
 
 mkdir -p "$second/machines"
 printf 'cask "zed"\n' > "$second/machines/MACBOOK.Brewfile"
