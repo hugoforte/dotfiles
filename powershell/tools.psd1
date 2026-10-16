@@ -9,6 +9,9 @@
 #   Optional    the name of the option this entry belongs to; omit for every machine
 #   Note        what it is, or - for manual entries - what you have to do
 #   Url         optional, for manual entries that need a page
+#   HighDpiAware  optional: the full paths of the entry's programs that Windows should run as
+#               DPI-aware, set per user and reported by -Check (see high-dpi.ps1). For a program
+#               that does not declare it and is drawn stretched, and blurry, on a scaled display
 #
 # A 'github-release' entry installs its repo's latest release, and also needs:
 #   Asset        -like pattern naming the installer among the release's assets
