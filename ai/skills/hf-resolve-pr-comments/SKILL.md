@@ -104,10 +104,13 @@ For each **action it** comment, in file order so related edits land together:
 Push once, after all the fixes are in, so the replies can cite real SHAs:
 
 ```bash
-git push origin <headRefName>
+head="$(gh pr view <number> --json headRefName --jq .headRefName)"
+branch="$(git branch --show-current)"
+remote="$(git config "branch.$branch.pushRemote" || git config "branch.$branch.remote")"
+git push "$remote" "HEAD:refs/heads/$head"
 ```
 
-Push the branch by name, never a bare `git push`: in a rig work the branch's upstream is its base, and a bare push either fails or pushes onto the base.
+Push to the PR's head by name, never a bare `git push`: in a rig work the branch's upstream is its base, and a bare push either fails or pushes onto the base. The remote is the one the branch tracks, which `gh pr checkout` points at the fork for a cross-repository PR. The branch name comes from the PR's author, so it goes through a quoted variable and never into the command text, where a shell would expand it.
 
 ## Step 6: Reply and resolve
 
@@ -156,11 +159,7 @@ When the base has commits the branch lacks, merge the base in:
 git merge origin/<baseRefName>
 ```
 
-Merge, don't rebase: a rebase rewrites the commits the replies in Step 6 cite. On a conflict, resolve each hunk by keeping both sides' intent, then run the project's tests, linter and formatter as in Step 5 before committing the merge. Push by name:
-
-```bash
-git push origin <headRefName>
-```
+Merge, don't rebase: a rebase rewrites the commits the replies in Step 6 cite. On a conflict, resolve each hunk by keeping both sides' intent and commit the merge. Then, conflict or not, run the project's tests, linter and formatter as in Step 5: a clean merge can still break the build. Push as in Step 5.
 
 When a conflict needs a decision only the author can make — both sides changed the same behaviour in incompatible ways, or keeping both would contradict one of them — stop. Run `git merge --abort`, present the conflicting hunks with what each side meant, and ask. Don't guess.
 
