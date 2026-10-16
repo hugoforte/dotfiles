@@ -69,6 +69,15 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
 
 ## Quick start (new Mac)
 
+One command, on a Mac with nothing installed:
+
+```sh
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/hugoforte/dotfiles/main/macos/bootstrap.sh)" \
+    bootstrap --overlays <owner>/<private-repo> --name <NAME>
+```
+
+`macos/bootstrap.sh` asks for the password once, and signs `gh` in through the browser if it is not signed in. Then it does the steps below in order: it names the Mac, installs Homebrew (with the Xcode Command Line Tools) and `gh`, clones this repo and the overlay repo into `~/source` (`--dir` for elsewhere), and writes `ai/secrets/machine.local.psd1` listing every overlay in the repo (`--only` for some). It then runs `setup.sh`, the sync agent, each overlay's own `macos/bootstrap.sh`, and the secrets deploy, and ends with the check. It is safe to re-run. By hand, the steps are:
+
 1. Name the Mac. Its files in an overlay's `machines/` are found by its `LocalHostName`, uppercased:
 
    ```sh
@@ -78,7 +87,7 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
    ```
 
 2. Install the Xcode Command Line Tools (`xcode-select --install`) and [Homebrew](https://brew.sh), then `brew install gh` and `gh auth login`.
-3. Clone this repo and each overlay repo, for example under `~/src`, and list the overlays in `ai/secrets/machine.local.psd1` (copy the example; the paths are POSIX paths).
+3. Clone this repo and each overlay repo, for example under `~/source`, and list the overlays in `ai/secrets/machine.local.psd1` (copy the example; the paths are POSIX paths).
 4. Run the setup, and check it:
 
    ```sh
@@ -114,6 +123,7 @@ What an overlay can supply, and how:
 - `machines/<COMPUTERNAME>.psd1`: the machine's `OptionalTools`, found by the Windows computer name and added to those in `machine.local.psd1`, so a machine's options are tracked and survive the machine. Only one source across all overlays. The overlays themselves stay in `machine.local.psd1`, since this file is found through them.
 - `macos/Brewfile`: applied on every Mac that lists the overlay, with `brew bundle`, in overlay order ([ADR 0008](docs/adr/0008-a-brewfile-per-overlay.md)).
 - `machines/<KEY>.Brewfile`: one Mac's own tools, found by its `LocalHostName` uppercased and applied after the overlays' Brewfiles. Only one source across all overlays.
+- `macos/bootstrap.sh`: run by `macos/bootstrap.sh` here, after setup and the sync agent, for the steps of a new Mac that are the overlay's to know. It must be safe to re-run; the sync never runs it.
 
 The sync task pulls each overlay repo and re-applies all of these, so a change pushed to an overlay reaches every machine that lists it. Skills are linked by `ai/install.sh`, which the sync runs before it pulls the overlays, so an overlay's skill change lands one sync later. Tools are installed after the pull, so an overlay's tool lands on the same sync. `install-overlays.ps1` is idempotent; re-run it when an overlay repo gains an overlay.
 

@@ -28,6 +28,7 @@ in_zsh() { HOME="$home" zsh -f -c ". \"\$HOME/.zshrc\" && $1" 2>&1; }
 assert_eq "sourcing it succeeds, with no ~/.zshrc.local" "0" "$(HOME="$home" zsh -f -c '. "$HOME/.zshrc"' > /dev/null 2>&1; echo $?)"
 assert_eq "it finds this checkout through the ~/.zshrc link" "$REPO_ROOT" "$(in_zsh 'print -r -- $DOTFILES')"
 assert_eq "it puts bin/ first on PATH" "$REPO_ROOT/bin" "$(in_zsh 'print -r -- $path[1]')"
+assert_eq "it puts ~/.local/bin, where per-user installers put commands, next" "$home/.local/bin" "$(in_zsh 'print -r -- $path[2]')"
 assert_eq "bin/ commands resolve from there" "$REPO_ROOT/bin/md-lint" "$(in_zsh 'whence -p md-lint')"
 assert_eq "dotfiles-check is defined" "function" "$(in_zsh 'whence -w dotfiles-check' | sed 's/.*: //')"
 assert_eq "dotfiles-sync is defined" "function" "$(in_zsh 'whence -w dotfiles-sync' | sed 's/.*: //')"
