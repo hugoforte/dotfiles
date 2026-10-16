@@ -7,7 +7,7 @@
 // With --project or --provider, it starts here in the project for that folder,
 // or on that provider instance with the same model.
 //
-//   node t3.mjs check [--to <computer> | [--project <folder>] [--provider <instance-id>]]
+//   node t3.mjs check [--to <computer> | [--project <folder>] [--provider <instance-id>]] [--thread <id>]
 //   node t3.mjs continue --prompt-file <path> [--to <computer> | [--project <folder>] [--provider <instance-id>]]
 //                        [--key <key> --description <text>] [--thread <id>] [--dry-run]
 //   node t3.mjs token [--ttl <ttl>]
@@ -34,7 +34,7 @@ const COMPUTERS_FILE = join(homedir(), '.agent-secrets', 'hf-t3-handoff', 'compu
 const TURN_START_TIMEOUT_MS = 60_000;
 const PROBE_TIMEOUT_MS = 10_000;
 const USAGE = [
-    'usage: t3.mjs check [--to <computer> | [--project <folder>] [--provider <instance-id>]]',
+    'usage: t3.mjs check [--to <computer> | [--project <folder>] [--provider <instance-id>]] [--thread <id>]',
     '       t3.mjs continue --prompt-file <path> [--to <computer> | [--project <folder>] [--provider <instance-id>]]',
     '                       [--key <key> --description <text>] [--thread <id>] [--dry-run]',
     '       t3.mjs token [--ttl <ttl>]',
@@ -103,6 +103,64 @@ export function t3App(platform, env) {
  */
 export function reachableName(host) {
     return host.replace(/\.local$/i, '');
+}
+
+/** A node of `tailscale status --json` by its MagicDNS name, the first label of its DNSName, else its HostName. */
+function tailscaleNodeName(node) {
+    return node?.DNSName?.split('.')[0] || node?.HostName || undefined;
+}
+
+/**
+ * The name `token` puts in this computer's origin: its Tailscale name when
+ * `status`, the parsed `tailscale status --json`, has one, since that is the
+ * name the other computers resolve; else the reachable form of `host`.
+ */
+export function tokenName(status, host) {
+    return tailscaleNodeName(status?.Self) ?? reachableName(host);
+}
+
+/** The Tailscale names of the peers in `status`, the parsed `tailscale status --json`. */
+export function tailscalePeerNames(status) {
+    return Object.values(status?.Peer ?? {}).map(tailscaleNodeName).filter(Boolean);
+}
+
+/** Whether a fetch failed because its host name does not resolve, rather than because nothing answered. */
+export function doesNotResolve(error) {
+    return ['ENOTFOUND', 'EAI_AGAIN'].includes(error?.cause?.code);
+}
+
+/** The problem for another computer's `origin` whose host does not resolve; `peers` are the Tailscale names, when Tailscale answered. */
+export function unresolvedOrigin(name, origin, peers) {
+    return new Problem(
+        `${new URL(origin).hostname}, the host in ${name}'s origin ${origin}, does not resolve on this computer`,
+        peers
+            ? `Change the origin in that entry to a name this computer resolves. Tailscale sees: ${peers.join(', ') || 'no peers'}.`
+            : 'Change the origin in that entry to a name or address this computer resolves, such as its Tailscale name.',
+    );
+}
+
+/**
+ * The T3 thread of a Claude session, from the ids of the threads whose session
+ * record names it. T3 also keeps a row, `import:<instance>:<session>`, for a
+ * session it imported; that one is the thread only when no other matches.
+ */
+export function sessionThread(sessionId, threadIds) {
+    const live = threadIds.filter((id) => !id.startsWith('import:'));
+    const candidates = live.length ? live : threadIds;
+    if (candidates.length !== 1) {
+        const found = candidates.length ? `${candidates.length}: ${candidates.join(', ')}` : '0';
+        throw new Problem(`expected one T3 thread for Claude session ${sessionId}, found ${found}`, 'Pass --thread <id>. T3 may have changed how it records sessions.');
+    }
+    return candidates[0];
+}
+
+/** `tailscale status --json`, parsed, or undefined when tailscale is not on PATH or does not answer. */
+function tailscaleStatus() {
+    try {
+        return JSON.parse(execFileSync('tailscale', ['status', '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: PROBE_TIMEOUT_MS }));
+    } catch {
+        return undefined;
+    }
 }
 
 /** An error that says what went wrong and, when there is one, what fixes it. */
@@ -192,8 +250,7 @@ function parseArgs(argv) {
         const arg = rest[i];
         if (arg === '--dry-run') flags.dryRun = true;
         else if (arg === '--prompt-file') flags.promptFile = rest[++i];
-        else if (arg === '--thread') flags.thread = rest[++i];
-        else if (['--to', '--ttl', '--project', '--provider'].includes(arg)) {
+        else if (['--to', '--ttl', '--project', '--provider', '--thread'].includes(arg)) {
             // A missing name must not fall back to this computer without a word.
             const value = rest[++i]?.trim();
             if (!value || value.startsWith('-')) throw new Problem(`${arg} needs a value`, USAGE);
@@ -220,10 +277,12 @@ async function serverOrigin() {
     return origin;
 }
 
-async function probe(origin, problem, fix) {
+/** Fails with `problem` when nothing answers at `origin`, or with what `unresolved` returns when its host does not resolve. */
+async function probe(origin, problem, fix, unresolved) {
     try {
         await fetch(`${origin}/.well-known/t3/environment`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
-    } catch {
+    } catch (error) {
+        if (unresolved && doesNotResolve(error)) throw unresolved();
         throw new Problem(problem, fix);
     }
 }
@@ -242,7 +301,15 @@ async function otherComputer(name) {
     if (!known) throw new Problem(`${COMPUTERS_FILE} has no computer "${name}"; it has: ${Object.keys(computers).join(', ') || 'none'}`, entry);
     const { origin, token } = computers[known];
     if (!origin || !token) throw new Problem(`"${known}" in ${COMPUTERS_FILE} needs an origin and a token`, entry);
-    await probe(origin, `T3 Code on ${known} does not answer at ${origin}`, 'Open T3 Code on that computer, set its server to network-accessible, and check this computer reaches it (Tailscale up on both).');
+    await probe(
+        origin,
+        `T3 Code on ${known} does not answer at ${origin}`,
+        'Open T3 Code on that computer, set its server to network-accessible, and check this computer reaches it (Tailscale up on both).',
+        () => {
+            const status = tailscaleStatus();
+            return unresolvedOrigin(known, origin, status && tailscalePeerNames(status));
+        },
+    );
     const call = api(origin, token, `${known} refused its token in ${COMPUTERS_FILE}. ${entry}`);
     return { name: known, call, projects: await readProjects(call) };
 }
@@ -266,10 +333,7 @@ async function currentThreadId() {
         const rows = db
             .prepare('select thread_id from provider_session_runtime where resume_cursor_json like ?')
             .all(`%"resume":"${sessionId}"%`);
-        if (rows.length !== 1) {
-            throw new Problem(`expected one T3 thread for Claude session ${sessionId}, found ${rows.length}`, 'Pass --thread <id>. T3 may have changed how it records sessions.');
-        }
-        return rows[0].thread_id;
+        return sessionThread(sessionId, rows.map((row) => row.thread_id));
     } finally {
         db.close();
     }
@@ -408,7 +472,7 @@ async function check(flags) {
     await run('the rig-handoff skill is linked', checkRigHandoffSkill);
     const origin = await run('T3 Code is running', serverOrigin);
     const session = await run('T3 Code issues a token', issueSession);
-    const threadId = await run('this thread is found', currentThreadId);
+    const threadId = await run('this thread is found', async () => flags.thread ?? (await currentThreadId()));
     const call = origin && session && api(origin, session.token);
     const current = call && threadId && (await run('the T3 API reads this thread', () => readThread(call, threadId)));
     if (flags.to) {
@@ -504,7 +568,7 @@ async function continueThread(flags) {
 async function printToken(ttl = '365d') {
     const { port } = new URL(await serverOrigin());
     const { token, expiresAt } = issueSession(ttl);
-    const name = reachableName(hostname());
+    const name = tokenName(tailscaleStatus(), hostname());
     console.log(`This computer's entry for ${COMPUTERS_FILE} on the computer that hands off to it:\n`);
     console.log(`  ${JSON.stringify(name.toLowerCase())}: ${JSON.stringify({ origin: `http://${name}:${port}`, token })}\n`);
     console.log(`The token opens T3 Code on this computer until ${expiresAt}: keep it out of git and out of chat.`);
