@@ -90,7 +90,7 @@ Project-local scratch goes in `.notes/` or `notes/`, never the repo root.
 
 ## Git
 
-- Make every change in a rig work's worktree: `rig new` with the repo, even for a one-line follow-up to a work that has closed. Never branch, commit in or edit a repo's own checkout. Setup and the sync run dotfiles and its overlays from theirs, so a branch there runs unmerged code on the machine.
+- Make every change in a rig work's worktree: `rig new` with the repo, even for a one-line follow-up to a work that has closed. Never branch, commit in or edit a repo's own checkout. Setup and the sync run dotfiles and its overlays from theirs, so a branch there runs unmerged code on the machine. A PR opened outside rig gets a worktree of its own, outside rig's work root: `gh pr checkout <n> --worktree <path>`.
 - Commit messages: present tense, imperative ("Add", "Fix", "Remove"). One-line summary, blank line, optional body explaining why.
 - When a commit fixes an issue, add `Fixes #123` on its own line.
 - Keep commits clean. Squash when appropriate; no "WIP" commits unless spiking.

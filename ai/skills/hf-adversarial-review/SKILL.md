@@ -27,7 +27,7 @@ gh pr view $ARGUMENTS --json number,title,url,headRefName,state,isDraft
 
 Drop merged and closed PRs from the set and name the ones you dropped. If nothing is left, or the branch has no PR, say so and stop rather than reaching for a different PR.
 
-Each PR needs a checkout to work in. A rig work already has one worktree per repo, on the branch. Outside one, `gh pr checkout <number>`. Either way `git status --short` must come back empty before you touch anything — a dirty tree is someone's work in flight, so stop and ask.
+Each PR needs a checkout to work in. A rig work already has one worktree per repo, on the branch. Outside one, a worktree beside the repo's checkout and outside rig's work root, `gh pr checkout <number> --worktree ../<repo>-pr-<number>`, never the repo's checkout itself. Either way `git status --short` must come back empty before you touch anything — a dirty tree is someone's work in flight, so stop and ask.
 
 ## Step 2: Set a reviewer on each PR
 
