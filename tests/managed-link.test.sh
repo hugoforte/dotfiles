@@ -203,6 +203,9 @@ printf '=== check_link ===\n'
 
 wrong="$home/wrong.md"
 ln -s "$repo/other.md" "$wrong"
+# The source spelled in other capitals, as Git Bash keeps whatever was typed.
+cased="$home/cased.md"
+ln -s "$(printf '%s' "$repo" | tr '[:lower:]' '[:upper:]')/CLAUDE.md" "$cased"
 
 # Taken before any check runs, and compared after the last one.
 before="$(snapshot "$home")"
@@ -222,6 +225,15 @@ assert_eq "... and says it is not a symlink" "y" "$(mentions "$check_out" "not a
 run_check "$repo/CLAUDE.md" "$wrong"
 assert_eq "check_link fails on a link to the wrong source" "1" "$CHECK_FAILED"
 assert_eq "... and names the source it found instead" "y" "$(mentions "$check_out" "$repo/other.md")"
+
+fold_was="$FOLD_PATH_CASE"
+FOLD_PATH_CASE=true
+run_check "$repo/CLAUDE.md" "$cased"
+assert_eq "check_link passes a link spelled in other capitals where case folds, as is_link_to does" "0" "$CHECK_FAILED"
+FOLD_PATH_CASE=false
+run_check "$repo/CLAUDE.md" "$cased"
+assert_eq "check_link fails a link spelled in other capitals where case does not fold" "1" "$CHECK_FAILED"
+FOLD_PATH_CASE="$fold_was"
 
 assert_eq "check_link changes nothing" "$before" "$(snapshot "$home")"
 

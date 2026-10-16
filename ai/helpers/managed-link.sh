@@ -104,7 +104,7 @@ check_link() {
     src="$1"; dst="$2"
     if [ -L "$dst" ]; then
         actual="$(readlink "$dst")"
-        if [ "$actual" = "$src" ]; then
+        if same_path "$actual" "$src"; then
             success "$dst"
         else
             warning "$dst -> $actual (expected $src)"
