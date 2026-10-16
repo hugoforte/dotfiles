@@ -107,10 +107,12 @@ assert_eq "--project matches without case on Windows" \
     "$(call "t3.projectForFolder(process.platform === 'win32' ? String.raw\`$root\\PROJECTS\\Example\` : String.raw\`$root/projects/example\`, $projects).id")"
 assert_eq "--project for a folder T3 has no project for says how to add one" \
     "error: T3 Code has no project for $(native projects missing)" \
-    "$(call "t3.projectForFolder(String.raw\`$root\\projects\\missing\`, $projects)")"
+    "$(call "t3.projectForFolder('$root/projects/missing', $projects)")"
+# Object literals go in through variables: macOS's sh, bash 3.2, brace-expands one written inside "$(… "…")".
+copy="{id:'copy',title:'copy',workspaceRoot:String.raw\`$root\\projects\\example\`}"
 assert_eq "--project for a folder with two T3 projects names both" \
     "error: T3 Code has 2 projects for $(native projects example): \"example\" (example), \"copy\" (copy)" \
-    "$(call "t3.projectForFolder(String.raw\`$root\\projects\\example\`, [...$projects, {id:'copy',title:'copy',workspaceRoot:String.raw\`$root\\projects\\example\`}])")"
+    "$(call "t3.projectForFolder('$root/projects/example', [...$projects, $copy])")"
 
 settings="{providers:{codex:{enabled:false},grok:{enabled:false}},providerInstances:{claudeAgent:{driver:'claudeAgent',displayName:'Claude'},claudeAgent_work:{driver:'claudeAgent',displayName:'Claude Work',enabled:true,config:{homePath:'~/.claude-work'}},claudeAgent_old:{driver:'claudeAgent',displayName:'Claude Old',enabled:false},codex_spare:{driver:'codex',config:{enabled:true}},codex_managed:{driver:'codex',enabled:true,config:{enabled:false}},grok_unset:{driver:'grok'}}}"
 
@@ -154,15 +156,18 @@ destination() {
     call "(({ projectId, branch, worktreePath, place }) => [projectId, branch, worktreePath, place].join('|'))(await t3.destination(undefined, $current, undefined, $1))"
 }
 
+here="{id:'here',workspaceRoot:'D:/projects/here'}"
+there="{id:'there',workspaceRoot:'D:/projects/there'}"
+
 assert_eq "without --project the next thread keeps this project and branch" \
     "here|feature||feature" \
     "$(destination undefined)"
 assert_eq "--project for this thread's own project keeps the branch" \
     "here|feature||D:/projects/here, feature" \
-    "$(destination "{id:'here',workspaceRoot:'D:/projects/here'}")"
+    "$(destination "$here")"
 assert_eq "--project for another project starts in its checkout" \
     "there|||D:/projects/there" \
-    "$(destination "{id:'there',workspaceRoot:'D:/projects/there'}")"
+    "$(destination "$there")"
 
 assert_eq "without --provider the model selection is this thread's, untouched" \
     "true" \
@@ -179,11 +184,11 @@ app() {
 assert_eq "on Windows T3 Code is the per-user install, its server in resources beside it" \
     'C:\Users\me\AppData\Local\Programs\t3code\T3 Code (Alpha).exe|C:\Users\me\AppData\Local\Programs\t3code\resources\server.asar\apps\server\dist\bin.mjs' \
     "$(app win32)"
-assert_eq "on macOS T3 Code is the app bundle, its server in the bundle's Resources" \
-    '/Applications/T3 Code (Alpha).app/Contents/MacOS/T3 Code (Alpha)|/Applications/T3 Code (Alpha).app/Contents/Resources/server.asar/apps/server/dist/bin.mjs' \
+assert_eq "on macOS T3 Code is the app bundle, its server in the bundle's app.asar" \
+    '/Applications/T3 Code (Alpha).app/Contents/MacOS/T3 Code (Alpha)|/Applications/T3 Code (Alpha).app/Contents/Resources/app.asar/apps/server/dist/bin.mjs' \
     "$(app darwin)"
 assert_eq "on macOS T3_EXE moves the server with it" \
-    '/Users/me/Applications/T3.app/Contents/MacOS/T3|/Users/me/Applications/T3.app/Contents/Resources/server.asar/apps/server/dist/bin.mjs' \
+    '/Users/me/Applications/T3.app/Contents/MacOS/T3|/Users/me/Applications/T3.app/Contents/Resources/app.asar/apps/server/dist/bin.mjs' \
     "$(app darwin /Users/me/Applications/T3.app/Contents/MacOS/T3)"
 
 assert_eq "a Mac's .local host name is reached without it" \

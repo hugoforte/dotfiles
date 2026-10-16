@@ -82,18 +82,19 @@ export function matchingProject(project, candidates) {
 /**
  * T3 Code's executable and the server script packed beside it, where its
  * installer puts them on `platform`: under %LOCALAPPDATA% on Windows, in an app
- * bundle in /Applications on macOS. `env.T3_EXE` names the executable instead,
- * and the server is found from it the same way.
+ * bundle in /Applications on macOS, whose server is packed in the app's own
+ * app.asar rather than a server.asar. `env.T3_EXE` names the executable
+ * instead, and the server is found from it the same way.
  */
 export function t3App(platform, env) {
-    const server = ['server.asar', 'apps', 'server', 'dist', 'bin.mjs'];
+    const server = ['apps', 'server', 'dist', 'bin.mjs'];
     if (platform === 'darwin') {
         const exe = env.T3_EXE ?? '/Applications/T3 Code (Alpha).app/Contents/MacOS/T3 Code (Alpha)';
-        return { exe, serverBin: posix.join(exe, '..', '..', 'Resources', ...server) };
+        return { exe, serverBin: posix.join(exe, '..', '..', 'Resources', 'app.asar', ...server) };
     }
     const path = platform === 'win32' ? win32 : posix;
     const exe = env.T3_EXE ?? path.join(env.LOCALAPPDATA ?? '', 'Programs', 't3code', 'T3 Code (Alpha).exe');
-    return { exe, serverBin: path.join(exe, '..', 'resources', ...server) };
+    return { exe, serverBin: path.join(exe, '..', 'resources', 'server.asar', ...server) };
 }
 
 /**
