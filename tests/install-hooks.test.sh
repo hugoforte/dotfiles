@@ -75,6 +75,19 @@ assert_eq "check fails on a hook that exits 1" "1" "$rc"
 assert_eq "and names it" "y" "$(says "$out" "hook does not run")"
 cp "$work/agent-guard.mjs" "$repo/bin/agent-guard.mjs"
 
+printf '=== a hook of ours for another event or tool is not run by --check ===\n'
+printf 'import { writeFileSync } from "node:fs";\nwriteFileSync(process.argv[2], "ran");\n' > "$repo/bin/marker.mjs"
+jq --arg script "$(dirname "$script")/marker.mjs" --arg marker "$work/marker" '
+    .hooks.PostToolUse = [{"matcher":"Bash","hooks":[{"type":"command","command":"node","args":[$script, $marker]}]}]
+    | .hooks.PreToolUse += [{"matcher":"Edit","hooks":[{"type":"command","command":"node","args":[$script, $marker]}]}]
+' "$live" > "$live.tmp" && mv "$live.tmp" "$live"
+run --check > /dev/null
+assert_eq "neither ran" "n" "$([ -e "$work/marker" ] && echo y || echo n)"
+rm -f "$repo/bin/marker.mjs"
+run > /dev/null
+jq 'del(.hooks.PostToolUse) | .hooks.PreToolUse |= map(select(.matcher != "Edit"))' "$live" > "$live.tmp" \
+    && mv "$live.tmp" "$live"
+
 printf '=== a hook another checkout wrote is drift, and is replaced by install ===\n'
 jq '.hooks.PreToolUse += [{"matcher":"Bash|PowerShell","hooks":[{"type":"command","command":"node","args":["/gone/checkout/bin/agent-guard.mjs"],"onFailure":"block"}]}]' \
     "$live" > "$live.tmp" && mv "$live.tmp" "$live"

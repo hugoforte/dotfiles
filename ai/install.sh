@@ -532,14 +532,19 @@ EOF
 }
 
 # check_hooks_run <settings file>: run each exec-form hook of ours there (see
-# settings-reconcile.sh), whichever checkout it points at, on a harmless Bash call, as Claude
-# Code would spawn it, and fail the check on one that does not exit 0: a script or a node that
-# is not found blocks every call. This runs with this shell's PATH, which may hold more than an
-# app's.
+# settings-reconcile.sh) that Claude Code would run before a Bash call, whichever checkout it
+# points at, on a harmless one, as Claude Code would spawn it, and fail the check on one that
+# does not exit 0: a script or a node that is not found blocks every call. Hooks for other events
+# or tools are not run, since a harmless Bash call says nothing about what they would do. This
+# runs with this shell's PATH, which may hold more than an app's.
 check_hooks_run() {
     [ -f "$1" ] && jq empty "$1" > /dev/null 2>&1 || return 0
     hook_argvs="$(jq -r --argjson programs "$(settings_bin_programs "$HOOK_BIN")" "$SETTINGS_SPEC_JQ"'
-        [(.hooks // {})[] | arrays | ours_in($programs)[] | select((.args | type) == "array")
+        [(.hooks.PreToolUse // []) | arrays
+         | map(select(type == "object"
+             and ((.matcher // "" | if . == "" or . == "*" then ".*" else . end) as $m
+                  | try ("Bash" | test("^(\($m))$")) catch false)))
+         | ours_in($programs)[] | select((.args | type) == "array")
          | [.command] + .args | @sh] | unique[]' "$1")"
     [ -n "$hook_argvs" ] || return 0
     while IFS= read -r hook_argv; do
