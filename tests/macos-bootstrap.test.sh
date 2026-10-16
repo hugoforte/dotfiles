@@ -48,7 +48,9 @@ git_repo "$fixture_overlays"
 printf '#!/bin/sh\necho Darwin\n' > "$stubs/uname"
 printf '#!/bin/sh\ncase "$1" in\n  --get) cat "%s" 2>/dev/null ;;\n  --set) echo "scutil $*" >> "%s"; [ "$2" = LocalHostName ] && printf "%%s" "$3" > "%s" ;;\nesac\nexit 0\n' \
     "$work/hostname" "$log" "$work/hostname" > "$stubs/scutil"
-printf '#!/bin/sh\n[ "$1" = -v ] || [ "$1" = -n ] && exit 0\nexec "$@"\n' > "$stubs/sudo"
+# sudo -v asks for a password, so fails here, while $work/nopasswd exists: as real sudo does when
+# the user's rule says NOPASSWD but another rule matching them does not.
+printf '#!/bin/sh\ncase "$1" in\n  -v) [ ! -e "%s" ] ;;\n  -n) exit 0 ;;\n  *) exec "$@" ;;\nesac\n' "$work/nopasswd" > "$stubs/sudo"
 printf '#!/bin/sh\ncase "$1" in --prefix) echo /stub ;; esac\nexit 0\n' > "$stubs/brew"
 printf '#!/bin/sh\ncase "$1 $2" in\n  "auth status") exit 0 ;;\n  "repo clone") echo "clone $3" >> "%s"; exec git clone --quiet "$3" "$4" ;;\nesac\nexit 1\n' \
     "$log" > "$stubs/gh"
@@ -100,6 +102,12 @@ rm -rf "$src"
 out="$(run --overlays "$fixture_overlays" --only missing --dir "$src")"; rc=$?
 assert_eq "--only with an overlay the repo lacks fails" "1" "$rc"
 assert_eq "... and names it" "y" "$(says "$out" "has no overlay named missing")"
+
+touch "$work/nopasswd"
+rm -rf "$src"
+out="$(run --overlays "$fixture_overlays" --dir "$src")"; rc=$?
+assert_eq "passwordless sudo, where sudo -v would still ask, does not stop it" "0" "$rc"
+rm "$work/nopasswd"
 
 printf 'exit 3\n' >> "$fixture_overlays/personal/macos/bootstrap.sh"
 git -C "$fixture_overlays" -c user.name=t -c user.email=t@example.com commit --quiet -am "fail"

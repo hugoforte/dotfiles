@@ -54,7 +54,8 @@ done
 # --- The password, once ------------------------------------------------------------------------------
 
 # Ask now, then keep sudo's memory of it fresh until this script ends, so no installer asks again.
-sudo -v || die "sudo is needed to install Homebrew and name the Mac"
+# Not when sudo needs no password: -v still asks then, unless every sudoers rule says NOPASSWD.
+sudo -n true 2> /dev/null || sudo -v || die "sudo is needed to install Homebrew and name the Mac"
 ( while kill -0 $$ 2> /dev/null; do sudo -n true; sleep 50; done ) > /dev/null 2>&1 &
 keepalive=$!
 trap 'kill "$keepalive" 2> /dev/null' EXIT
