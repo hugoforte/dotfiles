@@ -45,7 +45,6 @@ testable yet:
 | `powershell/native.ps1` | the command is an argument, and the verdict is the exit code | #15 |
 | `bin/md-lint.mjs`'s `markdownlintArguments` and `hasOwnConfig` | exported, and the script only acts when run directly | this change |
 | `powershell/user-path.ps1`'s `Add-PathEntry` | the PATH list is an argument; `Add-UserPathEntry` applies it and is not run | this change |
-| `powershell/high-dpi.ps1`'s `Add-HighDpiAwareLayer` | the existing compatibility flags are an argument; `Set-HighDpiAware` applies it and is not run | this change |
 | `powershell/tool-selection.ps1` | which entries a machine gets, the release asset, the installed-program match and the reading of `uv tool list` are functions of their arguments; `install-tools.ps1` reads the registry, runs uv and downloads | this change |
 | `ai/install.sh`'s extra Claude config folders | `HOME` and the overlay list are fixtures, so the folders it fills are temp directories | this change |
 | `macos/setup.sh` | `HOME` and the overlay list are fixtures, and `uname`, `scutil` and `brew` are stubs on `PATH`, so it runs on any OS and installs nothing | this change |
