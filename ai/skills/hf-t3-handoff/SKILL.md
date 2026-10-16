@@ -49,8 +49,10 @@ Inside a rig work, take the title's parts from `rig status`:
 - **Description**: the work's title, cut to about five words, leading with the product when the work is about one (`IM unable to add product`). It must not end in a number, because a trailing number is read as the count.
 
 ```bash
-node ~/.claude/skills/hf-t3-handoff/t3.mjs continue --prompt-file <file> --key <key> --description "<description>" [--to <computer> | [--project <folder>] [--provider <instance-id>]] --dry-run
+node ~/.claude/skills/hf-t3-handoff/t3.mjs continue --prompt-file <file> --key <key> --description "<description>" [--to <computer> | [--project <folder>] [--provider <instance-id>]] [--thread <id>] --dry-run
 ```
+
+Pass `--thread <id>` here when `check` needed it to find this thread.
 
 When the thread's title is already standard, the script keeps its key and description and ignores these two. Outside a rig work, leave both out: the title then counts up as it is, so "Foo" becomes "Foo 2".
 
