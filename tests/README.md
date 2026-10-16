@@ -39,7 +39,7 @@ testable yet:
 | `ai/secrets/check-encrypted.sh` | a pure function of a directory tree | #12 |
 | `powershell/managed-link.ps1` | three verbs, and both paths are arguments | #6 |
 | `powershell/git.ps1` | the merge verdict is a function of two refs, and `-Yes` opens the delete | #21 |
-| `ai/install.sh`'s `link` / `unlink_managed` / `check_link` | the same contract in sh, extracted to a fixture rather than run | #6 |
+| `ai/helpers/managed-link.sh`'s `link` / `unlink_managed` / `check_link` | the same contract in sh, in a helper that only defines functions, so it is sourced as it is | #6 |
 | `ai/skills/hf-t3-handoff/t3.mjs`'s `handoffTitles` and `matchingProject` | exported, and the script only acts when run directly | #14 |
 | `ai/skills/hf-t3-handoff/t3.mjs`'s `projectForFolder`, `providerInstance`, `destination` and `modelSelectionOn` | exported; projects and settings are arguments, and `destination` reads no server without `--to` | this change |
 | `powershell/native.ps1` | the command is an argument, and the verdict is the exit code | #15 |
@@ -47,6 +47,11 @@ testable yet:
 | `powershell/user-path.ps1`'s `Add-PathEntry` | the PATH list is an argument; `Add-UserPathEntry` applies it and is not run | this change |
 | `powershell/tool-selection.ps1` | which entries a machine gets, the release asset, the installed-program match and the reading of `uv tool list` are functions of their arguments; `install-tools.ps1` reads the registry, runs uv and downloads | this change |
 | `ai/install.sh`'s extra Claude config folders | `HOME` and the overlay list are fixtures, so the folders it fills are temp directories | this change |
+| `macos/setup.sh` | `HOME` and the overlay list are fixtures, and `uname`, `scutil` and `brew` are stubs on `PATH`, so it runs on any OS and installs nothing | this change |
+| `macos/zshrc` | sourced by `zsh -f` through a fixture `~/.zshrc` link; skipped where zsh is missing | this change |
+| `macos/deploy-secrets.sh` | `HOME`, the registries and the checkouts are fixtures, and `sops` is a stub that "decrypts" by dropping a prefix | this change |
+| `macos/sync.sh` | the repo and the overlay repo are clones of fixture origins, so its pulls are real; `brew` and `sops` are stubs | this change |
+| `macos/install-sync-agent.sh` | `HOME` is a fixture and `launchctl` a stub; where `plutil` exists the plist must pass its lint | this change |
 
 **Everything else is untestable on purpose, not by oversight.** `setup.ps1`, `sync.ps1`,
 `install-sync-task.ps1`, `install-cswap-task.ps1`, and `install-tools.ps1` / `deploy-secrets.ps1` without `-Check` read
@@ -64,10 +69,16 @@ suite is around thirty assertions of "did this equal that", so `assert.sh` carri
 If the suite outgrows a helper — setup/teardown hooks, tagging, parallelism — `bats` is the
 upgrade path and this is the note saying so.
 
-## CI runs windows-latest, and only that
+## CI runs windows-latest and macos-latest, and only those
 
-Not a default anyone forgot to change. Both defects this repo has actually shipped were
-invisible on any other platform:
+Not a default anyone forgot to change ([ADR 0006](../docs/adr/0006-ci-adds-macos-for-the-mac.md)).
+Each job is the evidence for the machines on its OS. The macOS job runs the sh suite under
+`/bin/sh` with BSD tools and plain `ln -s`, which is what a Mac runs; it runs no Pester, since
+the PowerShell scripts configure Windows. A sh test whose input is spelled
+differently per OS, such as a path separator, spells it the way that OS does.
+
+The Windows job stays as it was. Both defects this repo has actually shipped were invisible on
+any other platform:
 
 - `Write-Host` writes to the information stream, which **Windows PowerShell 5.1** does not
   capture through `| Out-String`. The scheduled task logged a hardcoded `"ok"` for runs that
@@ -75,7 +86,7 @@ invisible on any other platform:
 - **jq on Windows emits CRLF**, and `.gitattributes` here is `* text=auto eol=lf`.
   `settings_write_json` strips `\r` for that reason alone.
 
-A Linux runner passes both vacuously. That is worse than not testing them, because it looks
+A Linux or macOS runner passes both vacuously. That is worse than not testing them, because it looks
 like coverage. For the same reason the workflow's PowerShell steps use `shell: powershell`
 (5.1), never `pwsh` (7.x) — 5.1 is what the scheduled task runs.
 
@@ -99,7 +110,7 @@ Two traps that have already cost time here:
 - **Pester's `TestDrive` is per file, not per test.** Without a `BeforeEach` handing each test
   its own directory, a test sees the links the previous one left behind. `ManagedLink.Tests.ps1`
   calls `New-WorkDir` for exactly this reason.
-- **POSIX sh has no `local`.** `ai/install.sh`'s `link()` and `check_link()` assign `src`, `dst`,
+- **POSIX sh has no `local`.** `ai/helpers/managed-link.sh`'s `link()` and `check_link()` assign `src`, `dst`,
   `backup` and `actual` in the *caller's* shell, so a test using those names as its own
   variables gets silently corrupted. `managed-link.test.sh` uses `repo` and `saved`.
 

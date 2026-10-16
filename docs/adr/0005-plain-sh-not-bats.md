@@ -7,7 +7,8 @@ output, and no hand-rolled assertion helper to maintain.
 It was rejected on two counts specific to this repo. It would need an entry in
 `powershell/tools.psd1` and an install on every machine, for a suite of about thirty assertions
 that are all "did this equal that". And bats-on-Git-Bash is a known source of friction on exactly
-the platform this repo targets and CI runs — see [0004](0004-ci-runs-windows-only.md).
+the platform this repo first targeted and CI's Windows job runs — see
+[0006](0006-ci-adds-macos-for-the-mac.md).
 
 This is the cheapest of the decisions here to reverse, and it is recorded only so the next person
 to suggest `bats` can see it was considered rather than missed. If the suite outgrows a helper —

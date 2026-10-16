@@ -1,16 +1,21 @@
 name: Check
 
-# windows-latest only, and deliberately so.
+# windows-latest and macos-latest, one job each, and no other OS (docs/adr/0006).
 #
-# These scripts run under Windows PowerShell 5.1 and Git Bash on a real Windows machine, and
-# both defects this repo has actually shipped were invisible anywhere else: `Write-Host` does
-# not survive `| Out-String` under 5.1 (hugoforte/dotfiles#9), and jq on Windows emits CRLF
-# into a repo whose .gitattributes demands LF (#8). A Linux runner passes both vacuously,
-# which is worse than not testing them at all - it looks like coverage.
+# The Windows job is the evidence for the Windows machines. These scripts run under Windows
+# PowerShell 5.1 and Git Bash there, and both defects this repo has actually shipped were
+# invisible anywhere else: `Write-Host` does not survive `| Out-String` under 5.1
+# (hugoforte/dotfiles#9), and jq on Windows emits CRLF into a repo whose .gitattributes demands
+# LF (#8). A Linux runner passes both vacuously, which is worse than not testing them at all -
+# it looks like coverage.
 #
 # For the same reason every PowerShell step is `shell: powershell` (5.1), never `pwsh` (7.x):
 # 5.1 is what the scheduled task runs. `shell: bash` on this runner is Git Bash, which is what
 # sync.ps1 finds and uses.
+#
+# The macOS job is the evidence for the Mac, which runs the sh half of this repo with no MSYS
+# in the way: plain `ln -s`, BSD userland, and /bin/sh, bash 3.2 in POSIX mode. It runs that
+# half only; the PowerShell scripts configure Windows and have nothing to prove on a Mac.
 #
 # Nothing here may run an installer. setup.ps1, sync.ps1, install-sync-task.ps1, and
 # install-tools.ps1 / deploy-secrets.ps1 without -Check all mutate the machine they run on.
@@ -87,3 +92,26 @@ jobs:
             "docs/**/*.md" \
             "powershell/**/*.md" \
             "tests/**/*.md"
+
+  check-macos:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # `sh` here is /bin/sh, the shell a Mac runs these scripts with, not Git Bash. -e as GitHub's
+      # default sh shell has, so a missing jq stops the step rather than failing tests obscurely.
+      - name: Shell syntax
+        shell: sh -e {0}
+        run: |
+          status=0
+          for f in $(git ls-files '*.sh'); do
+            sh -n "$f" || { echo "syntax error: $f"; status=1; }
+          done
+          exit $status
+
+      - name: Shell tests
+        shell: sh -e {0}
+        run: |
+          jq --version
+          sh tests/run.sh

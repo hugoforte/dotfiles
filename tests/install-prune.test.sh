@@ -34,8 +34,7 @@ mkdir -p "$repo/ai/helpers" "$repo/ai/skills/kept" "$repo/ai/skills/doomed" \
          "$repo/ai/agents" "$repo/ai/secrets" "$home/.claude/skills"
 
 cp "$REPO_ROOT/ai/install.sh" "$repo/ai/install.sh"
-cp "$REPO_ROOT/ai/helpers/output.sh" "$repo/ai/helpers/output.sh"
-cp "$REPO_ROOT/ai/helpers/settings-reconcile.sh" "$repo/ai/helpers/settings-reconcile.sh"
+cp "$REPO_ROOT"/ai/helpers/*.sh "$repo/ai/helpers/"
 printf 'exit 0\n' > "$repo/ai/secrets/check-encrypted.sh"
 printf -- '---\nname: kept\n---\n' > "$repo/ai/skills/kept/SKILL.md"
 printf -- '---\nname: doomed\n---\n' > "$repo/ai/skills/doomed/SKILL.md"
