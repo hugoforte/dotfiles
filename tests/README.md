@@ -34,7 +34,7 @@ testable yet:
 
 | Under test | Seam | Shipped in |
 | --- | --- | --- |
-| `ai/helpers/settings-reconcile.sh` | `reconcile_settings <direction> <target> <fragment>` takes both paths | #13 |
+| `ai/helpers/settings-reconcile.sh` | `reconcile_settings <direction> <target> <fragment> [bin]` takes both paths, and the `bin/` its hooks point at | #13 |
 | `powershell/output.ps1` | the result object is data, not console text | #14 |
 | `ai/secrets/check-encrypted.sh` | a pure function of a directory tree | #12 |
 | `powershell/managed-link.ps1` | three verbs, and both paths are arguments | #6 |

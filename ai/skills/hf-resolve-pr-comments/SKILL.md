@@ -17,11 +17,16 @@ gh pr view $ARGUMENTS --json number,title,headRefName,baseRefName,state,url,isCr
 
 Stop if the PR is merged or closed, or if the current branch has no PR — say so rather than guessing at another PR.
 
-Check out the head branch and make sure the working tree is clean before touching anything:
+Work in the PR's own worktree, never the repo's checkout. In a rig work, that is the repo's worktree there, already on the branch. Outside one, check the head branch out into a worktree beside the repo's checkout, outside rig's work root:
 
 ```bash
-gh pr checkout <number>
-git status --short
+gh pr checkout <number> --worktree ../<repo>-pr-<number>
+```
+
+Either way, make sure that worktree is clean before touching anything:
+
+```bash
+git -C <worktree> status --short
 ```
 
 A dirty tree means someone else's work is in flight. Stop and ask.

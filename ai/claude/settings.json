@@ -8,7 +8,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "agent-guard"
+            "command": "node",
+            "args": [
+              "agent-guard.mjs"
+            ],
+            "onFailure": "block"
           }
         ]
       }

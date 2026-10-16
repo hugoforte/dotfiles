@@ -58,7 +58,7 @@ My own skills carry an `hf-` prefix, so a skill list says at a glance which ones
 |---|---|
 | `hf-adversarial-review` | Sets a subagent on a PR to find what is wrong with it, verifies the findings, fixes the real ones and pushes. Takes a rig work's PRs, or a single PR outside one. |
 | `hf-assign-devs-to-pr` | Asks which of the team should take a PR, then requests their review and assigns them via `gh`. Holds the roster of names and GitHub handles. |
-| `hf-resolve-pr-comments` | Works a PR's review comments to zero: action, reply, resolve, then merges the base in so the PR is mergeable with it. |
+| `hf-resolve-pr-comments` | Works a PR's review comments to zero: action, reply, resolve, then makes sure the PR is mergeable with its base, merging a moved base in. |
 | `hf-dotfiles-secrets` | The procedures for the encrypted skill secrets under `secrets/`. |
 
 Matt's skills are prefixed `matt-` (folder and `name:`), and their `/slash` cross-references were rewritten to match, so `/matt-triage`, `/matt-grill-with-docs`, and so on. Backticked mentions like "the `research` skill" were left as-is because the same words also name wayfinder ticket types.
@@ -98,6 +98,8 @@ Both write directions union arrays and neither deletes, so:
 - `./ai/install.sh --check` compares every managed key in both directions. `MISSING` (a key, or an array entry, that the fragment declares and the live file lacks) and `DIFF` (a scalar changed on the Claude side, e.g. via `/model`) count as drift. `EXTRA` lists live-only array entries, such as "always allow" answers, and is informational.
 - `./ai/install.sh --settings-export` copies the managed leaf paths from the live file back into the repo fragment — live scalars win, arrays union — and leaves every unmanaged key, such as `permissions.deny`, where it is. Review with `git diff`, then commit. This is how a change made through Claude reaches other machines.
 - To remove an allowlist entry everywhere, delete it from the fragment and from each machine's live file; no direction deletes.
+
+Hooks of this repo's are the one value written differently on each side. The fragment declares the `agent-guard` hook in exec form — `"command": "node"`, `"args": ["agent-guard.mjs"]` — with `"onFailure": "block"`, so a guard that cannot start blocks the call rather than letting it through, and no shell, Git Bash or PowerShell, is involved. Merge writes the script into the live file as this checkout's absolute path to `bin/agent-guard.mjs`, so the hook is found whatever PATH the agent was started with; an app started from the Dock gets launchd's PATH, which lacks `bin/`. The fragment owns these hooks: merge replaces each one already in the live file, whichever checkout's path it names, and the shell-form `agent-guard` entry this repo used to write; check reports one the fragment does not hold as `STALE` drift; export never carries one back, so no machine's path reaches the repo. `--check` also runs each one Claude Code would run before a Bash call (a `PreToolUse` hook whose matcher covers `Bash`) on a harmless one, and fails on one that does not exit 0, with this shell's PATH, which may hold more than an app's. `node` still comes from the agent's PATH.
 
 ## Agents and CLAUDE.md
 
