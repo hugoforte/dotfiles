@@ -152,16 +152,19 @@ A PR with every thread resolved can still be unmergeable: another PR lands on th
 
 ```bash
 git fetch origin
-gh pr view <number> --json mergeable,mergeStateStatus,baseRefName
-git rev-list --count HEAD..origin/<baseRefName>
+base="$(gh pr view <number> --json baseRefName --jq .baseRefName)"
+gh pr view <number> --json mergeable,mergeStateStatus
+git rev-list --count "HEAD..origin/$base"
 ```
+
+The base name goes through a quoted variable for the same reason as the head's in Step 5.
 
 `mergeable` is `UNKNOWN` until GitHub has computed it. Ask again until it is `MERGEABLE` or `CONFLICTING`; never read `UNKNOWN` as clean.
 
 When the base has commits the branch lacks, merge the base in:
 
 ```bash
-git merge origin/<baseRefName>
+git merge "origin/$base"
 ```
 
 Merge, don't rebase: a rebase rewrites the commits the replies in Step 6 cite. On a conflict, resolve each hunk by keeping both sides' intent and commit the merge. Then, conflict or not, run the project's tests, linter and formatter as in Step 5: a clean merge can still break the build. Push as in Step 5.
@@ -175,7 +178,7 @@ gh pr view <number> --json mergeable,mergeStateStatus
 gh pr checks <number>
 ```
 
-A check still running is pending, not passed. Wait for it with `gh pr checks <number> --watch` run in the background when the user wants a final answer, or report it as pending.
+A push sets `mergeable` back to `UNKNOWN` while GitHub recomputes it: ask again, as before the merge, and never report `UNKNOWN` as the answer. A check still running is pending, not passed. Wait for it with `gh pr checks <number> --watch` run in the background when the user wants a final answer, or report it as pending.
 
 ## Step 8: Report
 
