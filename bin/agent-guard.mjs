@@ -14,9 +14,9 @@
 // Only commands are judged, never what they carry: heredoc bodies and quoted strings are taken
 // out first, so a commit message or a PR body that mentions `sed -i` passes.
 //
-// ai/claude/settings.json registers it by its bare name, and ai/install.sh writes that into each
-// live settings.json as this checkout's absolute path to bin/agent-guard, so the hook is found
-// whatever PATH the agent was started with. It still runs `node` from that PATH.
+// ai/claude/settings.json registers it as `node agent-guard.mjs` in exec form, blocking the call
+// if it cannot run, and ai/install.sh writes this checkout's absolute path to it into each live
+// settings.json, so it is found whatever PATH the agent was started with. `node` still is not.
 
 import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

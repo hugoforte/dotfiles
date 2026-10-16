@@ -19,9 +19,9 @@ CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 SETTINGS_FRAGMENT="$ZSH/ai/claude/settings.json"
 
-# Where the settings' hook commands find their programs (see settings-reconcile.sh). An app
-# started from the Dock has launchd's PATH, which lacks bin/, so a hook named bare would not be
-# found and the call would go through. On Windows the C:/ form, which every shell there reads.
+# Where the settings' hooks find their scripts (see settings-reconcile.sh). An app started from
+# the Dock has launchd's PATH, which lacks bin/, so a hook named bare would not be found. On
+# Windows the C:/ form, which node there reads.
 HOOK_BIN="$ZSH/bin"
 if command -v cygpath > /dev/null 2>&1; then
     HOOK_BIN="$(cygpath -m "$HOOK_BIN")"
@@ -531,26 +531,27 @@ $CLAUDE_DIRS
 EOF
 }
 
-# check_hooks_run <settings file>: run each hook command there that names a bin/ program, on a
-# harmless Bash call, and fail the check on one that does not exit 0. A hook that is not found,
-# or whose node is not, exits non-zero, and Claude Code lets the call through. This runs with
-# this shell's PATH, which may hold more than an app's.
+# check_hooks_run <settings file>: run each exec-form hook of ours there (see
+# settings-reconcile.sh), whichever checkout it points at, on a harmless Bash call, as Claude
+# Code would spawn it, and fail the check on one that does not exit 0: a script or a node that
+# is not found blocks every call. This runs with this shell's PATH, which may hold more than an
+# app's.
 check_hooks_run() {
     [ -f "$1" ] && jq empty "$1" > /dev/null 2>&1 || return 0
-    hook_commands="$(jq -r --arg prefix "\"$HOOK_BIN/" \
-        '[.. | objects | select(.type == "command") | .command | strings
-          | select(startswith($prefix))] | unique[]' "$1")"
-    [ -n "$hook_commands" ] || return 0
-    while IFS= read -r hook_command; do
-        if printf '%s' '{"tool_name":"Bash","tool_input":{"command":"true"}}' \
-            | sh -c "$hook_command" > /dev/null 2>&1; then
-            success "hook runs: $hook_command"
+    hook_argvs="$(jq -r --argjson programs "$(settings_bin_programs "$HOOK_BIN")" "$SETTINGS_SPEC_JQ"'
+        [(.hooks // {})[] | arrays | ours_in($programs)[] | select((.args | type) == "array")
+         | [.command] + .args | @sh] | unique[]' "$1")"
+    [ -n "$hook_argvs" ] || return 0
+    while IFS= read -r hook_argv; do
+        if (eval "set -- $hook_argv"
+            printf '%s' '{"tool_name":"Bash","tool_input":{"command":"true"}}' | "$@") > /dev/null 2>&1; then
+            success "hook runs: $hook_argv"
         else
-            error "hook does not run: $hook_command (in $1)"
+            error "hook does not run: $hook_argv (in $1)"
             CHECK_FAILED=1
         fi
     done <<EOF
-$hook_commands
+$hook_argvs
 EOF
 }
 
