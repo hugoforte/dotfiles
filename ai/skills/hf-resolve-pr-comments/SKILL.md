@@ -1,11 +1,11 @@
 ---
 name: hf-resolve-pr-comments
-description: Work through the review comments on a pull request — action the ones worth actioning, reply to every one, and resolve the threads. Use when asked to resolve, address, action or clear PR comments or review feedback.
+description: Work through the review comments on a pull request — action the ones worth actioning, reply to every one, resolve the threads, then make sure the PR is mergeable with its base. Use when asked to resolve, address, action or clear PR comments or review feedback.
 ---
 
 # Resolve PR comments
 
-Take a pull request's review feedback to zero: for each comment, decide whether to action it, do the work if so, reply in the thread, and resolve it.
+Take a pull request's review feedback to zero: for each comment, decide whether to action it, do the work if so, reply in the thread, and resolve it. Then make sure the PR is good to go with its base: no threads left is not done while the base has moved on and conflicts with it.
 
 `$ARGUMENTS` may be a PR number, a PR URL, or empty. Empty means the PR for the current branch.
 
@@ -109,8 +109,13 @@ For each **action it** comment, in file order so related edits land together:
 Push once, after all the fixes are in, so the replies can cite real SHAs:
 
 ```bash
-git push
+head="$(gh pr view <number> --json headRefName --jq .headRefName)"
+branch="$(git branch --show-current)"
+remote="$(git config "branch.$branch.pushRemote" || git config "branch.$branch.remote")"
+git push "$remote" "HEAD:refs/heads/$head"
 ```
+
+Push to the PR's head by name, never a bare `git push`: in a rig work the branch's upstream is its base, and a bare push either fails or pushes onto the base. The remote is the one the branch tracks, which `gh pr checkout` points at the fork for a cross-repository PR. The branch name comes from the PR's author, so it goes through a quoted variable and never into the command text, where a shell would expand it.
 
 ## Step 6: Reply and resolve
 
@@ -141,7 +146,41 @@ Top-level issue comments cannot be resolved. Reply with `gh pr comment <number> 
 
 Reply in the reviewer's language and keep it to one or two sentences. State what happened; don't thank, apologise, or re-explain the code.
 
-## Step 7: Report
+## Step 7: Make sure it is good to go with its base
+
+A PR with every thread resolved can still be unmergeable: another PR lands on the base and edits the same lines. Look before reporting.
+
+```bash
+git fetch origin
+base="$(gh pr view <number> --json baseRefName --jq .baseRefName)"
+gh pr view <number> --json mergeable,mergeStateStatus
+git rev-list --count "HEAD..origin/$base"
+```
+
+The base name goes through a quoted variable for the same reason as the head's in Step 5.
+
+`mergeable` is `UNKNOWN` until GitHub has computed it. Ask again until it is `MERGEABLE` or `CONFLICTING`; never read `UNKNOWN` as clean.
+
+When the base has commits the branch lacks, merge the base in:
+
+```bash
+git merge "origin/$base"
+```
+
+Merge, don't rebase: a rebase rewrites the commits the replies in Step 6 cite. On a conflict, resolve each hunk by keeping both sides' intent and commit the merge. Then, conflict or not, run the project's tests, linter and formatter as in Step 5: a clean merge can still break the build. Push as in Step 5.
+
+When a conflict needs a decision only the author can make — both sides changed the same behaviour in incompatible ways, or keeping both would contradict one of them — stop. Run `git merge --abort`, present the conflicting hunks with what each side meant, and ask. Don't guess.
+
+After the push, query the PR again and read it as it is then:
+
+```bash
+gh pr view <number> --json mergeable,mergeStateStatus
+gh pr checks <number>
+```
+
+A push sets `mergeable` back to `UNKNOWN` while GitHub recomputes it: ask again, as before the merge, and never report `UNKNOWN` as the answer. A check still running is pending, not passed. Wait for it with `gh pr checks <number> --watch` run in the background when the user wants a final answer, or report it as pending.
+
+## Step 8: Report
 
 Close with:
 
@@ -149,5 +188,6 @@ Close with:
 - Comments declined, each with the reason given
 - Threads resolved, and any left open (with why — an unanswered question, a decision that needs the reviewer)
 - Follow-up issues worth filing for the out-of-scope points
+- Whether the PR is mergeable with its base: `mergeable`, `mergeStateStatus` and each check as last queried, and what was merged in to get there (the base's commits, and the conflicts resolved), or the conflict left for the author
 
 Re-run the Step 2 query to confirm nothing unresolved is left behind, and report the count honestly if some remain.
