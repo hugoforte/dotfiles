@@ -85,10 +85,7 @@ EOF
     printf '%s' "$found"
 }
 
-# The machine key, as an overlay's machines/ names its files: the HostName, uppercased, up to its
-# first dot. The LocalHostName when no HostName is set: Bonjour renames that one on its own (MACBOOK
-# becomes MACBOOK-2) while another Mac on the network has it, as the old Mac does during a rebuild.
-MACHINE="$({ scutil --get HostName 2>/dev/null || scutil --get LocalHostName 2>/dev/null; } | sed 's/\..*//' | tr '[:lower:]' '[:upper:]')"
+MACHINE="$(machine_key)"
 
 aws_source="$(one_source aws/config "$REPO
 $OVERLAYS")" || exit 1

@@ -24,3 +24,15 @@ psd1_paths() {
             echo "${dir%/}"
         done
 }
+
+# machine_key: the machine's name as an overlay's machines/ names its files, uppercased. On Windows,
+# COMPUTERNAME. On a Mac, the HostName up to its first dot, else the LocalHostName: Bonjour renames
+# that one on its own (MACBOOK becomes MACBOOK-2) while another Mac on the network has it, as the
+# old Mac does during a rebuild. Prints nothing for a machine with no name.
+machine_key() {
+    if [ -n "${COMPUTERNAME:-}" ]; then
+        printf '%s\n' "$COMPUTERNAME"
+    elif command -v scutil > /dev/null 2>&1; then
+        scutil --get HostName 2> /dev/null || scutil --get LocalHostName 2> /dev/null
+    fi | sed 's/\..*//' | tr '[:lower:]' '[:upper:]'
+}

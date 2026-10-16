@@ -39,7 +39,7 @@ BRUNO_DIR="$HOME/bruno"
 TAB="$(printf '\t')"
 
 # The Claude config folders, one per line: ~/.claude, then each extra folder the overlays name in
-# their ai/claude/config-dirs. Each gets exactly what ~/.claude gets: CLAUDE.md, agents, skills and
+# their ai/claude/config-dirs, or in this machine's machines/<KEY>.config-dirs. Each gets exactly what ~/.claude gets: CLAUDE.md, agents, skills and
 # the managed settings. Nothing else in a folder is touched, so its login (.credentials.json),
 # .claude.json, history and projects stay Claude Code's. Set by resolve_claude_dirs; a path may
 # hold spaces, so loop over it line by line, never with `for`.
@@ -76,36 +76,46 @@ config_dir_path() {
 }
 
 # resolve_claude_dirs: add each folder the overlays name to CLAUDE_DIRS, once: a folder already
-# there, ~/.claude included, is not added again. A path that is not absolute is warned about,
-# never created, and is drift to --check.
+# there, ~/.claude included, is not added again. An overlay names them in $CONFIG_DIRS_FILE for
+# every machine, and in machines/<KEY>.config-dirs for the one machine machine_key names KEY, in
+# the same format. A path that is not absolute is warned about, never created, and is drift to
+# --check.
 resolve_claude_dirs() {
     overlays="$(overlay_dirs)"
     [ -n "$overlays" ] || return 0
+    machine="$(machine_key)"
     while IFS= read -r overlay; do
-        [ -f "$overlay/$CONFIG_DIRS_FILE" ] || continue
-        # Through a here-document: the last line counts without a newline after it.
-        lines="$(tr -d '\r' < "$overlay/$CONFIG_DIRS_FILE")"
-        while IFS= read -r line; do
-            dir="$(config_dir_path "$line")"
-            case $? in
-                1) continue ;;
-                2) warning "$overlay/$CONFIG_DIRS_FILE: $dir is not an absolute path or ~/..., or is / or ~ itself - skipped"
-                   CHECK_FAILED=1
-                   continue ;;
-            esac
-            known=false
-            while IFS= read -r claude_dir; do
-                same_path "$claude_dir" "$dir" && known=true
-            done <<EOF
-$CLAUDE_DIRS
-EOF
-            [ "$known" = "true" ] || CLAUDE_DIRS="$CLAUDE_DIRS
-$dir"
-        done <<EOF
-$lines
-EOF
+        add_config_dirs "$overlay/$CONFIG_DIRS_FILE"
+        [ -z "$machine" ] || add_config_dirs "$overlay/machines/$machine.config-dirs"
     done <<EOF
 $overlays
+EOF
+}
+
+# add_config_dirs <file>: add each folder one config-dirs file names to CLAUDE_DIRS. No file adds
+# nothing.
+add_config_dirs() {
+    [ -f "$1" ] || return 0
+    # Through a here-document: the last line counts without a newline after it.
+    lines="$(tr -d '\r' < "$1")"
+    while IFS= read -r line; do
+        dir="$(config_dir_path "$line")"
+        case $? in
+            1) continue ;;
+            2) warning "$1: $dir is not an absolute path or ~/..., or is / or ~ itself - skipped"
+               CHECK_FAILED=1
+               continue ;;
+        esac
+        known=false
+        while IFS= read -r claude_dir; do
+            same_path "$claude_dir" "$dir" && known=true
+        done <<EOF
+$CLAUDE_DIRS
+EOF
+        [ "$known" = "true" ] || CLAUDE_DIRS="$CLAUDE_DIRS
+$dir"
+    done <<EOF
+$lines
 EOF
 }
 

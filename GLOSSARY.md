@@ -85,7 +85,7 @@ A private directory laid out like this repo's root, which the tooling reads from
 _Avoid_: private repo (a repo may hold several overlays), layer, plugin
 
 **Route folder**:
-An extra Claude config folder (a `CLAUDE_CONFIG_DIR`) with its own login, for work that bills a different Claude subscription than `~/.claude`. An overlay names it in `ai/claude/config-dirs`; `ai/install.sh` gives it everything it gives `~/.claude` and touches nothing else in it.
+An extra Claude config folder (a `CLAUDE_CONFIG_DIR`) with its own login, for work that bills a different Claude subscription than `~/.claude`. An overlay names it in `ai/claude/config-dirs`, or in `machines/<KEY>.config-dirs` for one machine; `ai/install.sh` gives it everything it gives `~/.claude` and touches nothing else in it.
 _Avoid_: profile, account folder, claude home (unqualified)
 
 ### Skills

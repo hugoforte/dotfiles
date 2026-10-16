@@ -1,8 +1,9 @@
 #!/bin/sh
 
 # Fixture suite for the extra Claude config folders in ai/install.sh: a folder an overlay names in
-# its ai/claude/config-dirs gets exactly what ~/.claude gets (CLAUDE.md, agents, skills, the
-# managed settings), checked the same way, and nothing else in it is touched.
+# its ai/claude/config-dirs, or in the machine's own machines/<KEY>.config-dirs, gets exactly what
+# ~/.claude gets (CLAUDE.md, agents, skills, the managed settings), checked the same way, and
+# nothing else in it is touched.
 #
 # The overlay is the one a fixture ai/secrets/machine.local.psd1 lists, and RIG_ROOT points at an
 # empty directory so the real rig checkout stays out of it. HOME has a space in it, as a Windows
@@ -167,5 +168,69 @@ install
 set -- "$home/.claude"/settings.json.backup.*
 assert_eq "~/.claude named again gets one settings backup" "1" "$#"
 assert_eq "and it holds the settings as they were" '{ "model": "opus" }' "$(cat "$1")"
+
+# --- a machine's own folders ---------------------------------------------------------------------
+# An overlay's machines/<KEY>.config-dirs names folders for the one machine whose key is KEY:
+# COMPUTERNAME on Windows; on a Mac the HostName, else the LocalHostName, uppercased up to its first
+# dot. scutil is a stub, as in macos-setup.test.sh: LocalHostName is STUB_HOSTNAME, and HostName is
+# STUB_HOST_NAME, unset by default.
+stubs="$work/stubs"
+mkdir -p "$stubs" "$overlay/machines"
+printf '#!/bin/sh\ncase "$*" in\n  "--get LocalHostName") [ -n "${STUB_HOSTNAME:-}" ] && echo "$STUB_HOSTNAME" ;;\n  "--get HostName") [ -n "${STUB_HOST_NAME:-}" ] && echo "$STUB_HOST_NAME" ;;\nesac\n' > "$stubs/scutil"
+chmod +x "$stubs/scutil"
+PATH="$stubs:$PATH"; export PATH
+printf '~/.claude-mac\n' > "$overlay/machines/MACBOOK.config-dirs"
+printf '~/.claude-pc\r\n' > "$overlay/machines/ZENBOOK.config-dirs"
+# on_mac <LocalHostName> <HostName> <command>, on_windows <COMPUTERNAME> <command>
+on_mac()     { (unset COMPUTERNAME; STUB_HOSTNAME="$1"; STUB_HOST_NAME="$2"; export STUB_HOSTNAME STUB_HOST_NAME; shift 2; "$@"); }
+on_windows() { (COMPUTERNAME="$1"; export COMPUTERNAME; shift; "$@"); }
+
+fresh_home
+rm -f "$overlay/ai/claude/config-dirs"
+on_mac macbook "" install
+assert_eq "a Mac gets the folders its machine file names" "y" "$(is_link "$home/.claude-mac/CLAUDE.md")"
+assert_eq "and not another machine's" "n" "$(exists "$home/.claude-pc")"
+out="$(on_mac macbook "" check)"; rc=$?
+assert_eq "and --check is clean with them in place" "0" "$rc"
+rm "$home/.claude-mac/CLAUDE.md"
+out="$(on_mac macbook "" check)"; rc=$?
+assert_eq "--check fails on a link missing from a machine's folder" "1" "$rc"
+
+fresh_home
+on_windows ZENBOOK install
+assert_eq "a Windows machine gets the folders its COMPUTERNAME's file names" "y" "$(is_link "$home/.claude-pc/CLAUDE.md")"
+assert_eq "and not another machine's" "n" "$(exists "$home/.claude-mac")"
+
+# Asked of machine_key itself: on a case-insensitive file system, as on both CI runners, a
+# lowercase key would find the uppercase file anyway.
+key() { sh -c '. "$1/ai/helpers/overlays.sh"; machine_key' _ "$repo"; }
+assert_eq "the machine key is uppercased on Windows" "ZENBOOK" "$(on_windows zenbook key)"
+assert_eq "and on a Mac" "MACBOOK" "$(on_mac macbook-2 macbook.local key)"
+
+fresh_home
+on_mac macbook-2 macbook.local install
+assert_eq "the HostName, up to its first dot, names the machine over a LocalHostName Bonjour renamed" "y" "$(is_link "$home/.claude-mac/CLAUDE.md")"
+
+fresh_home
+out="$(on_mac "" "" run)"; rc=$?
+assert_eq "a Mac with no name installs" "0" "$rc"
+assert_eq "with no machine's folders" "n" "$(exists "$home/.claude-mac")"
+
+fresh_home
+config '~/.claude-mac\n'
+mkdir -p "$home/.claude-mac"
+printf '{ "model": "opus" }\n' > "$home/.claude-mac/settings.json"
+on_mac macbook "" install
+assert_eq "a folder the overlay and the machine file both name gets the overlay's links" "y" "$(is_link "$home/.claude-mac/CLAUDE.md")"
+set -- "$home/.claude-mac"/settings.json.backup.*
+assert_eq "and is set up once: one settings backup" "1" "$#"
+
+fresh_home
+rm -f "$overlay/ai/claude/config-dirs"
+printf '.claude-rel\n' > "$overlay/machines/MACBOOK.config-dirs"
+out="$(on_mac macbook "" run)"
+assert_eq "a relative path in a machine file is warned about, naming the file" "y" "$(says "$out" "machines/MACBOOK.config-dirs: .claude-rel is not an absolute path")"
+out="$(on_mac macbook "" check)"; rc=$?
+assert_eq "and --check fails on it" "1" "$rc"
 
 assert_summary "install.sh extra Claude config folders"
