@@ -1,10 +1,10 @@
 #!/bin/sh
 
 # macOS's /bin/sh is bash 3.2, which reads the bytes of a non-ASCII character
-# straight after a variable name as part of the name: "$REPO…" expands an
-# unset variable and prints the rest of the ellipsis as mojibake. "${REPO}…"
-# is read right, so the scripts brace a name that a non-ASCII character
-# follows.
+# straight after a variable name as part of the name: $REPO followed by an
+# ellipsis expands an unset variable and prints the rest of the ellipsis as
+# mojibake. Braced, as ${REPO}, it is read right, so the scripts brace a name
+# that a non-ASCII character follows.
 #
 # Only our scripts: the vendored skills under ai/skills are left alone.
 
