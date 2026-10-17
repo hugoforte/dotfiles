@@ -19,6 +19,7 @@
 #                             (docs/adr/0008-a-brewfile-per-overlay.md); each path and checksum
 #                             is kept in ~/Library/Application Support/dotfiles/brewfiles.cksum
 #                             once every bundle succeeded, for --brew-if-changed
+#   node                      checked for, since the agent-guard hook needs it; not installed
 #   ai/install.sh             run, or run with --check
 #
 # Idempotent. A real file where a link goes is backed up first (docs/adr/0003).
@@ -153,7 +154,7 @@ fi
 
 # --- Brewfiles -----------------------------------------------------------------------------------
 
-# Before ai/install.sh, whose settings merge needs the jq a Brewfile installs.
+# Before ai/install.sh, whose settings merge needs jq, should bootstrap not have installed it.
 brewfiles="$(while IFS= read -r overlay; do
     [ -n "$overlay" ] && [ -f "$overlay/macos/Brewfile" ] && printf '%s\n' "$overlay/macos/Brewfile"
 done <<EOF
@@ -219,6 +220,20 @@ EOF
 if [ "$MODE" = "install" ] && [ -n "$brewfiles" ] && [ "$bundle_failed" = "false" ]; then
     mkdir -p "$(dirname "$brew_stamp_file")"
     printf '%s\n' "$brew_stamp" > "$brew_stamp_file"
+fi
+
+# --- node ----------------------------------------------------------------------------------------
+
+# After the Brewfiles, which may install it. The hooks ai/install.sh merges into Claude Code's
+# settings run node, and agent-guard's blocks every Bash call when node cannot start.
+if command -v node > /dev/null 2>&1; then
+    success "node at $(command -v node)"
+elif [ "$MODE" = "check" ]; then
+    warning "node not found, so the agent-guard hook blocks every Bash call; brew install node"
+    CHECK_FAILED=1
+else
+    error "node not found, so the agent-guard hook blocks every Bash call; brew install node, then run this again"
+    FAILED=1
 fi
 
 # --- AI tooling ----------------------------------------------------------------------------------

@@ -76,7 +76,7 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/hugoforte/dotfiles/main/ma
     bootstrap --overlays <owner>/<private-repo> --name <NAME>
 ```
 
-`macos/bootstrap.sh` asks for the password once, and signs `gh` in through the browser if it is not signed in. Then it does the steps below in order: it names the Mac, installs Homebrew (with the Xcode Command Line Tools) and `gh`, clones this repo and the overlay repo into `~/source` (`--dir` for elsewhere), and writes `ai/secrets/machine.local.psd1` listing every overlay in the repo (`--only` for some). It then runs `setup.sh`, the sync agent, each overlay's own `macos/bootstrap.sh`, and the secrets deploy, and ends with the check. It is safe to re-run. By hand, the steps are:
+`macos/bootstrap.sh` asks for the password once, and signs `gh` in through the browser if it is not signed in. Then it does the steps below in order: it names the Mac, installs Homebrew (with the Xcode Command Line Tools), `gh`, `jq` and `node`, clones this repo and the overlay repo into `~/source` (`--dir` for elsewhere), and writes `ai/secrets/machine.local.psd1` listing every overlay in the repo (`--only` for some). It then runs `setup.sh`, the sync agent, each overlay's own `macos/bootstrap.sh`, and the secrets deploy, and ends with the check. It is safe to re-run. By hand, the steps are:
 
 1. Name the Mac. Its files in an overlay's `machines/` are found by its `HostName` (else its `LocalHostName`), uppercased:
 
@@ -86,7 +86,7 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/hugoforte/dotfiles/main/ma
    sudo scutil --set HostName <NAME>
    ```
 
-2. Install the Xcode Command Line Tools (`xcode-select --install`) and [Homebrew](https://brew.sh), then `brew install gh` and `gh auth login`.
+2. Install the Xcode Command Line Tools (`xcode-select --install`) and [Homebrew](https://brew.sh), then `brew install gh jq node` and `gh auth login`. The `agent-guard` hook needs `node`, and `macos/setup.sh` fails without it.
 3. Clone this repo and each overlay repo, for example under `~/source`, and list the overlays in `ai/secrets/machine.local.psd1` (copy the example; the paths are POSIX paths).
 4. Run the setup, and check it:
 

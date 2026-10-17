@@ -224,6 +224,21 @@ out="$(check)"; rc=$?
 assert_eq "and --check from the physical path is clean" "0" "$rc"
 rm "$work/via-link"
 
+# --- node ------------------------------------------------------------------------------------
+
+# PATH without every directory that holds a node, so node cannot be found.
+no_node_path="$(printf '%s' "$PATH" | tr ':' '\n' | while IFS= read -r dir; do
+    [ -n "$dir" ] && [ ! -x "$dir/node" ] && [ ! -x "$dir/node.exe" ] && printf '%s:' "$dir"
+done)"
+
+out="$(PATH="$no_node_path" run)"; rc=$?
+assert_eq "install without node fails" "1" "$rc"
+assert_eq "and says how to install it" "y" "$(says "$out" "node not found, so the agent-guard hook blocks every Bash call; brew install node")"
+out="$(PATH="$no_node_path" check)"; rc=$?
+assert_eq "--check without node fails" "1" "$rc"
+assert_eq "and names it" "y" "$(says "$out" "node not found")"
+install
+
 # --- refusals --------------------------------------------------------------------------------
 
 out="$(run --check extra)"; rc=$?

@@ -4,8 +4,9 @@
 # writes machine.local.psd1, runs setup, the sync agent and each overlay's own bootstrap in that
 # order, and a second run clones and writes nothing.
 #
-# It runs on any OS, offline. uname, scutil, sudo, brew and gh are stubs on PATH: gh clones with
-# plain git, from fixture repos on disk. The cloned dotfiles' macos/ scripts are stubs that log.
+# It runs on any OS, offline. uname, scutil, sudo, brew, gh, jq and node are stubs on PATH: gh
+# clones with plain git, from fixture repos on disk, and brew logs what it installs. The cloned
+# dotfiles' macos/ scripts are stubs that log.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -51,7 +52,10 @@ printf '#!/bin/sh\ncase "$1" in\n  --get) cat "%s" 2>/dev/null ;;\n  --set) echo
 # sudo -v asks for a password, so fails here, while $work/nopasswd exists: as real sudo does when
 # the user's rule says NOPASSWD but another rule matching them does not.
 printf '#!/bin/sh\ncase "$1" in\n  -v) [ ! -e "%s" ] ;;\n  -n) exit 0 ;;\n  *) exec "$@" ;;\nesac\n' "$work/nopasswd" > "$stubs/sudo"
-printf '#!/bin/sh\ncase "$1" in --prefix) echo /stub ;; esac\nexit 0\n' > "$stubs/brew"
+printf '#!/bin/sh\ncase "$1" in --prefix) echo /stub ;; install) echo "brew $*" >> "%s" ;; esac\nexit 0\n' \
+    "$log" > "$stubs/brew"
+printf '#!/bin/sh\nexit 0\n' > "$stubs/jq"
+printf '#!/bin/sh\nexit 0\n' > "$stubs/node"
 printf '#!/bin/sh\ncase "$1 $2" in\n  "auth status") exit 0 ;;\n  "repo clone") echo "clone $3" >> "%s"; exec git clone --quiet "$3" "$4" ;;\nesac\nexit 1\n' \
     "$log" > "$stubs/gh"
 chmod +x "$stubs"/*
@@ -80,6 +84,7 @@ assert_eq "it clones dotfiles and the overlay repo" \
 assert_eq "it lists every overlay in the repo, with the folder as the search root" \
     "$(printf "    SearchRoots = @('%s')\n    Overlays = @(\n        '%s/private/company'\n        '%s/private/personal'\n    )" "$src" "$src" "$src")" \
     "$(sed -n '/SearchRoots/,/^    )/p' "$src/dotfiles/ai/secrets/machine.local.psd1")"
+assert_eq "it installs none of gh, jq and node when each is on PATH" "" "$(grep '^brew ' "$log")"
 assert_eq "it runs setup, the sync agent and the overlay's bootstrap, in order, then deploys and checks" \
     "$(printf 'setup.sh \ninstall-sync-agent.sh \npersonal bootstrap\ndeploy-secrets.sh \nsetup.sh --check')" \
     "$(grep -v '^clone \|^scutil ' "$log")"
@@ -102,6 +107,20 @@ rm -rf "$src"
 out="$(run --overlays "$fixture_overlays" --only missing --dir "$src")"; rc=$?
 assert_eq "--only with an overlay the repo lacks fails" "1" "$rc"
 assert_eq "... and names it" "y" "$(says "$out" "has no overlay named missing")"
+
+# PATH without every directory that holds a node, the stub's included, so node cannot be found.
+rm "$stubs/node"
+no_node_path="$(printf '%s' "$PATH" | tr ':' '\n' | while IFS= read -r dir; do
+    [ -n "$dir" ] && [ ! -x "$dir/node" ] && [ ! -x "$dir/node.exe" ] && printf '%s:' "$dir"
+done)"
+: > "$log"
+out="$(PATH="$no_node_path" run --overlays "$fixture_overlays" --dir "$src")"; rc=$?
+assert_eq "a Mac without node succeeds" "0" "$rc"
+assert_eq "... and has brew install node, before setup runs" \
+    "$(printf 'brew install node\nsetup.sh ')" \
+    "$(grep '^brew \|^setup.sh' "$log" | head -2)"
+printf '#!/bin/sh\nexit 0\n' > "$stubs/node"
+chmod +x "$stubs/node"
 
 touch "$work/nopasswd"
 rm -rf "$src"
