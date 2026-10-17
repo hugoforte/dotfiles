@@ -2,14 +2,18 @@
 
 ## Environment
 
-- Windows 11. PowerShell 5.1 is the primary shell; Git Bash is available for POSIX scripts.
+- Machines run Windows, macOS or Linux. Check which before reaching for a shell-specific command; on macOS and Linux the shell is zsh or bash.
 - Prefer `gh` for GitHub operations; never the GitHub MCP tools.
 - Global agent config lives in `~/.claude`, symlinked from the `dotfiles` repo. Edit the repo, not the symlink target.
 - Rules that hold in every repo belong here, not in a project's auto-memory: memory is kept per starting folder, so a rule saved from one folder is missing in a session started in another.
-- Write files and scripts with Write and edit them with Edit, then run them. Never write a file or a script through a heredoc, or edit one in place with `perl -i` or `sed -i`: quotes and backslashes break on the way through Git Bash. The `agent-guard` hook refuses those commands in the Bash tool.
-- Git Bash's `/tmp` is not the `/tmp` that Windows-native node, python and gh see. Hand them Windows paths (`cygpath -w`).
+- Write files and scripts with Write and edit them with Edit, then run them. Never write a file or a script through a heredoc, or edit one in place with `perl -i` or `sed -i`: quotes and backslashes break on the way through the shell, and Write and Edit leave a change that can be reviewed. The `agent-guard` hook refuses those commands in the Bash tool on every machine.
 - Wait for CI with `gh pr checks <n> --watch` run in the background, never `sleep`.
 - "Continue from where you left off" after a crash, a usage limit or an API error means resume the unfinished task.
+
+### On Windows
+
+- Windows 11. PowerShell 5.1 is the primary shell; Git Bash is available for POSIX scripts.
+- Git Bash's `/tmp` is not the `/tmp` that Windows-native node, python and gh see. Hand them Windows paths (`cygpath -w`).
 
 ## Acting outside the work
 
@@ -117,7 +121,7 @@ Never post PR review comments without explicit approval. When replying to an exi
 
 - Consistent heading levels, blank lines around headings and code blocks, one list marker style, no trailing whitespace.
 - Never hard-wrap lines when editing markdown; preserve the existing line structure.
-- Run `md-lint <file>` on edited markdown files. It is a command in the dotfiles `bin/`, on PATH in every shell, that wraps `markdownlint-cli2` and supplies the dotfiles default rules; a repo overrides them by shipping its own `.markdownlint-cli2.jsonc`. `markdownlint-cli2` arrives via `powershell/install-tools.ps1`, and `bin/` reaches PATH via `setup.ps1` or the sync task.
+- Run `md-lint <file>` on edited markdown files. It is a command in the dotfiles `bin/`, on PATH in every shell, that wraps `markdownlint-cli2` and supplies the dotfiles default rules; a repo overrides them by shipping its own `.markdownlint-cli2.jsonc`. On Windows, `markdownlint-cli2` arrives via `powershell/install-tools.ps1`, and `bin/` reaches PATH via `setup.ps1` or the sync task. On a Mac, `markdownlint-cli2` arrives via Homebrew from the overlay's Brewfile, and `bin/` reaches PATH via `macos/zshrc`.
 
 ## Shell scripts
 
