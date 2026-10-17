@@ -121,7 +121,7 @@ Never post PR review comments without explicit approval. When replying to an exi
 
 - Consistent heading levels, blank lines around headings and code blocks, one list marker style, no trailing whitespace.
 - Never hard-wrap lines when editing markdown; preserve the existing line structure.
-- Run `md-lint <file>` on edited markdown files. It is a command in the dotfiles `bin/`, on PATH in every shell, that wraps `markdownlint-cli2` and supplies the dotfiles default rules; a repo overrides them by shipping its own `.markdownlint-cli2.jsonc`. On Windows, `markdownlint-cli2` arrives via `powershell/install-tools.ps1`, and `bin/` reaches PATH via `setup.ps1` or the sync task. On a Mac, `markdownlint-cli2` arrives via Homebrew from the overlay's Brewfile, and `bin/` reaches PATH via `macos/zshrc`.
+- Run `md-lint <file>` on edited markdown files. It is a command in the dotfiles `bin/`, on PATH in every shell on Windows and in zsh on a Mac, that wraps `markdownlint-cli2` and supplies the dotfiles default rules; a repo overrides them by shipping its own `.markdownlint-cli2.jsonc`. On Windows, `markdownlint-cli2` arrives via `powershell/install-tools.ps1`, and `bin/` reaches PATH via `setup.ps1` or the sync task. On a Mac, `markdownlint-cli2` arrives via Homebrew from the overlay's Brewfile, and `bin/` reaches PATH via `macos/zshrc`.
 
 ## Shell scripts
 
