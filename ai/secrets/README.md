@@ -34,7 +34,7 @@ Safety properties of the deploy script:
 
 ## Secrets in an overlay
 
-Everything below works the same inside an overlay, with two differences: run the commands from the overlay directory so SOPS picks up the overlay's own `.sops.yaml` (its recipients may differ from this repo's), and audit with `check-encrypted ai/secrets`, the `bin/` command on PATH that runs `check-encrypted.sh` from wherever dotfiles is checked out. Commit and push in the overlay's repo, not this one.
+Everything below works the same inside an overlay, with two differences: run the commands from the overlay directory so SOPS picks up the overlay's own `.sops.yaml` (this repo holds no secrets, so it ships no `.sops.yaml` of its own), and audit with `check-encrypted ai/secrets`, the `bin/` command on PATH that runs `check-encrypted.sh` from wherever dotfiles is checked out. Commit and push in the overlay's repo, not this one.
 
 ## Commands
 

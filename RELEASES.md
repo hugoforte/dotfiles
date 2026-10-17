@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The skills whose text named people or a host ship from overlays, not from this repo (#66). The three home media-server skills move to the personal overlay and `hf-assign-devs-to-pr`, with its team roster, to the employer overlay, unchanged; `ai/install.sh` links them from there as overlay skills, so a machine listing those overlays keeps them. `.sops.yaml` goes too: this repo tracks no encrypted file, so it governed nothing and only named machines and their keys. `hf-t3-handoff`'s example machine name is a neutral one. `ai/README.md`'s `hf-*` table now lists the four skills it counts
+
 - A Mac set up from dotfiles alone has `node`, so the `agent-guard` hook can start (#71). The hook runs `node` and blocks every Bash call when it cannot, but `node` came only from an overlay's Brewfile or nvm. `macos/bootstrap.sh` now installs `jq` and `node` with `gh` when they are missing. `macos/setup.sh` fails, and `--check` reports drift, when no `node` is found after the Brewfiles, and says to `brew install node`. ADR 0008 says why these come from dotfiles and not an overlay. `tests/macos-bootstrap.test.sh` and `tests/macos-setup.test.sh` cover it
 
 - A route folder can belong to one machine. An overlay names it in `machines/<KEY>.config-dirs`, in the same format as `ai/claude/config-dirs`, and `ai/install.sh` reads that file only on the machine whose key is `KEY`. On Windows the key is `COMPUTERNAME`; on a Mac it is the `HostName`, else the `LocalHostName`, uppercased, as for `machines/<KEY>.Brewfile`. Before this, a folder named by an overlay was set up on every machine using that overlay. `macos/setup.sh` now gets the key from the same `machine_key` helper in `ai/helpers/overlays.sh`. `tests/install-claude-dirs.test.sh` covers it

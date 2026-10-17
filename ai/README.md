@@ -52,14 +52,14 @@ A skill or agent deleted from the repo leaves a dangling symlink on every machin
 | `matt-*` | 25 | [mattpocock/skills](https://github.com/mattpocock/skills), engineering + productivity sets, MIT. Pinned commit in `licenses/mattpocock-skills-VERSION`. |
 | `hf-*` | 4 | Own. One per row below. |
 
-My own skills carry an `hf-` prefix, so a skill list says at a glance which ones this repo wrote and which came from somewhere else.
+My own skills carry an `hf-` prefix, so a skill list says at a glance which ones this repo wrote and which came from somewhere else. A skill whose text names a person, a host or anything else private ships from an overlay instead (the "Overlay skills" row above), so a machine may list more `hf-*` skills than these.
 
 | Skill | What it does |
 |---|---|
 | `hf-adversarial-review` | Sets a subagent on a PR to find what is wrong with it, verifies the findings, fixes the real ones and pushes. Takes a rig work's PRs, or a single PR outside one. |
-| `hf-assign-devs-to-pr` | Asks which of the team should take a PR, then requests their review and assigns them via `gh`. Holds the roster of names and GitHub handles. |
 | `hf-resolve-pr-comments` | Works a PR's review comments to zero: action, reply, resolve, then makes sure the PR is mergeable with its base, merging a moved base in. |
 | `hf-dotfiles-secrets` | The procedures for the encrypted skill secrets under `secrets/`. |
+| `hf-t3-handoff` | Hands the current T3 Code thread over to a fresh one, on this computer or another, in another project or on another provider instance, and archives this one. |
 
 Matt's skills are prefixed `matt-` (folder and `name:`), and their `/slash` cross-references were rewritten to match, so `/matt-triage`, `/matt-grill-with-docs`, and so on. Backticked mentions like "the `research` skill" were left as-is because the same words also name wayfinder ticket types.
 
