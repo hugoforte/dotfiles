@@ -7,7 +7,8 @@
 # sent the show's second word as its query. `${1}` is left alone, so the
 # helpers write that.
 #
-# Only the hf-* skills are ours; the rest of ai/skills is vendored.
+# Only the hf-* skills are ours; the rest of ai/skills is vendored. An overlay
+# skill is not checked here, since CI has no overlays.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"

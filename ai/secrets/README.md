@@ -52,7 +52,7 @@ sh macos/deploy-secrets.sh --check        # report only
 
 ## Add or update a secret file
 
-Run from the repo root in Git Bash. SOPS matches the creation rule on the output path, hence `--filename-override`. The `tr` strips carriage returns, which the dotenv parser rejects.
+Run in Git Bash from the root of the overlay that holds the secret, whose `.sops.yaml` has the creation rule. This repo ships no `.sops.yaml`, so a secret kept here needs one added first. SOPS matches the creation rule on the output path, hence `--filename-override`. The `tr` strips carriage returns, which the dotenv parser rejects.
 
 ```sh
 tr -d '\r' < /path/to/plain/.secrets.env > /tmp/plain.env
