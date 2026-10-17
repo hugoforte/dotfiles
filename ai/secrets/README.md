@@ -34,7 +34,7 @@ Safety properties of the deploy script:
 
 ## Secrets in an overlay
 
-Everything below works the same inside an overlay, with two differences: run the commands from the overlay directory so SOPS picks up the overlay's own `.sops.yaml` (its recipients may differ from this repo's), and audit with `check-encrypted ai/secrets`, the `bin/` command on PATH that runs `check-encrypted.sh` from wherever dotfiles is checked out. Commit and push in the overlay's repo, not this one.
+Everything below works the same inside an overlay, with two differences: run the commands from the overlay directory so SOPS picks up the overlay's own `.sops.yaml` (this repo holds no secrets, so it ships no `.sops.yaml` of its own), and audit with `check-encrypted ai/secrets`, the `bin/` command on PATH that runs `check-encrypted.sh` from wherever dotfiles is checked out. Commit and push in the overlay's repo, not this one.
 
 ## Commands
 
@@ -52,7 +52,7 @@ sh macos/deploy-secrets.sh --check        # report only
 
 ## Add or update a secret file
 
-Run from the repo root in Git Bash. SOPS matches the creation rule on the output path, hence `--filename-override`. The `tr` strips carriage returns, which the dotenv parser rejects.
+Run in Git Bash from the root of the overlay that holds the secret, whose `.sops.yaml` has the creation rule. This repo ships no `.sops.yaml`, so a secret kept here needs one added first. SOPS matches the creation rule on the output path, hence `--filename-override`. The `tr` strips carriage returns, which the dotenv parser rejects.
 
 ```sh
 tr -d '\r' < /path/to/plain/.secrets.env > /tmp/plain.env
