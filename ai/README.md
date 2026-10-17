@@ -67,11 +67,11 @@ A few references were edited by hand. Two name a skill that is not vendored: `/h
 
 ### Adding a skill
 
-1. Put the folder under `ai/skills/<name>/` with a `SKILL.md` whose `name:` matches the folder. Own skills take an `hf-` prefix.
+1. Put the folder under `ai/skills/<name>/` with a `SKILL.md` whose `name:` matches the folder. Own skills take an `hf-` prefix. This repo is public: a skill whose text names a person, a host or anything else private goes under an overlay's `ai/skills/<name>/` instead, and is committed in the overlay's repo.
 2. `./ai/install.sh --skills-only`
 3. Commit and push. Other machines pick it up on their next sync.
 
-To adopt a skill that already lives in `~/.claude/skills/<name>`: move the folder into `ai/skills/` and run the installer.
+To adopt a skill that already lives in `~/.claude/skills/<name>`: move the folder into `ai/skills/`, or an overlay's if it names anything private, and run the installer.
 
 ### Updating Matt's skills
 
