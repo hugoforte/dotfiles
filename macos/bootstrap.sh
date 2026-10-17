@@ -12,8 +12,8 @@
 #   --name <KEY>             the Mac's name; its machines/<KEY>.Brewfile is found by it
 #   --dir <folder>           where dotfiles and the overlay repo go (default ~/source)
 #
-# In order: name the Mac, install Homebrew (with the Xcode command-line tools) and gh, sign gh in,
-# clone or pull dotfiles and the overlay repo, write ai/secrets/machine.local.psd1, run
+# In order: name the Mac, install Homebrew (with the Xcode command-line tools), gh, jq and node,
+# sign gh in, clone or pull dotfiles and the overlay repo, write ai/secrets/machine.local.psd1, run
 # macos/setup.sh and macos/install-sync-agent.sh, then each overlay's own macos/bootstrap.sh, and
 # deploy the skill secrets when this Mac can decrypt them. It asks for the password once, and gh
 # signs in through the browser when it is not signed in; nothing else waits for a person. Safe to
@@ -74,7 +74,7 @@ if [ -n "$NAME" ]; then
     fi
 fi
 
-# --- Homebrew and gh ---------------------------------------------------------------------------------
+# --- Homebrew, gh, jq and node -----------------------------------------------------------------------
 
 for brew in "$(command -v brew 2> /dev/null)" /opt/homebrew/bin/brew /usr/local/bin/brew; do
     [ -n "$brew" ] && [ -x "$brew" ] && break
@@ -89,7 +89,11 @@ fi
 eval "$("$brew" shellenv)"
 ok "Homebrew at $(brew --prefix)"
 
-command -v gh > /dev/null 2>&1 || brew install gh || die "brew install gh failed"
+# dotfiles' own prerequisites, so no overlay's Brewfile has to carry them: gh clones, jq merges
+# Claude Code's settings, and node runs the hooks those settings hold (ADR 0008).
+for formula in gh jq node; do
+    command -v "$formula" > /dev/null 2>&1 || brew install "$formula" || die "brew install $formula failed"
+done
 if gh auth status > /dev/null 2>&1; then
     ok "gh is signed in"
 else

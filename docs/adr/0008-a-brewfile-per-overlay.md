@@ -25,3 +25,9 @@ Amended: the `HostName` comes first, because Bonjour renames the `LocalHostName`
 another Mac on the network holds the name (`MACBOOK` becomes `MACBOOK-2`), as the old Mac does
 while its replacement is set up; a key read from it then names no Brewfile, silently. Nothing
 renames the `HostName` but a person, and `macos/bootstrap.sh` sets it with the other two.
+
+Amended: what dotfiles itself needs is not a private choice, so no overlay has to carry it.
+`macos/bootstrap.sh` installs `gh`, `jq` and `node` with `brew install` when each is missing:
+`gh` clones, `jq` merges Claude Code's settings, and `node` runs the hooks those settings hold,
+whose `agent-guard` blocks every Bash call when it cannot start. `macos/setup.sh` fails, and
+`--check` reports drift, when no `node` is found after the Brewfiles.
