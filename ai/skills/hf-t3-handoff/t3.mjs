@@ -7,7 +7,7 @@
 // With --project or --provider, it starts here in the project for that folder,
 // or on that provider instance with the same model.
 //
-//   node t3.mjs check [--to <computer> | [--project <folder>] [--provider <instance-id>]]
+//   node t3.mjs check [--to <computer> | [--project <folder>] [--provider <instance-id>]] [--thread <id>]
 //   node t3.mjs continue --prompt-file <path> [--to <computer> | [--project <folder>] [--provider <instance-id>]]
 //                        [--key <key> --description <text>] [--thread <id>] [--dry-run]
 //   node t3.mjs token [--ttl <ttl>]
@@ -39,7 +39,7 @@ const RPC_TIMEOUT_MS = 30_000;
 const PROTOCOL = 2;
 const PROTOCOL_FIX = `T3 Code there may not speak orchestration protocol ${PROTOCOL}: update T3 Code on that computer. If it is current, its API has changed and t3.mjs needs updating.`;
 const USAGE = [
-    'usage: t3.mjs check [--to <computer> | [--project <folder>] [--provider <instance-id>]]',
+    'usage: t3.mjs check [--to <computer> | [--project <folder>] [--provider <instance-id>]] [--thread <id>]',
     '       t3.mjs continue --prompt-file <path> [--to <computer> | [--project <folder>] [--provider <instance-id>]]',
     '                       [--key <key> --description <text>] [--thread <id>] [--dry-run]',
     '       t3.mjs token [--ttl <ttl>]',
@@ -227,7 +227,7 @@ export function modelSelectionOn(selection, provider) {
     return provider ? { ...selection, instanceId: provider.id } : selection;
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
     const [command, ...rest] = argv;
     const flags = { dryRun: false };
     for (let i = 0; i < rest.length; i++) {
@@ -240,7 +240,7 @@ function parseArgs(argv) {
             const value = rest[++i]?.trim();
             if (!value || value.startsWith('-')) throw new Problem(`${arg} needs a value`, USAGE);
             // T3's command line runs through cmd on Windows, so the ttl is kept to what cannot be a command.
-            if (arg === '--ttl' && !/^\d+[smhd]$/.test(value)) throw new Problem(`--ttl must be a count and a unit such as 365d, not ${value}`, USAGE);
+            if (arg === '--ttl' && !/^[1-9]\d*\s*[a-z]+$/i.test(value)) throw new Problem(`--ttl must be a count and a unit such as 365d, not ${value}`, USAGE);
             flags[arg.slice(2)] = value;
         }
         else if (arg === '--key') flags.key = rest[++i]?.trim();
@@ -272,10 +272,9 @@ async function probe(origin, problem, fix) {
     } catch {
         throw new Problem(problem, fix);
     }
-    let environment;
-    try {
-        environment = await response.json();
-    } catch {
+    const environment = response.ok ? await response.json().catch(() => undefined) : undefined;
+    // Something else answering, such as a proxy's error page, is no description of a T3 server.
+    if (typeof environment?.serverVersion !== 'string') {
         throw new Problem(`T3 Code at ${origin} did not describe itself (${response.status})`, PROTOCOL_FIX);
     }
     speaksProtocol(origin, environment);
@@ -346,9 +345,9 @@ function issueSession(ttl = '10m') {
     const options = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] };
     let out;
     try {
-        // Windows runs a .cmd only through its shell, given one command line with the path quoted.
+        // Windows runs a .cmd only through its shell, given one command line with each part quoted.
         out = process.platform === 'win32'
-            ? execSync(`"${cli}" ${args.join(' ')}`, options)
+            ? execSync([cli, ...args].map((part) => `"${part}"`).join(' '), options)
             : execFileSync(cli, args, options);
     } catch (error) {
         // error.message opens with the long command line, so prefer what the command said; when it never
@@ -363,17 +362,60 @@ function issueSession(ttl = '10m') {
 }
 
 /**
+ * One Effect RPC call over `socket`, a WebSocket to the server at `origin`, sent
+ * once it opens: the call's value, or a Problem when the server fails it,
+ * cannot take it, closes first or does not answer within `timeoutMs`.
+ */
+export function rpcOver(socket, origin, method, payload, timeoutMs = RPC_TIMEOUT_MS) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Problem(`${method} on ${origin} had no answer after ${timeoutMs / 1000} s`)), timeoutMs);
+        const settle = (settleWith) => (value) => {
+            clearTimeout(timer);
+            settleWith(value);
+        };
+        const fail = settle(reject);
+        socket.addEventListener('open', () => {
+            socket.send(JSON.stringify({ _tag: 'Request', id: '1', tag: method, payload, headers: [] }));
+        });
+        socket.addEventListener('message', (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                // A Defect or a protocol error is the server unable to take the request at all.
+                if (message._tag === 'Defect' || message._tag === 'ClientProtocolError') {
+                    throw new Problem(`${origin} could not take ${method}: ${JSON.stringify(message).slice(0, 500)}`, PROTOCOL_FIX);
+                }
+                if (message._tag !== 'Exit' || String(message.requestId) !== '1') return;
+                settle(resolve)(rpcValue(method, message.exit));
+            } catch (error) {
+                fail(error instanceof Problem ? error : new Problem(`${origin} answered ${method} with a frame that is not JSON: ${String(event.data).slice(0, 200)}`));
+            }
+        });
+        // Settling twice is harmless: a close after the answer changes nothing.
+        socket.addEventListener('error', () => fail(new Problem(`the WebSocket to ${origin} failed during ${method}`)));
+        socket.addEventListener('close', ({ code, reason }) => {
+            fail(new Problem(`${origin} closed the WebSocket during ${method} (${code}${reason ? `: ${reason}` : ''})`));
+        });
+    });
+}
+
+/**
  * One T3 Code server: `get` reads over HTTP, `rpc` calls a method over its
  * WebSocket. `refusedFix` is what to do when it turns the token down.
  */
 function api(origin, token, refusedFix) {
     const request = async (method, path) => {
-        const response = await fetch(origin + path, {
-            method,
-            headers: { authorization: `Bearer ${token}`, 'x-t3-orchestration-protocol': String(PROTOCOL) },
-            signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
-        });
-        const text = await response.text();
+        let response;
+        let text;
+        try {
+            response = await fetch(origin + path, {
+                method,
+                headers: { authorization: `Bearer ${token}`, 'x-t3-orchestration-protocol': String(PROTOCOL) },
+                signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+            });
+            text = await response.text();
+        } catch (error) {
+            throw new Problem(`${method} ${origin}${path} failed: ${error.message}`);
+        }
         if (!response.ok) {
             const refused = response.status === 401 || response.status === 403;
             // A server on another protocol answers 400 with nothing to say, or 426.
@@ -383,47 +425,23 @@ function api(origin, token, refusedFix) {
                 refused ? refusedFix : otherProtocol ? PROTOCOL_FIX : undefined,
             );
         }
-        return text ? JSON.parse(text) : null;
+        try {
+            return text ? JSON.parse(text) : null;
+        } catch {
+            throw new Problem(`${method} ${origin}${path} answered with something that is not JSON: ${text.slice(0, 200)}`);
+        }
     };
 
     const rpc = async (method, payload) => {
         if (typeof WebSocket === 'undefined') {
-            throw new Problem(`commanding T3 Code needs Node 22 or later, and this is ${process.version}`, 'Install Node 22.13 or later (`nvm install 22`).');
+            throw new Problem(`commanding T3 Code needs Node 22.13 or later, and this is ${process.version}`, 'Install Node 22.13 or later (`nvm install 22`).');
         }
         const { ticket } = await request('POST', '/api/auth/websocket-ticket');
         const url = new URL(`/ws?orchestrationProtocol=${PROTOCOL}&wsTicket=${encodeURIComponent(ticket)}`, origin);
         url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
         const socket = new WebSocket(url);
         try {
-            return await new Promise((resolve, reject) => {
-                const timer = setTimeout(() => reject(new Problem(`${method} on ${origin} had no answer after ${RPC_TIMEOUT_MS / 1000} s`)), RPC_TIMEOUT_MS);
-                const settle = (settleWith) => (value) => {
-                    clearTimeout(timer);
-                    settleWith(value);
-                };
-                const fail = settle(reject);
-                socket.addEventListener('open', () => {
-                    socket.send(JSON.stringify({ _tag: 'Request', id: '1', tag: method, payload, headers: [] }));
-                });
-                socket.addEventListener('message', (event) => {
-                    try {
-                        const message = JSON.parse(event.data);
-                        // A Defect or a protocol error is the server unable to take the request at all.
-                        if (message._tag === 'Defect' || message._tag === 'ClientProtocolError') {
-                            throw new Problem(`${origin} could not take ${method}: ${JSON.stringify(message).slice(0, 500)}`, PROTOCOL_FIX);
-                        }
-                        if (message._tag !== 'Exit' || String(message.requestId) !== '1') return;
-                        settle(resolve)(rpcValue(method, message.exit));
-                    } catch (error) {
-                        fail(error instanceof Problem ? error : new Problem(`${origin} answered ${method} with a frame that is not JSON: ${String(event.data).slice(0, 200)}`));
-                    }
-                });
-                // Settling twice is harmless: a close after the answer changes nothing.
-                socket.addEventListener('error', () => fail(new Problem(`the WebSocket to ${origin} failed during ${method}`)));
-                socket.addEventListener('close', ({ code, reason }) => {
-                    fail(new Problem(`${origin} closed the WebSocket during ${method} (${code}${reason ? `: ${reason}` : ''})`));
-                });
-            });
+            return await rpcOver(socket, origin, method, payload);
         } finally {
             socket.close();
         }
@@ -434,7 +452,7 @@ function api(origin, token, refusedFix) {
 
 /** A thread as T3 projects it, with its runs. */
 async function readThread(server, threadId) {
-    const { projection } = await server.get(`/api/orchestration/threads/${threadId}/bounded`);
+    const { projection } = await server.get(`/api/orchestration/threads/${encodeURIComponent(threadId)}/bounded`);
     return { ...projection.thread, runs: projection.runs };
 }
 
@@ -594,29 +612,47 @@ async function continueThread(flags) {
         return;
     }
 
-    await next.server.rpc('orchestration.launchThread', launch);
+    // From here on a thread may exist, so every failure names it and leaves the current one open.
+    const created = `"${title}" (${newId}; ${next.place})`;
+    const leftOpen = `"${current.title}" is left open`;
+    const lookFirst = 'Look for it in T3 Code before running this again, which would start another.';
+    try {
+        await next.server.rpc('orchestration.launchThread', launch);
+    } catch (error) {
+        throw new Problem(`launching ${created} failed, and it may have been created anyway: ${error.message}; ${leftOpen}`, lookFirst);
+    }
 
     const deadline = Date.now() + TURN_START_TIMEOUT_MS;
-    const started = async () => {
+    for (let lastError; ;) {
+        let runs;
         try {
-            return runStarted((await readThread(next.server, newId)).runs);
+            ({ runs } = await readThread(next.server, newId));
+            lastError = undefined;
         } catch (error) {
-            if (error instanceof Problem) error.message = `"${title}" (${newId}; ${next.place}): ${error.message}; "${current.title}" is left open`;
-            throw error;
+            // A read that fails once is no reason to give up on a thread that is starting.
+            lastError = error;
         }
-    };
-    while (!(await started())) {
+        try {
+            if (runs && runStarted(runs)) break;
+        } catch (error) {
+            throw new Problem(`${created}: ${error.message}; ${leftOpen}`);
+        }
         if (Date.now() > deadline) {
-            throw new Problem(`"${title}" (${newId}; ${next.place}) was created but its turn has not started after ${TURN_START_TIMEOUT_MS / 1000} s; "${current.title}" is left open`);
+            const last = lastError ? ` (last read: ${lastError.message})` : '';
+            throw new Problem(`${created} was launched but its run has not started after ${TURN_START_TIMEOUT_MS / 1000} s${last}; ${leftOpen}`, `It may still start, as when a setup script is slow. ${lookFirst}`);
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
-    if (rename) {
-        await dispatch(server, { type: 'thread.metadata.update', threadId: currentId, title: rename });
+    console.log(`Started ${created}.`);
+    try {
+        if (rename) await dispatch(server, { type: 'thread.metadata.update', threadId: currentId, title: rename });
+        await dispatch(server, { type: 'thread.archive', threadId: currentId });
+    } catch (error) {
+        const renamed = rename ? ` and rename it "${rename}"` : '';
+        throw new Problem(`${created} is running, but closing "${current.title}" failed: ${error.message}`, `Archive "${current.title}"${renamed} in T3 Code by hand. Do not run this again, which would start another thread.`);
     }
-    console.log(`Started "${title}" (${newId}; ${next.place}). Archiving "${archivedTitle}".`);
-    await dispatch(server, { type: 'thread.archive', threadId: currentId });
+    console.log(`Archived "${archivedTitle}".`);
 }
 
 /** Prints this computer's entry for another computer's COMPUTERS_FILE, with a token that lasts `ttl`. */

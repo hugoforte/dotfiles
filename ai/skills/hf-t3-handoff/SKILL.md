@@ -25,7 +25,7 @@ Threads of a rig work are titled `RIG - [KEY] Short description`, and each hando
 ## 0. Check the setup
 
 ```bash
-node ~/.claude/skills/hf-t3-handoff/t3.mjs check [--to <computer> | [--project <folder>] [--provider <instance-id>]]
+node ~/.claude/skills/hf-t3-handoff/t3.mjs check [--to <computer> | [--project <folder>] [--provider <instance-id>]] [--thread <id>]
 ```
 
 It checks each requirement and prints `ok` or `FAIL`. Every failure comes with the command or step that fixes it. If any line fails, show the user the output as it is, offer to run the fixes that are commands, and stop: nothing has been committed or written yet. Do not start the handoff with a requirement missing, because a handoff that cannot open its new thread leaves the user to paste the prompt by hand.
@@ -60,7 +60,7 @@ If the script fails, it prints the problem and its fix the same way `check` does
 
 ## 3. Report
 
-One or two lines: the new thread's title, the computer it is on when that is not this one, and where the handoff was saved. If the script failed, quote its error. It archives this thread only after the new one's turn has started, so a failure always leaves this thread open. Say whether the new thread was created.
+One or two lines: the new thread's title, the computer it is on when that is not this one, and where the handoff was saved. If the script failed, quote its error and its fix. It archives this thread only after the new one's run has started, so a failure before then leaves this thread open, and the error says whether the new thread may exist: never run the script again until the user has looked for it in T3 Code. A failure after "Started" means the new thread is running and this one still needs archiving by hand.
 
 ## How it works
 

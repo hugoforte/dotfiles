@@ -240,6 +240,51 @@ assert_eq "an RPC failure says the server's message" \
     'error: orchestration.launchThread failed: claudeAgent_old is disabled' \
     "$(rpc "$failed")"
 
+# frames <frame...>: prints what an RPC over a socket that answers with these frames comes to, or the
+# error. A frame is JSON, or `close` for the socket closing; the call times out after 200 ms.
+frames() {
+    # Frames are separated by newlines, since the module reads any argv[1] as its own path.
+    T3_MODULE="$module" T3_FRAMES="$(printf '%s\n' "$@")" node --input-type=module -e "
+        import { pathToFileURL } from 'node:url';
+        const t3 = await import(pathToFileURL(process.env.T3_MODULE).href);
+        const frames = process.env.T3_FRAMES.split('\n').filter(Boolean);
+        class Socket extends EventTarget {
+            send() {
+                for (const frame of frames) {
+                    if (frame === 'close') this.dispatchEvent(Object.assign(new Event('close'), { code: 1006, reason: '' }));
+                    else this.dispatchEvent(Object.assign(new Event('message'), { data: frame }));
+                }
+            }
+        }
+        const socket = new Socket();
+        const answer = t3.rpcOver(socket, 'http://here:3773', 'orchestration.launchThread', {}, 200);
+        socket.dispatchEvent(new Event('open'));
+        try {
+            console.log(JSON.stringify(await answer));
+        } catch (error) {
+            console.log('error: ' + error.message);
+        }
+    "
+}
+
+answer='{"_tag":"Exit","requestId":"1","exit":{"_tag":"Success","value":"done"}}'
+other='{"_tag":"Exit","requestId":"2","exit":{"_tag":"Success","value":"not ours"}}'
+
+assert_eq "an RPC answers with its request's exit" '"done"' "$(frames "$answer")"
+assert_eq "an exit for another request is not the answer" '"done"' "$(frames "$other" "$answer")"
+assert_eq "a socket closed before the answer fails the call" \
+    'error: http://here:3773 closed the WebSocket during orchestration.launchThread (1006)' \
+    "$(frames close)"
+assert_eq "a defect frame fails the call" \
+    'error: http://here:3773 could not take orchestration.launchThread: {"_tag":"Defect","defect":"unknown method"}' \
+    "$(frames '{"_tag":"Defect","defect":"unknown method"}')"
+assert_eq "a frame that is not JSON fails the call" \
+    'error: http://here:3773 answered orchestration.launchThread with a frame that is not JSON: oops' \
+    "$(frames oops)"
+assert_eq "a call with no answer times out" \
+    'error: orchestration.launchThread on http://here:3773 had no answer after 0.2 s' \
+    "$(frames)"
+
 # started <status...>: prints whether a thread whose runs have these statuses has started, or the error.
 started() {
     runs=""
@@ -293,6 +338,12 @@ assert_eq "--provider needs an instance id" \
 assert_eq "--ttl takes a count and a unit, which reach a shell on Windows" \
     "t3: --ttl must be a count and a unit such as 365d, not 1d & calc" \
     "$(cli token --ttl '1d & calc')"
+assert_eq "--ttl of nothing is refused" \
+    "t3: --ttl must be a count and a unit such as 365d, not 0d" \
+    "$(cli token --ttl 0d)"
+assert_eq "--ttl takes a unit in words, as T3 does" \
+    "2 weeks" \
+    "$(call "t3.parseArgs(['token', '--ttl', '2 weeks']).flags.ttl")"
 assert_eq "--project and --to do not go together" \
     "t3: --project and --provider choose on this computer, so they do not go with --to" \
     "$(cli continue --prompt-file x --to elsewhere --project .)"
