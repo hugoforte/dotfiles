@@ -2,7 +2,7 @@
 
 # Suite for ai/skills/hf-t3-handoff/t3.mjs: the parts of the T3 handoff that are
 # functions of their arguments, such as the titles, the project matching and
-# where T3 Code is installed on each platform. Everything
+# where T3 Code's command line is on each platform. Everything
 # else in that script talks to a running T3 Code server and is not run here.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -186,20 +186,135 @@ assert_eq "--provider keeps the model and its options and changes only the insta
     '{"instanceId":"claudeAgent_work","model":"claude-model","options":[{"id":"effort","value":"medium"}]}' \
     "$(call "JSON.stringify(t3.modelSelectionOn(($current).modelSelection, { id: 'claudeAgent_work' }))")"
 
-# app <platform> [T3_EXE]: prints "<exe>|<serverBin>" for that platform.
-app() {
-    call "(({ exe, serverBin }) => exe + '|' + serverBin)(t3.t3App('$1', { LOCALAPPDATA: String.raw\`C:\\Users\\me\\AppData\\Local\`, ${2:+T3_EXE: String.raw\`$2\`} }))"
+# cli_path <platform> <T3 home> [T3CODE_CLI_PATH]: prints the T3 command line t3.mjs runs.
+cli_path() {
+    call "t3.t3Cli('$1', { ${3:+T3CODE_CLI_PATH: String.raw\`$3\`} }, String.raw\`$2\`)"
 }
 
-assert_eq "on Windows T3 Code is the per-user install, its server in resources beside it" \
-    'C:\Users\me\AppData\Local\Programs\t3code\T3 Code (Alpha).exe|C:\Users\me\AppData\Local\Programs\t3code\resources\server.asar\apps\server\dist\bin.mjs' \
-    "$(app win32)"
-assert_eq "on macOS T3 Code is the app bundle, its server in the bundle's app.asar" \
-    '/Applications/T3 Code (Alpha).app/Contents/MacOS/T3 Code (Alpha)|/Applications/T3 Code (Alpha).app/Contents/Resources/app.asar/apps/server/dist/bin.mjs' \
-    "$(app darwin)"
-assert_eq "on macOS T3_EXE moves the server with it" \
-    '/Users/me/Applications/T3.app/Contents/MacOS/T3|/Users/me/Applications/T3.app/Contents/Resources/app.asar/apps/server/dist/bin.mjs' \
-    "$(app darwin /Users/me/Applications/T3.app/Contents/MacOS/T3)"
+assert_eq "on macOS the T3 command line is the launcher in T3's home" \
+    '/Users/me/.t3/bin/t3' \
+    "$(cli_path darwin /Users/me/.t3)"
+assert_eq "on Windows the launcher is a .cmd" \
+    'C:\Users\me\.t3\bin\t3.cmd' \
+    "$(cli_path win32 'C:\Users\me\.t3')"
+assert_eq "T3CODE_CLI_PATH names the launcher instead" \
+    '/opt/t3/t3' \
+    "$(cli_path darwin /Users/me/.t3 /opt/t3/t3)"
+
+# strategy <next>: prints the launch's workspace strategy as JSON.
+strategy() {
+    call "JSON.stringify(t3.workspaceStrategy($1))"
+}
+
+# Through variables, as $copy above.
+in_worktree="{branch:'feature',worktreePath:'/w/here'}"
+on_branch="{branch:'feature',worktreePath:null}"
+in_checkout="{branch:null,worktreePath:null}"
+
+assert_eq "a thread in a worktree continues in that worktree" \
+    '{"type":"existing_worktree","worktreePath":"/w/here","branch":"feature"}' \
+    "$(strategy "$in_worktree")"
+assert_eq "a thread on a branch of the project checkout continues there on that branch" \
+    '{"type":"root","branch":"feature"}' \
+    "$(strategy "$on_branch")"
+assert_eq "a thread with neither continues in the project checkout" \
+    '{"type":"root"}' \
+    "$(strategy "$in_checkout")"
+
+# rpc <exit>: prints what an RPC answer comes to, or the error.
+rpc() {
+    call "JSON.stringify(t3.rpcValue('orchestration.launchThread', $1))"
+}
+
+success="{_tag:'Success',value:{threadId:'t'}}"
+died="{_tag:'Failure',cause:[{_tag:'Die',defect:'Missing key at [\"commandId\"]'}]}"
+failed="{_tag:'Failure',cause:[{_tag:'Fail',error:{_tag:'ThreadManagementProviderInstanceDisabledError',message:'claudeAgent_old is disabled'}}]}"
+
+assert_eq "an RPC success is its value" \
+    '{"threadId":"t"}' \
+    "$(rpc "$success")"
+assert_eq "an RPC defect says what the server could not read" \
+    'error: orchestration.launchThread failed: Missing key at ["commandId"]' \
+    "$(rpc "$died")"
+assert_eq "an RPC failure says the server's message" \
+    'error: orchestration.launchThread failed: claudeAgent_old is disabled' \
+    "$(rpc "$failed")"
+
+# frames <frame...>: prints what an RPC over a socket that answers with these frames comes to, or the
+# error. A frame is JSON, or `close` for the socket closing; the call times out after 200 ms.
+frames() {
+    # Frames are separated by newlines, since the module reads any argv[1] as its own path.
+    T3_MODULE="$module" T3_FRAMES="$(printf '%s\n' "$@")" node --input-type=module -e "
+        import { pathToFileURL } from 'node:url';
+        const t3 = await import(pathToFileURL(process.env.T3_MODULE).href);
+        const frames = process.env.T3_FRAMES.split('\n').filter(Boolean);
+        class Socket extends EventTarget {
+            send() {
+                for (const frame of frames) {
+                    if (frame === 'close') this.dispatchEvent(Object.assign(new Event('close'), { code: 1006, reason: '' }));
+                    else this.dispatchEvent(Object.assign(new Event('message'), { data: frame }));
+                }
+            }
+        }
+        const socket = new Socket();
+        const answer = t3.rpcOver(socket, 'http://here:3773', 'orchestration.launchThread', {}, 200);
+        socket.dispatchEvent(new Event('open'));
+        try {
+            console.log(JSON.stringify(await answer));
+        } catch (error) {
+            console.log('error: ' + error.message);
+        }
+    "
+}
+
+answer='{"_tag":"Exit","requestId":"1","exit":{"_tag":"Success","value":"done"}}'
+other='{"_tag":"Exit","requestId":"2","exit":{"_tag":"Success","value":"not ours"}}'
+
+assert_eq "an RPC answers with its request's exit" '"done"' "$(frames "$answer")"
+assert_eq "an exit for another request is not the answer" '"done"' "$(frames "$other" "$answer")"
+assert_eq "a socket closed before the answer fails the call" \
+    'error: http://here:3773 closed the WebSocket during orchestration.launchThread (1006)' \
+    "$(frames close)"
+assert_eq "a defect frame fails the call" \
+    'error: http://here:3773 could not take orchestration.launchThread: {"_tag":"Defect","defect":"unknown method"}' \
+    "$(frames '{"_tag":"Defect","defect":"unknown method"}')"
+assert_eq "a frame that is not JSON fails the call" \
+    'error: http://here:3773 answered orchestration.launchThread with a frame that is not JSON: oops' \
+    "$(frames oops)"
+assert_eq "a call with no answer times out" \
+    'error: orchestration.launchThread on http://here:3773 had no answer after 0.2 s' \
+    "$(frames)"
+
+# started <status...>: prints whether a thread whose runs have these statuses has started, or the error.
+started() {
+    runs=""
+    for status in "$@"; do runs="$runs{status:'$status'},"; done
+    call "t3.runStarted([$runs])"
+}
+
+assert_eq "a thread with no run has not started" "false" "$(started)"
+assert_eq "a run still being prepared has not started" "false" "$(started preparing)"
+assert_eq "a run still starting has not started" "false" "$(started starting)"
+assert_eq "a running run has started" "true" "$(started running)"
+assert_eq "a run waiting for input has started" "true" "$(started waiting)"
+assert_eq "a run that completed has started" "true" "$(started completed)"
+assert_eq "the latest run is the one that counts" "false" "$(started completed preparing)"
+assert_eq "a run that failed stops the handoff" \
+    "error: the new thread's run ended failed before it started" \
+    "$(started failed)"
+
+# protocol <environment>: prints what the environment's protocol comes to, or the error.
+protocol() {
+    call "t3.speaksProtocol('http://zenbook:3773', $1)"
+}
+
+assert_eq "a server on protocol 2 is spoken to" "true" "$(protocol "{orchestrationProtocolVersion:2}")"
+assert_eq "a server that names no protocol is from before protocol 2" \
+    "error: T3 Code at http://zenbook:3773 speaks orchestration protocol 1, and this script speaks 2" \
+    "$(protocol "{serverVersion:'0.0.45'}")"
+assert_eq "a newer protocol is refused too" \
+    "error: T3 Code at http://zenbook:3773 speaks orchestration protocol 3, and this script speaks 2" \
+    "$(protocol "{orchestrationProtocolVersion:3}")"
 
 assert_eq "a Mac's .local host name is reached without it" \
     "Hugos-MacBook-Pro" \
@@ -220,6 +335,15 @@ assert_eq "--project needs a folder" \
 assert_eq "--provider needs an instance id" \
     "t3: --provider needs a value" \
     "$(cli check --provider --dry-run)"
+assert_eq "--ttl takes a count and a unit, which reach a shell on Windows" \
+    "t3: --ttl must be a count and a unit such as 365d, not 1d & calc" \
+    "$(cli token --ttl '1d & calc')"
+assert_eq "--ttl of nothing is refused" \
+    "t3: --ttl must be a count and a unit such as 365d, not 0d" \
+    "$(cli token --ttl 0d)"
+assert_eq "--ttl takes a unit in words, as T3 does" \
+    "2 weeks" \
+    "$(call "t3.parseArgs(['token', '--ttl', '2 weeks']).flags.ttl")"
 assert_eq "--project and --to do not go together" \
     "t3: --project and --provider choose on this computer, so they do not go with --to" \
     "$(cli continue --prompt-file x --to elsewhere --project .)"
