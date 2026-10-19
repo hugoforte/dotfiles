@@ -95,7 +95,7 @@ Back on the new machine: `.\powershell\install-overlays.ps1 -Repo <owner>/<priva
 
 ## Remove a machine
 
-Delete its line from each `.sops.yaml` it is in, run the same `sops updatekeys` command in each, commit, push. That machine can decrypt nothing committed after that point.
+Delete its line from each `.sops.yaml` it is in, run the same `sops updatekeys` command in each, commit, push. That machine can decrypt nothing committed after that point. If an overlay's `ssh/authorized_keys` lists the same key, delete it there too: the key logs in over SSH until it is gone.
 
 ## Rotate a credential
 
