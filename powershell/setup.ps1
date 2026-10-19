@@ -103,6 +103,9 @@ if ($Check) {
             }
             Write-Host "[!!] ~/.ssh/authorized_keys: $detail" -ForegroundColor Yellow
         }
+    } elseif ((Remove-AuthorizedKeysCopy -Path $sshKeysPath -Check).Action -eq 'Removed') {
+        $wrong++
+        Write-Host "[!!] ~/.ssh/authorized_keys: no overlay ships ssh/authorized_keys any more; setup.ps1 removes the copy" -ForegroundColor Yellow
     }
 
     $binPath = Join-Path $repoPath "bin"
@@ -244,6 +247,8 @@ if ($sshKeysSource) {
             Write-Host "     backed up what was there to $(Split-Path $sshKeys.BackupPath -Leaf)" -ForegroundColor Yellow
         }
     }
+} elseif ((Remove-AuthorizedKeysCopy -Path $sshKeysPath).Action -eq 'Removed') {
+    Write-Host "[OK] ~/.ssh/authorized_keys removed: no overlay ships ssh/authorized_keys any more" -ForegroundColor Green
 } else {
     Write-Host "[--] SSH keys: no overlay has ssh/authorized_keys; skipped" -ForegroundColor DarkGray
 }

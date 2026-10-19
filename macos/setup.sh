@@ -124,8 +124,20 @@ if [ -n "$aws_source" ]; then
 else
     info "AWS config: neither this repo nor an overlay has aws/config; skipped"
 fi
+ssh_keys="$HOME/.ssh/authorized_keys"
 if [ -n "$ssh_keys_source" ]; then
-    managed "~/.ssh/authorized_keys" "$ssh_keys_source" "$HOME/.ssh/authorized_keys"
+    managed "~/.ssh/authorized_keys" "$ssh_keys_source" "$ssh_keys"
+elif [ -L "$ssh_keys" ] && case "$(readlink "$ssh_keys")" in */ssh/authorized_keys) true ;; *) false ;; esac; then
+    # A link this made to an overlay no longer listed, or to a file since removed: the keys were
+    # taken away, so they must stop working. A real file is someone's own, and is left alone.
+    if [ "$MODE" = "check" ]; then
+        warning "~/.ssh/authorized_keys links to keys no listed overlay ships ($(readlink "$ssh_keys"))"
+        CHECK_FAILED=1
+    elif rm -f "$ssh_keys"; then
+        success "~/.ssh/authorized_keys removed: no listed overlay ships ssh/authorized_keys"
+    else
+        FAILED=1
+    fi
 else
     info "SSH keys: no overlay has ssh/authorized_keys; skipped"
 fi

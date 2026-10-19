@@ -163,6 +163,8 @@ try {
         $sshKeys = Set-AuthorizedKeysCopy -Path "$env:USERPROFILE\.ssh\authorized_keys" -Source $sshKeysSource
         if ($sshKeys.Action -ne 'AlreadyCorrect') { Write-Log "~/.ssh/authorized_keys from $sshKeysSource ($($sshKeys.Action))" }
         if ($sshKeys.BackupPath) { Write-Log "backed up what was in ~/.ssh/authorized_keys to $($sshKeys.BackupPath)" }
+    } elseif ((Remove-AuthorizedKeysCopy -Path "$env:USERPROFILE\.ssh\authorized_keys").Action -eq 'Removed') {
+        Write-Log "removed ~/.ssh/authorized_keys: no overlay ships ssh/authorized_keys any more"
     }
 
     # Skill secrets: only on machines whose machine.local.psd1 declares SearchRoots

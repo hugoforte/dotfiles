@@ -269,6 +269,21 @@ assert_eq "and leaves ~/.ssh/authorized_keys absent" "n" "$(exists "$home/.ssh/a
 mv "$work/authorized_keys.saved" "$personal/ssh/authorized_keys"
 install
 
+# Keys taken out of every listed overlay must stop working, though the old checkout is still there.
+overlays "$second"
+out="$(check)"; rc=$?
+assert_eq "--check fails on a keys link no listed overlay ships" "1" "$rc"
+assert_eq "--check names it" "y" "$(says "$out" "~/.ssh/authorized_keys links to keys no listed overlay ships")"
+assert_eq "--check leaves it" "y" "$(exists "$home/.ssh/authorized_keys")"
+install
+assert_eq "install removes a keys link no listed overlay ships" "n" "$(exists "$home/.ssh/authorized_keys")"
+printf 'ssh-rsa CCCC mine\n' > "$home/.ssh/authorized_keys"
+install
+assert_eq "and leaves a real ~/.ssh/authorized_keys alone" "ssh-rsa CCCC mine" "$(cat "$home/.ssh/authorized_keys")"
+rm "$home/.ssh/authorized_keys"
+overlays "$personal" "$second"
+install
+
 overlays "$personal" "$work/private/gone"
 out="$(run)"; rc=$?
 assert_eq "a listed overlay that does not exist fails" "1" "$rc"
