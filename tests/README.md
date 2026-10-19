@@ -38,6 +38,7 @@ testable yet:
 | `powershell/output.ps1` | the result object is data, not console text | #14 |
 | `ai/secrets/check-encrypted.sh` | a pure function of a directory tree | #12 |
 | `powershell/managed-link.ps1` | three verbs, and both paths are arguments | #6 |
+| `powershell/authorized-keys.ps1` | two verbs, and both paths are arguments | this change |
 | `powershell/git.ps1` | the merge verdict is a function of two refs, and `-Yes` opens the delete | #21 |
 | `ai/helpers/managed-link.sh`'s `link` / `unlink_managed` / `check_link` | the same contract in sh, in a helper that only defines functions, so it is sourced as it is | #6 |
 | `ai/skills/hf-t3-handoff/t3.mjs`'s `handoffTitles` and `matchingProject` | exported, and the script only acts when run directly | #14 |

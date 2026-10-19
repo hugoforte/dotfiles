@@ -12,6 +12,7 @@ Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in tu
 - `rig.ps1`: rig (cross-repo work harness) launcher
 - `output.ps1`: the reporting vocabulary and the result object the scripts return
 - `managed-link.ps1`: the one implementation of "point this path at that file in the repo" — `Set-ManagedLink`, `Test-ManagedLink`, `Remove-ManagedLink`
+- `authorized-keys.ps1`: keeps `~/.ssh/authorized_keys` a copy of the one overlay's `ssh/authorized_keys` — `Set-AuthorizedKeysCopy`, `Test-AuthorizedKeysCopy`. A copy rather than a link, because sshd checks the ownership and access of the file it reads
 - `overlays.ps1`: reads `ai/secrets/machine.local.psd1` — whether the machine opts into skill secrets, and the overlays it lists — and applies the overlays' rules: merged skill registries, one source for `aws/config`, the contents of `~/.gitconfig-overlays`
 - `native.ps1`: `Invoke-Native`, which runs a native command and judges it by its exit code, because Windows PowerShell 5.1 under `$ErrorActionPreference = "Stop"` turns any line it writes to stderr — git's progress, say — into a terminating error
 - `tools.psd1`: the tools and programs a machine needs, declared
@@ -20,7 +21,7 @@ Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in tu
 - `markdownlint.jsonc`: default markdownlint rules, used by `bin/md-lint` when a repo has none of its own
 - `user-path.ps1`: `Add-UserPathEntry`, which puts the repo's `bin/` on the user PATH for `setup.ps1` and `sync.ps1`
 - `setup.ps1`: symlink/setup automation (`-Check` reports the managed links and changes nothing)
-- `sync.ps1`: `git pull --ff-only`, then `ai/install.sh`, then `bin/` on the user PATH, then each overlay repo pulled and `~/.gitconfig-overlays` written, then `install-tools.ps1` if a manifest or the machine's options changed, then the rest of what the overlays supply re-applied (the `~/.aws/config` link, removal of links left dangling by files that moved out), then `deploy-secrets.ps1` if the machine has opted in (its `machine.local.psd1` declares `SearchRoots`) (an overlay repo that fails to pull, or a failed `install-tools.ps1`, is logged, the rest still runs, and the run exits 1); logs to `%LOCALAPPDATA%\dotfiles\sync.log`
+- `sync.ps1`: `git pull --ff-only`, then `ai/install.sh`, then `bin/` on the user PATH, then each overlay repo pulled and `~/.gitconfig-overlays` written, then `install-tools.ps1` if a manifest or the machine's options changed, then the rest of what the overlays supply re-applied (the `~/.aws/config` link, removal of links left dangling by files that moved out, the `~/.ssh/authorized_keys` copy), then `deploy-secrets.ps1` if the machine has opted in (its `machine.local.psd1` declares `SearchRoots`) (an overlay repo that fails to pull, or a failed `install-tools.ps1`, is logged, the rest still runs, and the run exits 1); logs to `%LOCALAPPDATA%\dotfiles\sync.log`
 - `deploy-secrets.ps1`: decrypts `ai/secrets/` and symlinks the files into every checkout that has the skill (`-Check` for report only); see `ai/secrets/README.md`
 - `install-overlays.ps1`: puts this machine on an overlay repo (`-Repo owner/name`, optionally `-Only <overlay>`): clones or pulls it beside this checkout, lists its overlays in `ai/secrets/machine.local.psd1` (creating it from the example, with `SearchRoots` set to the folder this checkout is in, when there is none) after checking they do not clash with the repo, then runs `sync.ps1`
 - `install-sync-task.ps1`: registers the "Dotfiles Sync" scheduled task that runs `sync.ps1` at logon and every 4 hours (`-Uninstall` removes it)
@@ -39,6 +40,7 @@ What it does, idempotently:
 - Uses the checkout it is run from; if run from elsewhere, clones or updates `%USERPROFILE%\dotfiles`
 - Links `$PROFILE`, the all-hosts profile, `~/.gitconfig` and, when this repo or one overlay has an `aws/config`, `%USERPROFILE%\.aws\config`, backing up any regular file it displaces
 - Writes `~/.gitconfig-overlays`, which includes each overlay's `git/gitconfig`
+- Writes `~/.ssh/authorized_keys` from the one overlay that has `ssh/authorized_keys`, backing up a file it did not write
 - Puts the repo's `bin/` on the user PATH, so `md-lint` runs in every shell, agents' included
 - Installs every tool declared in `tools.psd1`, including those the scheduled task is not allowed to install unwatched
 - Offers to reload the profile

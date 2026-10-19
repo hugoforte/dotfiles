@@ -13,11 +13,23 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "managed-link.ps1")
 . (Join-Path $PSScriptRoot "overlays.ps1")
 . (Join-Path $PSScriptRoot "user-path.ps1")
+. (Join-Path $PSScriptRoot "authorized-keys.ps1")
+
+$sshKeysPath = "$env:USERPROFILE\.ssh\authorized_keys"
 
 # The overlays this machine lists; see overlays.ps1.
 function Get-SetupOverlays {
     param([Parameter(Mandatory)][string]$RepoPath)
     return @(Get-OverlayList -LocalPath "$RepoPath\ai\secrets\machine.local.psd1")
+}
+
+# The one overlay's ssh/authorized_keys, or $null. Overlays only: this repo never ships the keys
+# that may log in to a machine.
+function Get-SshKeysSource {
+    param([Parameter(Mandatory)][string]$RepoPath)
+    $overlays = Get-SetupOverlays -RepoPath $RepoPath
+    if (-not $overlays.Count) { return $null }
+    return Find-OverlayFile -Roots $overlays -RelativePath "ssh\authorized_keys"
 }
 
 # Every managed link this script owns, in one list, so -Check and the apply path can never
@@ -74,6 +86,23 @@ if ($Check) {
     } else {
         $wrong++
         Write-Host "[!!] ~/.gitconfig-overlays: missing or out of date" -ForegroundColor Yellow
+    }
+
+    # ~/.ssh/authorized_keys is copied rather than linked; see authorized-keys.ps1.
+    $sshKeysSource = Get-SshKeysSource -RepoPath $repoPath
+    if ($sshKeysSource) {
+        $sshKeys = Test-AuthorizedKeysCopy -Path $sshKeysPath -Source $sshKeysSource
+        if ($sshKeys.IsCorrect) {
+            Write-Host "[OK] ~/.ssh/authorized_keys" -ForegroundColor Green
+        } else {
+            $wrong++
+            $detail = switch ($sshKeys.Reason) {
+                'Missing' { "missing" }
+                'Stale'   { "behind $sshKeysSource" }
+                'NotOurs' { "written by something else; setup.ps1 backs it up and replaces it" }
+            }
+            Write-Host "[!!] ~/.ssh/authorized_keys: $detail" -ForegroundColor Yellow
+        }
     }
 
     $binPath = Join-Path $repoPath "bin"
@@ -201,6 +230,22 @@ if ($linkedAws) {
 switch (Update-GitOverlayInclude -Overlays (Get-SetupOverlays -RepoPath $dotfilesPath)) {
     'AlreadyCorrect' { Write-Host "[OK] ~/.gitconfig-overlays already current" -ForegroundColor Green }
     'Written'        { Write-Host "[OK] ~/.gitconfig-overlays written" -ForegroundColor Green }
+}
+
+$sshKeysSource = Get-SshKeysSource -RepoPath $dotfilesPath
+if ($sshKeysSource) {
+    $sshKeys = Set-AuthorizedKeysCopy -Path $sshKeysPath -Source $sshKeysSource
+    switch ($sshKeys.Action) {
+        'AlreadyCorrect'     { Write-Host "[OK] ~/.ssh/authorized_keys already current" -ForegroundColor Green }
+        'Created'            { Write-Host "[OK] ~/.ssh/authorized_keys written" -ForegroundColor Green }
+        'Updated'            { Write-Host "[OK] ~/.ssh/authorized_keys updated" -ForegroundColor Green }
+        'BackedUpAndWritten' {
+            Write-Host "[OK] ~/.ssh/authorized_keys written" -ForegroundColor Green
+            Write-Host "     backed up what was there to $(Split-Path $sshKeys.BackupPath -Leaf)" -ForegroundColor Yellow
+        }
+    }
+} else {
+    Write-Host "[--] SSH keys: no overlay has ssh/authorized_keys; skipped" -ForegroundColor DarkGray
 }
 
 # bin/ holds the commands agents need too, so it goes on PATH rather than in the profile.

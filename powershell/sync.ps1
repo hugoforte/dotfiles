@@ -151,6 +151,20 @@ try {
         Write-Log "no aws/config in the repo or any overlay, and ~/.aws/config is absent; if this machine should have one, run install-overlays.ps1"
     }
 
+    # The keys that may log in over SSH: overlays only, since the public repo never ships them.
+    . (Join-Path $PSScriptRoot "authorized-keys.ps1")
+    try {
+        $sshKeysSource = if ($overlays.Count) { Find-OverlayFile -Roots $overlays -RelativePath "ssh\authorized_keys" }
+    } catch {
+        Write-Log $_.Exception.Message
+        exit 1
+    }
+    if ($sshKeysSource) {
+        $sshKeys = Set-AuthorizedKeysCopy -Path "$env:USERPROFILE\.ssh\authorized_keys" -Source $sshKeysSource
+        if ($sshKeys.Action -ne 'AlreadyCorrect') { Write-Log "~/.ssh/authorized_keys from $sshKeysSource ($($sshKeys.Action))" }
+        if ($sshKeys.BackupPath) { Write-Log "backed up what was in ~/.ssh/authorized_keys to $($sshKeys.BackupPath)" }
+    }
+
     # Skill secrets: only on machines whose machine.local.psd1 declares SearchRoots
     if (Test-SkillSecretsOptIn -LocalPath (Join-Path $repoRoot "ai\secrets\machine.local.psd1")) {
         $secretsResult = & (Join-Path $PSScriptRoot "deploy-secrets.ps1") -Quiet -PassThru

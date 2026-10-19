@@ -12,6 +12,7 @@
 #   ~/.zshrc               -> macos/zshrc
 #   ~/.gitconfig           -> macos/gitconfig
 #   ~/.aws/config          -> the one aws/config in this repo or an overlay, if any
+#   ~/.ssh/authorized_keys -> the one overlay's ssh/authorized_keys, if any
 #   ~/.gitconfig-overlays     written: an include of each overlay's git/gitconfig
 #   Brewfiles                 each overlay's macos/Brewfile, then the one overlay's
 #                             machines/<KEY>.Brewfile, KEY being the HostName (else the
@@ -36,7 +37,7 @@ REPO="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 show_help() {
     echo "Usage: $0 [--check | --brew-if-changed]"
     echo ""
-    echo "Links ~/.zshrc, ~/.gitconfig and ~/.aws/config, writes ~/.gitconfig-overlays, applies"
+    echo "Links ~/.zshrc, ~/.gitconfig, ~/.aws/config and ~/.ssh/authorized_keys, writes ~/.gitconfig-overlays, applies"
     echo "each overlay's Brewfile and this Mac's, then runs ai/install.sh."
     echo ""
     echo "  --check            Report what would change without changing anything (exit 1 if anything would)"
@@ -90,6 +91,8 @@ MACHINE="$(machine_key)"
 
 aws_source="$(one_source aws/config "$REPO
 $OVERLAYS")" || exit 1
+# Overlays only: the public repo never ships the keys that may log in to a machine.
+ssh_keys_source="$(one_source ssh/authorized_keys "$OVERLAYS")" || exit 1
 machine_brewfile=""
 if [ -n "$MACHINE" ]; then
     machine_brewfile="$(one_source "machines/$MACHINE.Brewfile" "$OVERLAYS")" || exit 1
@@ -120,6 +123,11 @@ if [ -n "$aws_source" ]; then
     managed "~/.aws/config" "$aws_source" "$HOME/.aws/config"
 else
     info "AWS config: neither this repo nor an overlay has aws/config; skipped"
+fi
+if [ -n "$ssh_keys_source" ]; then
+    managed "~/.ssh/authorized_keys" "$ssh_keys_source" "$HOME/.ssh/authorized_keys"
+else
+    info "SSH keys: no overlay has ssh/authorized_keys; skipped"
 fi
 
 # --- ~/.gitconfig-overlays -----------------------------------------------------------------------
