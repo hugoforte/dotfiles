@@ -179,6 +179,51 @@ assert_eq "--project for another project starts in its checkout" \
     "there|||D:/projects/there" \
     "$(destination "$there_project")"
 
+assert_eq "an https remote is keyed by host and path, without .git" \
+    "github.com/hugoforte/dotfiles-private" \
+    "$(call "t3.remoteKey('https://github.com/HugoForte/dotfiles-private.git')")"
+assert_eq "an scp-style remote is keyed the same" \
+    "github.com/hugoforte/dotfiles-private" \
+    "$(call "t3.remoteKey('git@github.com:hugoforte/dotfiles-private.git')")"
+
+# A checkout with an origin, and one with no remote, for when T3 has not said a project's repository.
+work="$(mktemp -d)" || exit 1
+trap 'rm -rf "$work"' EXIT INT TERM
+git init -q "$work/with-origin" && git -C "$work/with-origin" remote add origin https://github.com/hugoforte/dotfiles-private.git
+git init -q "$work/no-remote"
+# As Node spells them on this platform.
+with_origin="$(cd "$work/with-origin" && (pwd -W 2>/dev/null || pwd))"
+no_remote="$(cd "$work/no-remote" && (pwd -W 2>/dev/null || pwd))"
+this_computer="$(call "t3.reachableName((await import('node:os')).hostname())")"
+
+# to_mac <this project> <the mac's projects>: prints "<projectId>|<place>" for --to the mac, or the error.
+to_mac() {
+    call "(({ projectId, place }) => projectId + '|' + place)(await t3.destination({ get: async () => ({ projects: [$1] }) }, $current, { name: 'hugos-macbook-pro', server: {}, projects: $2 }))"
+}
+
+# Through variables, as $copy above.
+unresolved_here="{id:'here',title:'dotfiles-private',workspaceRoot:String.raw\`$with_origin\`,repositoryIdentity:null}"
+no_remote_here="{id:'here',title:'scratch',workspaceRoot:String.raw\`$no_remote\`,repositoryIdentity:null}"
+mac_clone="{id:'mac',title:'dotfiles-private',workspaceRoot:'/Users/me/dotfiles-private',repositoryIdentity:{canonicalKey:'github.com/hugoforte/dotfiles-private'}}"
+mac_unresolved="{id:'pending',title:'dotfiles-private',workspaceRoot:'/Users/me/dotfiles-private',repositoryIdentity:null}"
+
+assert_eq "--to finds the project by this checkout's origin when T3 has not said its repository" \
+    "mac|hugos-macbook-pro, /Users/me/dotfiles-private" \
+    "$(to_mac "$unresolved_here" "[$mac_clone]")"
+assert_eq "--to for a project with no remote names this computer, not the destination" \
+    "error: project \"scratch\" has no git remote on $this_computer to find it by: $no_remote has neither an upstream nor an origin" \
+    "$(to_mac "$no_remote_here" "[$mac_clone]")"
+assert_eq "--to with no match names the projects there whose repository T3 did not say" \
+    "error: hugos-macbook-pro has no one project for github.com/hugoforte/dotfiles-private, the repository of \"dotfiles-private\"; T3 Code there did not say the repository of \"dotfiles-private\"" \
+    "$(to_mac "$unresolved_here" "[$mac_unresolved]")"
+
+# Reads the shell twice: T3 says the repository only on the second read, as when its cache was cold.
+warming="{ reads: 0, async get() { this.reads++; return { projects: [this.reads > 1 ? $mac_clone : $mac_unresolved] }; } }"
+
+assert_eq "the projects there are read again until T3 says their repositories" \
+    "mac" \
+    "$(call "(await t3.readProjectsWithRepositories($warming, { delayMs: 1 }))[0].id")"
+
 assert_eq "without --provider the model selection is this thread's, untouched" \
     "true" \
     "$(call "(() => { const s = ($current).modelSelection; return t3.modelSelectionOn(s, undefined) === s; })()")"
