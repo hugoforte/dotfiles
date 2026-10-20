@@ -70,13 +70,49 @@ export function handoffTitles(currentTitle, work) {
 }
 
 /**
+ * A git remote URL as T3 keys a repository: lower case, without `.git` or a
+ * trailing slash, as `host/path` whether written as a URL or as `user@host:path`.
+ * T3's own spelling of Azure DevOps remotes is not reproduced.
+ */
+export function remoteKey(url) {
+    const normalized = url.trim().replace(/\/+$/, '').replace(/\.git$/i, '').toLowerCase();
+    if (/^(?:ssh|https?|git):\/\//.test(normalized)) {
+        try {
+            const { hostname, pathname } = new URL(normalized);
+            const segments = pathname.split('/').filter(Boolean);
+            if (hostname && segments.length > 1) return `${hostname}/${segments.join('/')}`;
+        } catch {
+            return normalized;
+        }
+    }
+    const scp = /^[a-z0-9._-]+@([^:/\s]+):([^/\s]+(?:\/[^/\s]+)+)$/.exec(normalized);
+    return scp ? `${scp[1]}/${scp[2]}` : normalized;
+}
+
+/**
+ * The repository key of the checkout at `folder`, read from its remote as T3
+ * reads it: `upstream`, else `origin`. Undefined when it has neither.
+ */
+export function checkoutRepositoryKey(folder) {
+    for (const remote of ['upstream', 'origin']) {
+        try {
+            const url = execFileSync('git', ['-C', folder, 'remote', 'get-url', remote], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+            if (url) return remoteKey(url);
+        } catch {
+            // No such remote, or no checkout there: try the next.
+        }
+    }
+    return undefined;
+}
+
+/**
  * The project among another computer's that holds the same repository as this
  * one, or undefined when none or several do. Project ids differ per computer,
  * so the repository is what the two share; among several clones of it, the one
- * titled like this project is the match.
+ * titled like this project is the match. `key` is this project's repository,
+ * for when T3 has not said it.
  */
-export function matchingProject(project, candidates) {
-    const key = project.repositoryIdentity?.canonicalKey;
+export function matchingProject(project, candidates, key = project.repositoryIdentity?.canonicalKey) {
     if (!key) return undefined;
     const clones = candidates.filter((candidate) => candidate.repositoryIdentity?.canonicalKey === key);
     if (clones.length === 1) return clones[0];
@@ -296,7 +332,7 @@ async function otherComputer(name) {
     if (!origin || !token) throw new Problem(`"${known}" in ${COMPUTERS_FILE} needs an origin and a token`, entry);
     await probe(origin, `T3 Code on ${known} does not answer at ${origin}`, 'Open T3 Code on that computer, set its server to network-accessible, and check this computer reaches it (Tailscale up on both).');
     const server = api(origin, token, `${known} refused its token in ${COMPUTERS_FILE}. ${entry}`);
-    return { name: known, server, projects: await readProjects(server) };
+    return { name: known, server, projects: await readProjectsWithRepositories(server) };
 }
 
 /** The thread this Claude session belongs to, found through T3's own record of the session's provider thread. */
@@ -460,6 +496,21 @@ async function readProjects(server) {
     return (await server.get('/api/orchestration/shell')).projects;
 }
 
+/**
+ * A server's projects with their repositories. T3 answers with the repository
+ * identity it has cached, which it keeps for a minute, and null where it has
+ * none, starting a lookup that lands within moments. So while a project lacks
+ * one, read again, a few times: a project with no remote never gains one.
+ */
+export async function readProjectsWithRepositories(server, { attempts = 5, delayMs = 500 } = {}) {
+    let projects = await readProjects(server);
+    for (let attempt = 1; attempt < attempts && projects.some((project) => !project.repositoryIdentity); attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        projects = await readProjects(server);
+    }
+    return projects;
+}
+
 /** One orchestration command, such as a rename or an archive. */
 async function dispatch(server, command) {
     return server.rpc('orchestration.dispatchCommand', { commandId: randomUUID(), ...command });
@@ -493,13 +544,21 @@ export async function destination(server, current, there, target) {
     }
     const project = (await readProjects(server)).find((candidate) => candidate.id === current.projectId);
     if (!project) throw new Problem(`T3 Code does not list the project of this thread (${current.projectId})`);
-    const match = matchingProject(project, there.projects);
-    if (!match) {
-        const repository = project.repositoryIdentity?.canonicalKey;
+    // T3 leaves the identity null until it has looked the remote up, and this computer can look itself.
+    const repository = project.repositoryIdentity?.canonicalKey ?? checkoutRepositoryKey(project.workspaceRoot);
+    if (!repository) {
+        const here = reachableName(hostname());
         throw new Problem(
-            repository
-                ? `${there.name} has no one project for ${repository}, the repository of "${project.title}"`
-                : `project "${project.title}" has no git remote to find it by on ${there.name}`,
+            `project "${project.title}" has no git remote on ${here} to find it by: ${project.workspaceRoot} has neither an upstream nor an origin`,
+            `Add the repository's remote to ${project.workspaceRoot} on ${here} (git remote add origin <url>), then run this again.`,
+        );
+    }
+    const match = matchingProject(project, there.projects, repository);
+    if (!match) {
+        const unknown = there.projects.filter((candidate) => !candidate.repositoryIdentity).map((candidate) => `"${candidate.title}"`);
+        const unsaid = unknown.length ? `; T3 Code there did not say the repository of ${unknown.join(', ')}` : '';
+        throw new Problem(
+            `${there.name} has no one project for ${repository}, the repository of "${project.title}"${unsaid}`,
             `Add the repository as a project in T3 Code on ${there.name}. If several of its clones are projects there, title one "${project.title}".`,
         );
     }
