@@ -20,7 +20,7 @@ C:\source\<checkout>\.claude\skills\<skill>\<file>   every matching checkout
 - **Recovery key**: a plain age key held only in the password manager. Its public half is a permanent recipient. It bootstraps a new machine and survives the loss of every laptop.
 - **Registry**: `registry.psd1` lists each managed skill, the marker path that identifies a checkout using it, the expected origin URL, and the files.
 - **Per machine**: `machine.local.psd1` (git-ignored, copy the example) lists the directories whose children are checkouts, e.g. `C:\source`, the machine's overlays, and the optional tools it installs (`OptionalTools`, read by `install-tools.ps1`, which also reads them from an overlay's `machines/<COMPUTERNAME>.psd1`).
-- **Overlays**: private directories laid out like this repo's root, usually in a private repo. Each may carry its own `ai/secrets/registry.psd1`, `ai/secrets/<skill>/` and `.sops.yaml`. The registries of this repo and every overlay merge; a skill decrypts from the directory that registered it, and the same skill id in two registries is an error. No tracked file here names an overlay. The same overlays also supply `aws/config` (from exactly one place) and git config fragments to `powershell/setup.ps1`, and skills and Bruno collections to `ai/install.sh`.
+- **Overlays**: private directories laid out like this repo's root, usually in a private repo. Each may carry its own `ai/secrets/registry.psd1`, `ai/secrets/<skill>/` and `.sops.yaml`. The registries of this repo and every overlay merge; a skill decrypts from the directory that registered it, and the same skill id in two registries is an error. No tracked file here names an overlay. The same overlays also supply `aws/config` (from exactly one place), `ssh/authorized_keys` (the keys that may log in over SSH, from at most one overlay) and git config fragments to `powershell/setup.ps1`, and skills and Bruno collections to `ai/install.sh`.
 - **Deploy**: `powershell/deploy-secrets.ps1` merges the registries, decrypts, discovers checkouts one level under each search root, verifies each one's origin contains the registry's `Remote`, and links the files in. `sync.ps1` runs it after `install.sh` on machines whose `machine.local.psd1` declares `SearchRoots`. On a Mac, `macos/deploy-secrets.sh` does the same into `~/.agent-secrets/`, readable by its owner alone, and `macos/sync.sh` runs it on the same condition. It reads the registries with awk, so each entry must put each key on a line of its own with a quoted value, `Files` as one `@(...)` on one line, as they all do, and a `Remote` beside every `Marker`; an entry it cannot read is an error.
 
 Safety properties of the deploy script:
@@ -95,7 +95,7 @@ Back on the new machine: `.\powershell\install-overlays.ps1 -Repo <owner>/<priva
 
 ## Remove a machine
 
-Delete its line from each `.sops.yaml` it is in, run the same `sops updatekeys` command in each, commit, push. That machine can decrypt nothing committed after that point.
+Delete its line from each `.sops.yaml` it is in, run the same `sops updatekeys` command in each, commit, push. That machine can decrypt nothing committed after that point. If an overlay's `ssh/authorized_keys` lists the same key, delete it there too: the key logs in over SSH until it is gone.
 
 ## Rotate a credential
 

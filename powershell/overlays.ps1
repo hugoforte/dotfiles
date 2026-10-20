@@ -6,6 +6,7 @@
 #   ai/secrets/registry.psd1 + ai/secrets/<Id>/   skill secrets; registries merge
 #   aws/config                                    at most one source across repo and overlays
 #   git/gitconfig                                 a fragment; every overlay's is included
+#   ssh/authorized_keys                           the keys that may log in; at most one overlay, never this repo
 #   ai/skills/<name>/                             skills, linked by ai/install.sh; a name ships from one place
 #   bruno/<collection>/                           Bruno collections, linked into ~/bruno by ai/install.sh; a name ships from one place
 #   ai/claude/config-dirs                         extra Claude config folders, one per line; ai/install.sh gives each what ~/.claude gets

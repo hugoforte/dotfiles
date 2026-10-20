@@ -102,6 +102,7 @@ try {
 
     Get-MergedSkillRegistry -Roots (@($repoRoot) + $overlays) | Out-Null
     Find-OverlayFile -Roots (@($repoRoot) + $overlays) -RelativePath "aws\config" | Out-Null
+    Find-OverlayFile -Roots (@($repoRoot) + $overlays) -RelativePath "ssh\authorized_keys" | Out-Null
 } catch {
     Fail "$($_.Exception.Message). Nothing was written. If this checkout still carries what the overlay now holds, the change that moved it out has not reached this branch yet."
     Exit-WithResult $result 1
@@ -116,8 +117,8 @@ if ((@($existing) -join "`n") -eq ($overlays -join "`n")) {
 
 # --- Apply ----------------------------------------------------------------------------------------
 # sync.ps1 is the one applier: it links their skills (through ai/install.sh), pulls the overlays,
-# writes ~/.gitconfig-overlays, links ~/.aws/config, removes links left behind by files that
-# moved out, and deploys the secrets.
+# writes ~/.gitconfig-overlays, links ~/.aws/config, copies ~/.ssh/authorized_keys, removes links
+# left behind by files that moved out, and deploys the secrets.
 
 Say ""
 Say "Running sync.ps1 to apply them" Cyan

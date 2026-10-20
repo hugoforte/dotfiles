@@ -8,6 +8,7 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
 |---|---|---|---|
 | PowerShell profile + helper functions | `powershell/` | `$PROFILE` and the all-hosts profile (symlinks) | `powershell/setup.ps1` |
 | AWS CLI profiles (SSO, no secrets) | an overlay's `aws/config` | `%USERPROFILE%\.aws\config`, `~/.aws/config` on a Mac (symlink) | `powershell/setup.ps1`, `powershell/sync.ps1`, `macos/setup.sh` |
+| The SSH keys that may log in | an overlay's `ssh/authorized_keys` | `~/.ssh/authorized_keys`: a copy on Windows, a symlink on a Mac | `powershell/setup.ps1`, `powershell/sync.ps1`, `macos/setup.sh` |
 | Git identity | `git/`, and `macos/gitconfig` on a Mac | `~/.gitconfig` (symlink) | `powershell/setup.ps1`, `macos/setup.sh` |
 | Per-org git identities and other overlay git config | an overlay's `git/gitconfig` | included by `~/.gitconfig-overlays` (generated) | `powershell/setup.ps1`, `powershell/sync.ps1`, `macos/setup.sh` |
 | zsh profile on a Mac: Homebrew, `bin/` on PATH, `dotfiles-check` | `macos/zshrc` | `~/.zshrc` (symlink) | `macos/setup.sh` |
@@ -40,7 +41,7 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
    .\install-sync-task.ps1
    ```
 
-   `setup.ps1` links both PowerShell profiles, `~/.aws/config` (when a source exists) and `~/.gitconfig`, writes `~/.gitconfig-overlays`, backs up any real file it displaces, installs everything in [powershell/tools.psd1](powershell/tools.psd1), and offers to reload the profile. `install-sync-task.ps1` registers the "Dotfiles Sync" task (at logon and every 4 hours). Both are safe to re-run.
+   `setup.ps1` links both PowerShell profiles, `~/.aws/config` (when a source exists) and `~/.gitconfig`, writes `~/.gitconfig-overlays` and, when an overlay ships `ssh/authorized_keys`, `~/.ssh/authorized_keys`, backs up any real file it displaces, installs everything in [powershell/tools.psd1](powershell/tools.psd1), and offers to reload the profile. `install-sync-task.ps1` registers the "Dotfiles Sync" task (at logon and every 4 hours). Both are safe to re-run.
 
    `setup.ps1` elevates itself, but **not for the symlinks** — those work unelevated once Developer Mode is on. It elevates so winget installs the manifest machine-wide; unelevated it would quietly fall back to `--scope user`. See [ADR 0002](docs/adr/0002-mklink-not-new-item.md).
 
@@ -95,7 +96,7 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/hugoforte/dotfiles/main/ma
    sh macos/setup.sh --check
    ```
 
-   `setup.sh` links `~/.zshrc`, `~/.gitconfig` and `~/.aws/config` (when a source exists), writes `~/.gitconfig-overlays`, applies each overlay's Brewfile and this Mac's with `brew bundle`, then runs `ai/install.sh`. It backs up any real file it displaces and is safe to re-run. `--check` changes nothing and exits 1 if anything would change; `dotfiles-check` in a new terminal runs it. `~/.zshrc` is a link into this repo, so lines that are this Mac's alone, and what installers such as nvm want to append, go in `~/.zshrc.local`, which it sources.
+   `setup.sh` links `~/.zshrc`, `~/.gitconfig`, `~/.aws/config` and `~/.ssh/authorized_keys` (each when a source exists), writes `~/.gitconfig-overlays`, applies each overlay's Brewfile and this Mac's with `brew bundle`, then runs `ai/install.sh`. It backs up any real file it displaces and is safe to re-run. `--check` changes nothing and exits 1 if anything would change; `dotfiles-check` in a new terminal runs it. `~/.zshrc` is a link into this repo, so lines that are this Mac's alone, and what installers such as nvm want to append, go in `~/.zshrc.local`, which it sources.
 
 5. Keep the Mac in sync:
 
@@ -119,6 +120,7 @@ What an overlay can supply, and how:
 - `ai/claude/config-dirs`: extra Claude config folders, one absolute or `~/…` path per line (`#` starts a comment). `ai/install.sh` gives each the same as `~/.claude`; see [Claude accounts](#claude-accounts).
 - `machines/<KEY>.config-dirs`: the same, for one machine only, found by its Windows computer name, or on a Mac by its `HostName` (else its `LocalHostName`), uppercased.
 - `aws/config`: linked to `~/.aws/config`; only one source across this repo and all overlays.
+- `ssh/authorized_keys`: the public keys that may log in to the machine over SSH, put at `~/.ssh/authorized_keys` by setup and every sync; only one overlay may ship it, and this repo never does. A Mac links it. Windows gets a copy headed by a comment naming its source, which the unelevated sync rewrites whenever the source changes; a file it did not write is backed up first. Once no listed overlay ships it, setup and the sync remove the link or copy they made, so the keys stop working; `--check`/`-Check` report it until then. On a Mac, sshd follows the link and refuses the keys unless the overlay checkout and every directory above it up to your home are yours and not group- or world-writable. An administrator's account reads that file only once `sshd_config`'s `Match Group administrators` block is gone; turning the SSH server on is the overlay's to do.
 - `git/gitconfig`: included, in overlay order, by the generated `~/.gitconfig-overlays`.
 - `powershell/tools.psd1`: merged with this repo's manifest by `install-tools.ps1`; a tool id may be declared only once. Its entries may be optional, so an overlay can declare its own options.
 - `machines/<COMPUTERNAME>.psd1`: the machine's `OptionalTools`, found by the Windows computer name and added to those in `machine.local.psd1`, so a machine's options are tracked and survive the machine. Only one source across all overlays. The overlays themselves stay in `machine.local.psd1`, since this file is found through them.

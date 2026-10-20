@@ -30,7 +30,7 @@ second="$work/private/second"
 brew_log="$work/brew.log"
 mkdir -p "$repo/ai/helpers" "$repo/ai/claude" "$repo/ai/secrets" "$repo/ai/agents" "$repo/ai/skills/own" \
          "$repo/macos" "$home" "$stubs" \
-         "$personal/git" "$personal/aws" "$personal/macos" "$personal/machines" \
+         "$personal/git" "$personal/aws" "$personal/ssh" "$personal/macos" "$personal/machines" \
          "$second/git" "$second/macos"
 
 cp "$REPO_ROOT"/macos/* "$repo/macos/"
@@ -45,6 +45,7 @@ printf '{ "model": "sonnet" }\n' > "$repo/ai/claude/settings.json"
 printf '[user]\n\temail = me@example.com\n' > "$personal/git/gitconfig"
 printf '[core]\n\teditor = vim\n' > "$second/git/gitconfig"
 printf '[profile dev]\n' > "$personal/aws/config"
+printf 'ssh-ed25519 AAAA laptop\n' > "$personal/ssh/authorized_keys"
 printf 'brew "jq"\n' > "$personal/macos/Brewfile"
 printf 'brew "uv"\n' > "$second/macos/Brewfile"
 printf 'cask "ghostty"\n' > "$personal/machines/MACBOOK.Brewfile"
@@ -92,6 +93,7 @@ set -- "$home"/.zshrc.backup.*
 assert_eq "the real ~/.zshrc it displaced is backed up" "# my old zshrc" "$(cat "$1")"
 assert_eq "~/.gitconfig is linked to macos/gitconfig" "$repo/macos/gitconfig" "$(readlink "$home/.gitconfig")"
 assert_eq "~/.aws/config is linked to the one overlay that has it" "$personal/aws/config" "$(readlink "$home/.aws/config")"
+assert_eq "~/.ssh/authorized_keys is linked to the one overlay that has it" "$personal/ssh/authorized_keys" "$(readlink "$home/.ssh/authorized_keys")"
 assert_eq "~/.gitconfig-overlays includes each overlay's git/gitconfig, in order" \
     "$(printf '[include]\n\tpath = %s\n[include]\n\tpath = %s' "$personal/git/gitconfig" "$second/git/gitconfig")" \
     "$(grep -v '^#' "$home/.gitconfig-overlays")"
@@ -250,6 +252,37 @@ out="$(run)"; rc=$?
 assert_eq "aws/config from two sources fails" "1" "$rc"
 assert_eq "and names both" "y" "$(says "$out" "$repo/aws/config")"
 rm -r "$repo/aws"
+
+mkdir -p "$second/ssh"
+printf 'ssh-ed25519 BBBB desktop\n' > "$second/ssh/authorized_keys"
+out="$(run)"; rc=$?
+assert_eq "ssh/authorized_keys from two overlays fails" "1" "$rc"
+assert_eq "and names both" "y" "$(says "$out" "$second/ssh/authorized_keys")"
+rm -r "$second/ssh"
+
+mv "$personal/ssh/authorized_keys" "$work/authorized_keys.saved"
+rm "$home/.ssh/authorized_keys"
+out="$(run)"; rc=$?
+assert_eq "no overlay with ssh/authorized_keys still sets up" "0" "$rc"
+assert_eq "and says it skipped the keys" "y" "$(says "$out" "no overlay has ssh/authorized_keys; skipped")"
+assert_eq "and leaves ~/.ssh/authorized_keys absent" "n" "$(exists "$home/.ssh/authorized_keys")"
+mv "$work/authorized_keys.saved" "$personal/ssh/authorized_keys"
+install
+
+# Keys taken out of every listed overlay must stop working, though the old checkout is still there.
+overlays "$second"
+out="$(check)"; rc=$?
+assert_eq "--check fails on a keys link no listed overlay ships" "1" "$rc"
+assert_eq "--check names it" "y" "$(says "$out" "~/.ssh/authorized_keys links to keys no listed overlay ships")"
+assert_eq "--check leaves it" "y" "$(exists "$home/.ssh/authorized_keys")"
+install
+assert_eq "install removes a keys link no listed overlay ships" "n" "$(exists "$home/.ssh/authorized_keys")"
+printf 'ssh-rsa CCCC mine\n' > "$home/.ssh/authorized_keys"
+install
+assert_eq "and leaves a real ~/.ssh/authorized_keys alone" "ssh-rsa CCCC mine" "$(cat "$home/.ssh/authorized_keys")"
+rm "$home/.ssh/authorized_keys"
+overlays "$personal" "$second"
+install
 
 overlays "$personal" "$work/private/gone"
 out="$(run)"; rc=$?
