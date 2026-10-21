@@ -10,7 +10,7 @@
 # a program on the machine and not in the manifest was installed on purpose.
 #
 # Optional entries install only on a machine that opts into them, in machine.local.psd1 or in an
-# overlay's machines/<COMPUTERNAME>.psd1: see tool-selection.ps1.
+# overlay's machines/<KEY>.psd1: see tool-selection.ps1.
 #
 # sync.ps1 calls this as -IfChanged -Unattended -Quiet -PassThru from a scheduled task, so nothing
 # here may raise a UAC prompt: winget installs use --scope user unless the shell is already elevated.
@@ -53,10 +53,10 @@ if (@((Import-PowerShellDataFile $manifestPath).Tools).Count -eq 0) {
 }
 
 try {
-    $overlaySource = Get-OverlayToolSource -Overlays @(Get-OverlayList -LocalPath $localPath) -ComputerName $env:COMPUTERNAME
-    $manifestPaths = @($manifestPath) + $overlaySource.Manifests
+    $overlaySet = Get-Overlays -RepoPath (Split-Path $PSScriptRoot -Parent)
+    $manifestPaths = @(Get-OverlaySource -Set $overlaySet -Path "powershell/tools.psd1")
     $allTools = @(Get-MergedToolManifest -Path $manifestPaths)
-    $machinePath = $overlaySource.MachineFile
+    $machinePath = Get-OverlaySource -Set $overlaySet -Path "machines/{KEY}.psd1"
     $optedIn = @(Get-OptedInOptionList -Path (@($localPath) + @($machinePath | Where-Object { $_ })))
 } catch {
     Fail "could not read the manifests or the options: $($_.Exception.Message)"
@@ -205,8 +205,8 @@ if (@($tools | Where-Object { $_.Source -eq 'uv' }).Count -and -not (Get-Command
 
 foreach ($path in $manifestPaths) { Say "Reading $path" Cyan }
 if ($machinePath) { Say "Reading $machinePath" Cyan }
-foreach ($dir in $overlaySource.MachineDirs) {
-    Warn "no $env:COMPUTERNAME.psd1 in $dir - this machine's options come from machine.local.psd1 alone"
+if ($overlaySet.Overlays.Count -and -not $machinePath) {
+    Warn "no overlay ships machines/$($overlaySet.MachineKey).psd1 - this machine's options come from machine.local.psd1 alone"
 }
 
 # An unknown name is a missing tool in every mode: it fails -Check and holds back the hash, so a

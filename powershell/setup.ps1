@@ -17,19 +17,10 @@ $ErrorActionPreference = "Stop"
 
 $sshKeysPath = "$env:USERPROFILE\.ssh\authorized_keys"
 
-# The overlays this machine lists; see overlays.ps1.
-function Get-SetupOverlays {
-    param([Parameter(Mandatory)][string]$RepoPath)
-    return @(Get-OverlayList -LocalPath "$RepoPath\ai\secrets\machine.local.psd1")
-}
-
-# The one overlay's ssh/authorized_keys, or $null. Overlays only: this repo never ships the keys
-# that may log in to a machine.
+# The one overlay's ssh/authorized_keys, or $null; see overlays.ps1.
 function Get-SshKeysSource {
     param([Parameter(Mandatory)][string]$RepoPath)
-    $overlays = Get-SetupOverlays -RepoPath $RepoPath
-    if (-not $overlays.Count) { return $null }
-    return Find-OverlayFile -Roots $overlays -RelativePath "ssh\authorized_keys"
+    return Get-OverlaySource -Set (Get-Overlays -RepoPath $RepoPath) -Path "ssh/authorized_keys"
 }
 
 # Every managed link this script owns, in one list, so -Check and the apply path can never
@@ -37,8 +28,7 @@ function Get-SshKeysSource {
 function Get-ManagedLinkPlan {
     param([Parameter(Mandatory)][string]$RepoPath)
 
-    # AWS config may come from this repo or from one overlay, never both.
-    $awsConfig = Find-OverlayFile -Roots (@($RepoPath) + (Get-SetupOverlays -RepoPath $RepoPath)) -RelativePath "aws\config"
+    $awsConfig = Get-OverlaySource -Set (Get-Overlays -RepoPath $RepoPath) -Path "aws/config"
     if (-not $awsConfig) {
         Write-Host "[--] AWS config: neither this repo nor an overlay has aws/config; skipped" -ForegroundColor DarkGray
     }
@@ -81,7 +71,8 @@ if ($Check) {
     }
 
     # ~/.gitconfig-overlays is generated rather than linked; see overlays.ps1.
-    if ((Update-GitOverlayInclude -Overlays (Get-SetupOverlays -RepoPath $repoPath) -Check) -eq 'AlreadyCorrect') {
+    $fragments = Get-OverlaySource -Set (Get-Overlays -RepoPath $repoPath) -Path "git/gitconfig"
+    if ((Update-GitOverlayInclude -Fragments $fragments -Check) -eq 'AlreadyCorrect') {
         Write-Host "[OK] ~/.gitconfig-overlays" -ForegroundColor Green
     } else {
         $wrong++
@@ -230,7 +221,7 @@ if ($linkedAws) {
     Write-Host "     Run 'aws sso login' to authenticate" -ForegroundColor DarkGray
 }
 
-switch (Update-GitOverlayInclude -Overlays (Get-SetupOverlays -RepoPath $dotfilesPath)) {
+switch (Update-GitOverlayInclude -Fragments (Get-OverlaySource -Set (Get-Overlays -RepoPath $dotfilesPath) -Path "git/gitconfig")) {
     'AlreadyCorrect' { Write-Host "[OK] ~/.gitconfig-overlays already current" -ForegroundColor Green }
     'Written'        { Write-Host "[OK] ~/.gitconfig-overlays written" -ForegroundColor Green }
 }

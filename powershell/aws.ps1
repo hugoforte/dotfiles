@@ -39,8 +39,7 @@ function aws-setup-profile {
     }
 
     try {
-        $overlays = Get-OverlayList -LocalPath (Join-Path $repoRoot "ai\secrets\machine.local.psd1")
-        $sourceConfigPath = Find-OverlayFile -Roots (@($repoRoot) + $overlays) -RelativePath "aws\config"
+        $sourceConfigPath = Get-OverlaySource -Set (Get-Overlays -RepoPath $repoRoot) -Path "aws/config"
     } catch {
         Write-Host $_.Exception.Message -ForegroundColor Red
         return

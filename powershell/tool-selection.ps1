@@ -4,7 +4,7 @@
 #
 # An entry with Optional = '<name>' belongs to that option. A machine opts into it by listing the
 # name under OptionalTools in ai/secrets/machine.local.psd1 (git-ignored) or in an overlay's
-# machines/<COMPUTERNAME>.psd1 (tracked), and then gets every entry of the option - its install
+# machines/<KEY>.psd1 (tracked), and then gets every entry of the option - its install
 # and its manual steps together.
 
 # The options the given files opt into, each named once, in the order first listed. A file that

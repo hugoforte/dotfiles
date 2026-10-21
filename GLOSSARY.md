@@ -135,7 +135,7 @@ A manifest entry marked `Unattended = $false`: safe to install only on a watched
 _Avoid_: skipped, blocked, manual (that is a `Source`, for entries nothing can install)
 
 **Option**:
-A named group of manifest entries (`Optional = '<name>'`) that only machines opting in get: the install and its manual steps together. A machine opts in by listing the name under `OptionalTools` in an overlay's `machines/<COMPUTERNAME>.psd1` or its `machine.local.psd1`; on any other machine the option is reported as available, never as missing.
+A named group of manifest entries (`Optional = '<name>'`) that only machines opting in get: the install and its manual steps together. A machine opts in by listing the name under `OptionalTools` in an overlay's `machines/<KEY>.psd1` or its `machine.local.psd1`; on any other machine the option is reported as available, never as missing.
 _Avoid_: profile, feature flag, extra
 
 **Install method**:

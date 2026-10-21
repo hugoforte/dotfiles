@@ -27,10 +27,6 @@ if command -v cygpath > /dev/null 2>&1; then
     HOOK_BIN="$(cygpath -m "$HOOK_BIN")"
 fi
 
-# Overlays may name extra Claude config folders (each one a CLAUDE_CONFIG_DIR with its own login),
-# one per line in <overlay>/ai/claude/config-dirs. See config_dir_path.
-CONFIG_DIRS_FILE="ai/claude/config-dirs"
-
 # Overlays ship Bruno collections too, under <overlay>/bruno/<collection>/, each linked into
 # this one home so Bruno opens them all from one place. No collection lives in this public repo;
 # the content is private, the mechanism is not.
@@ -76,19 +72,15 @@ config_dir_path() {
 }
 
 # resolve_claude_dirs: add each folder the overlays name to CLAUDE_DIRS, once: a folder already
-# there, ~/.claude included, is not added again. An overlay names them in $CONFIG_DIRS_FILE for
-# every machine, and in machines/<KEY>.config-dirs for the one machine machine_key names KEY, in
+# there, ~/.claude included, is not added again. An overlay names them in ai/claude/config-dirs for
+# every machine, and in machines/<KEY>.config-dirs for the one machine whose OVERLAY_KEY is KEY, in
 # the same format. A path that is not absolute is warned about, never created, and is drift to
 # --check.
 resolve_claude_dirs() {
-    overlays="$(overlay_dirs)"
-    [ -n "$overlays" ] || return 0
-    machine="$(machine_key)"
-    while IFS= read -r overlay; do
-        add_config_dirs "$overlay/$CONFIG_DIRS_FILE"
-        [ -z "$machine" ] || add_config_dirs "$overlay/machines/$machine.config-dirs"
+    while IFS= read -r file; do
+        [ -z "$file" ] || add_config_dirs "$file"
     done <<EOF
-$overlays
+$(overlay_sources ai/claude/config-dirs; overlay_sources "machines/{KEY}.config-dirs")
 EOF
 }
 
@@ -145,7 +137,7 @@ rig_root() {
         case "$root" in
             [A-Za-z]:*) command -v cygpath > /dev/null 2>&1 && root="$(cygpath -u "$root")" ;;
         esac
-        # A trailing separator would never match what readlink reports; see overlay_dirs.
+        # A trailing separator would never match what readlink reports; see _overlay_path.
         root="${root%/}"
         [ -f "$root/bin/rig.mjs" ] && { echo "$root"; return 0; }
         warning "RIG_ROOT=$RIG_ROOT has no bin/rig.mjs - no rig skills linked"
@@ -155,11 +147,6 @@ rig_root() {
         [ -f "$root/bin/rig.mjs" ] && { echo "$root"; return 0; }
     done
     return 1
-}
-
-# The overlay directories this machine lists, one per line, in the order listed.
-overlay_dirs() {
-    psd1_paths "$ZSH/ai/secrets/machine.local.psd1" Overlays
 }
 
 # ---------------------------------------------------------------------------
@@ -324,28 +311,7 @@ EOF
 overlay_skills() {
     rig_skills=""
     root="$(rig_root)" && rig_skills="$root/skills"
-    seen=""
-    overlay_dirs | while IFS= read -r overlay; do
-        for skill in "$overlay"/ai/skills/*/; do
-            skill="${skill%/}"
-            [ -d "$skill" ] || continue
-            name="$(basename "$skill")"
-            key="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
-            clash=""
-            if [ -d "$ZSH/ai/skills/$name" ]; then
-                clash="$ZSH/ai/skills/$name"
-            elif [ -n "$rig_skills" ] && [ -d "$rig_skills/$name" ]; then
-                clash="$rig_skills/$name"
-            else
-                # "/" cannot appear in a skill name, so it ends the key unambiguously.
-                case "$seen" in
-                    *"$TAB$key/"*) clash="${seen#*"$TAB$key/"}"; clash="${clash%%"$TAB"*}" ;;
-                esac
-            fi
-            [ -z "$clash" ] && seen="$seen$TAB$key/$skill$TAB"
-            printf '%s\t%s\n' "$skill" "$clash"
-        done
-    done
+    overlay_entries ai/skills "$ZSH/ai/skills" ${rig_skills:+"$rig_skills"}
 }
 
 # report_overlay_skill_clashes <overlay_skills output>: warn about each refused skill; false if any.
@@ -366,12 +332,11 @@ EOF
 # default; the Bruno component passes bruno.
 each_overlay_orphans() {
     subpath="${3:-ai/skills}"
-    overlays="$(overlay_dirs)"
-    [ -n "$overlays" ] || return 0
+    [ -n "$OVERLAYS" ] || return 0
     while IFS= read -r overlay; do
         "$2" "$1" "$overlay/$subpath"
     done <<EOF
-$overlays
+$OVERLAYS
 EOF
 }
 
@@ -438,22 +403,7 @@ EOF
 # and the directory of an earlier overlay already shipping that name, or nothing when the name is
 # free. Names compare without case, as they do on the NTFS the links live on.
 overlay_bruno() {
-    seen=""
-    overlay_dirs | while IFS= read -r overlay; do
-        for coll in "$overlay"/bruno/*/; do
-            coll="${coll%/}"
-            [ -d "$coll" ] || continue
-            name="$(basename "$coll")"
-            key="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
-            clash=""
-            # "/" cannot appear in a collection name, so it ends the key unambiguously.
-            case "$seen" in
-                *"$TAB$key/"*) clash="${seen#*"$TAB$key/"}"; clash="${clash%%"$TAB"*}" ;;
-            esac
-            [ -z "$clash" ] && seen="$seen$TAB$key/$coll$TAB"
-            printf '%s\t%s\n' "$coll" "$clash"
-        done
-    done
+    overlay_entries bruno
 }
 
 # report_overlay_bruno_clashes <overlay_bruno output>: warn about each refused collection; false
@@ -666,6 +616,9 @@ if [ "$MODE" = "install" ] && [ "$INSTALL_SETTINGS" = "true" ] && ! command -v j
     warning "jq not found - settings merge will be skipped (winget install jqlang.jq)"
 fi
 
+# Every run, so a listed overlay that is gone fails it rather than dropping all it carries.
+overlays_load "$ZSH" || exit 1
+
 # Export reads ~/.claude alone, so it has no use for the extra folders or a warning about them.
 [ "$MODE" = "export" ] || resolve_claude_dirs
 
@@ -697,18 +650,14 @@ if [ "$MODE" = "check" ]; then
         CHECK_FAILED=1
     fi
     # A here-document rather than a pipe, so CHECK_FAILED is set in this shell, not a subshell.
-    overlays="$(overlay_dirs)"
-    [ -n "$overlays" ] && while IFS= read -r overlay; do
-        if [ ! -d "$overlay" ]; then
-            error "overlay $overlay listed in ai/secrets/machine.local.psd1 does not exist"
-            CHECK_FAILED=1
-        elif sh "$ZSH/ai/secrets/check-encrypted.sh" "$overlay/ai/secrets"; then
+    [ -n "$OVERLAYS" ] && while IFS= read -r overlay; do
+        if sh "$ZSH/ai/secrets/check-encrypted.sh" "$overlay/ai/secrets"; then
             success "$overlay/ai/secrets: all files encrypted"
         else
             CHECK_FAILED=1
         fi
     done <<EOF
-$overlays
+$OVERLAYS
 EOF
 fi
 

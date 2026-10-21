@@ -94,15 +94,19 @@ if (-not (Test-Path -LiteralPath $localPath)) {
 }
 
 try {
-    $existing = @(Get-OverlayList -LocalPath $localPath)
+    $existing = @((Get-Overlays -RepoPath $repoRoot).Overlays)
     # Overlays from other repos stay; this repo's are replaced by the selection, in its order.
     $prefix = $Path.TrimEnd('\') + '\'
     $kept = @($existing | Where-Object { -not ([IO.Path]::GetFullPath($_) + '\').StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
     $overlays = @($kept) + $selected
 
-    Get-MergedSkillRegistry -Roots (@($repoRoot) + $overlays) | Out-Null
-    Find-OverlayFile -Roots (@($repoRoot) + $overlays) -RelativePath "aws\config" | Out-Null
-    Find-OverlayFile -Roots (@($repoRoot) + $overlays) -RelativePath "ssh\authorized_keys" | Out-Null
+    # The new list as a machine would read it: no path with one source may have two, and no skill
+    # may be registered twice.
+    $candidate = Get-Overlays -RepoPath $repoRoot -Overlays $overlays
+    foreach ($rule in ($OverlayRules | Where-Object { $_.Count -eq 'one' })) {
+        Get-OverlaySource -Set $candidate -Path $rule.Path | Out-Null
+    }
+    Get-MergedSkillRegistry -Path (Get-OverlaySource -Set $candidate -Path "ai/secrets/registry.psd1") | Out-Null
 } catch {
     Fail "$($_.Exception.Message). Nothing was written. If this checkout still carries what the overlay now holds, the change that moved it out has not reached this branch yet."
     Exit-WithResult $result 1
