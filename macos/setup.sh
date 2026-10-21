@@ -11,8 +11,9 @@
 # What it manages:
 #   ~/.zshrc               -> macos/zshrc
 #   ~/.gitconfig           -> macos/gitconfig
-#   ~/.aws/config          -> the one aws/config in this repo or an overlay, if any
 #   ~/.ssh/authorized_keys -> the one overlay's ssh/authorized_keys, if any
+#   ~/.aws/config             written: every aws/config in this repo and the overlays, merged
+#                             (ai/helpers/aws-config.sh)
 #   ~/.gitconfig-overlays     written: an include of each overlay's git/gitconfig
 #   Brewfiles                 each overlay's macos/Brewfile, then the one overlay's
 #                             machines/<KEY>.Brewfile, KEY being the HostName (else the
@@ -33,11 +34,12 @@ REPO="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 . "$REPO/ai/helpers/output.sh"
 . "$REPO/ai/helpers/managed-link.sh"
 . "$REPO/ai/helpers/overlays.sh"
+. "$REPO/ai/helpers/aws-config.sh"
 
 show_help() {
     echo "Usage: $0 [--check | --brew-if-changed]"
     echo ""
-    echo "Links ~/.zshrc, ~/.gitconfig, ~/.aws/config and ~/.ssh/authorized_keys, writes ~/.gitconfig-overlays, applies"
+    echo "Links ~/.zshrc, ~/.gitconfig and ~/.ssh/authorized_keys, writes ~/.aws/config and ~/.gitconfig-overlays, applies"
     echo "each overlay's Brewfile and this Mac's, then runs ai/install.sh."
     echo ""
     echo "  --check            Report what would change without changing anything (exit 1 if anything would)"
@@ -89,8 +91,6 @@ EOF
 
 MACHINE="$(machine_key)"
 
-aws_source="$(one_source aws/config "$REPO
-$OVERLAYS")" || exit 1
 # Overlays only: the public repo never ships the keys that may log in to a machine.
 ssh_keys_source="$(one_source ssh/authorized_keys "$OVERLAYS")" || exit 1
 machine_brewfile=""
@@ -119,10 +119,12 @@ esac
 
 managed "~/.zshrc" "$REPO/macos/zshrc" "$HOME/.zshrc"
 managed "~/.gitconfig" "$REPO/macos/gitconfig" "$HOME/.gitconfig"
-if [ -n "$aws_source" ]; then
-    managed "~/.aws/config" "$aws_source" "$HOME/.aws/config"
+if [ "$MODE" = "check" ]; then
+    aws_config_check "$HOME/.aws/config" "$REPO
+$OVERLAYS"
 else
-    info "AWS config: neither this repo nor an overlay has aws/config; skipped"
+    aws_config_apply "$HOME/.aws/config" "$REPO
+$OVERLAYS" || FAILED=1
 fi
 ssh_keys="$HOME/.ssh/authorized_keys"
 if [ -n "$ssh_keys_source" ]; then

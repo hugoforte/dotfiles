@@ -19,6 +19,7 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "output.ps1")
 . (Join-Path $PSScriptRoot "overlays.ps1")
+. (Join-Path $PSScriptRoot "aws-config.ps1")
 . (Join-Path $PSScriptRoot "native.ps1")
 
 $repoRoot = Split-Path $PSScriptRoot -Parent
@@ -101,7 +102,7 @@ try {
     $overlays = @($kept) + $selected
 
     Get-MergedSkillRegistry -Roots (@($repoRoot) + $overlays) | Out-Null
-    Find-OverlayFile -Roots (@($repoRoot) + $overlays) -RelativePath "aws\config" | Out-Null
+    Get-AwsConfigContent -Roots (@($repoRoot) + $overlays) | Out-Null
     Find-OverlayFile -Roots (@($repoRoot) + $overlays) -RelativePath "ssh\authorized_keys" | Out-Null
 } catch {
     Fail "$($_.Exception.Message). Nothing was written. If this checkout still carries what the overlay now holds, the change that moved it out has not reached this branch yet."
@@ -117,7 +118,7 @@ if ((@($existing) -join "`n") -eq ($overlays -join "`n")) {
 
 # --- Apply ----------------------------------------------------------------------------------------
 # sync.ps1 is the one applier: it links their skills (through ai/install.sh), pulls the overlays,
-# writes ~/.gitconfig-overlays, links ~/.aws/config, copies ~/.ssh/authorized_keys, removes links
+# writes ~/.gitconfig-overlays and ~/.aws/config, copies ~/.ssh/authorized_keys, removes links
 # left behind by files that moved out, and deploys the secrets.
 
 Say ""

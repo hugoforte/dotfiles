@@ -92,7 +92,9 @@ assert_eq "~/.zshrc is linked to macos/zshrc" "$repo/macos/zshrc" "$(readlink "$
 set -- "$home"/.zshrc.backup.*
 assert_eq "the real ~/.zshrc it displaced is backed up" "# my old zshrc" "$(cat "$1")"
 assert_eq "~/.gitconfig is linked to macos/gitconfig" "$repo/macos/gitconfig" "$(readlink "$home/.gitconfig")"
-assert_eq "~/.aws/config is linked to the one overlay that has it" "$personal/aws/config" "$(readlink "$home/.aws/config")"
+assert_eq "~/.aws/config is a file, not a link" "n" "$([ -L "$home/.aws/config" ] && echo y || echo n)"
+assert_eq "~/.aws/config holds the one overlay's aws/config under a line naming it" \
+    "$(printf '# from %s\n[profile dev]' "$personal/aws/config")" "$(grep -v '^# Written by\|^# Add a profile\|^$' "$home/.aws/config")"
 assert_eq "~/.ssh/authorized_keys is linked to the one overlay that has it" "$personal/ssh/authorized_keys" "$(readlink "$home/.ssh/authorized_keys")"
 assert_eq "~/.gitconfig-overlays includes each overlay's git/gitconfig, in order" \
     "$(printf '[include]\n\tpath = %s\n[include]\n\tpath = %s' "$personal/git/gitconfig" "$second/git/gitconfig")" \
@@ -201,17 +203,87 @@ assert_eq "a ~/.gitconfig-overlays that cannot be written fails install" "1" "$r
 rmdir "$home/.gitconfig-overlays"
 install
 
+# --- ~/.aws/config ---------------------------------------------------------------------------
+
+aws="$home/.aws/config"
+# sections: the section lines of ~/.aws/config, one per line, in order
+sections() { grep '^\[' "$aws"; }
+
+mkdir -p "$repo/aws" "$second/aws"
+printf '[profile repo]\r\nregion = us-east-1\r\n' > "$repo/aws/config"
+printf '[sso-session kealu]\nsso_region = us-east-1' > "$second/aws/config"
+out="$(check)"; rc=$?
+assert_eq "--check fails once another source has aws/config" "1" "$rc"
+assert_eq "--check says the file is behind" "y" "$(says "$out" "behind the aws/config files it merges")"
+install
+assert_eq "every source merges, the repo first and then the overlays in order" \
+    "$(printf '[profile repo]\n[profile dev]\n[sso-session kealu]')" "$(sections)"
+assert_eq "the header counts the sources" "y" "$(says "$(head -n 1 "$aws")" "from 3 aws/config file(s)")"
+assert_eq "a CRLF source is written with LF" "0" "$(tr -d -c '\r' < "$aws" | wc -c | tr -d ' ')"
+assert_eq "a source with no final newline keeps its last line" "y" "$(says "$(cat "$aws")" "sso_region = us-east-1")"
+out="$(check)"; rc=$?
+assert_eq "--check is clean once merged" "0" "$rc"
+
+printf '\n[profile dev]\n' >> "$second/aws/config"
+before="$(cat "$aws")"
+out="$(run)"; rc=$?
+assert_eq "a section two sources declare fails install" "1" "$rc"
+assert_eq "and names the section and both sources" "y" "$(says "$out" "[profile dev] is in both $personal/aws/config and $second/aws/config")"
+assert_eq "and leaves ~/.aws/config as it was" "$before" "$(cat "$aws")"
+out="$(check)"; rc=$?
+assert_eq "--check fails on it too" "1" "$rc"
+printf '[sso-session kealu]\nsso_region = us-east-1\n' > "$second/aws/config"
+install
+
+rm "$aws"
+ln -s "$personal/aws/config" "$aws"
+out="$(check)"; rc=$?
+assert_eq "--check fails on the link setup used to make" "1" "$rc"
+assert_eq "--check names it" "y" "$(says "$out" "~/.aws/config is a link")"
+install
+assert_eq "install replaces the link with the merged file" "n" "$([ -L "$aws" ] && echo y || echo n)"
+set -- "$home"/.aws/config.backup.*
+assert_eq "without a backup" "n" "$(exists "$1")"
+assert_eq "and leaves the link's source untouched" "[profile dev]" "$(cat "$personal/aws/config")"
+
+printf '[profile added-by-aws-configure]\n' > "$aws"
+out="$(check)"; rc=$?
+assert_eq "--check fails on a file dotfiles did not write" "1" "$rc"
+install
+set -- "$home"/.aws/config.backup.*
+assert_eq "install backs that file up" "[profile added-by-aws-configure]" "$(cat "$1")"
+assert_eq "and writes the merged file" "y" "$(says "$(cat "$aws")" "# from $personal/aws/config")"
+rm "$1"
+
+rm -r "$repo/aws" "$second/aws"
+mkdir -p "$work/unlisted/aws"
+mv "$personal/aws/config" "$work/unlisted/aws/config"
+out="$(check)"; rc=$?
+assert_eq "--check fails on a merged file with no source left" "1" "$rc"
+install
+assert_eq "install removes it" "n" "$(exists "$aws")"
+ln -s "$work/unlisted/aws/config" "$aws"
+install
+assert_eq "and a link to an aws/config that setup made" "n" "$(exists "$aws")"
+printf '[profile mine]\n' > "$aws"
+out="$(run)"; rc=$?
+assert_eq "with no source, a file of someone's own stays" "[profile mine]" "$(cat "$aws")"
+assert_eq "and says it skipped" "y" "$(says "$out" "neither this repo nor an overlay has aws/config; skipped")"
+rm "$aws"
+mv "$work/unlisted/aws/config" "$personal/aws/config"
+install
+
 # --- reading machine.local.psd1 --------------------------------------------------------------
 
 mv "$repo/ai/secrets/machine.local.psd1" "$work/machine.local.psd1.saved"
 out="$(run)"; rc=$?
 assert_eq "a Mac with no machine.local.psd1 yet sets up without overlays" "0" "$rc"
+assert_eq "and, with no aws/config left, removes the merged file" "n" "$(exists "$home/.aws/config")"
 mv "$work/machine.local.psd1.saved" "$repo/ai/secrets/machine.local.psd1"
 
 printf '@{\n    Overlays = @(\n        "%s"\n    )\n}\n' "$(win "$personal")" > "$repo/ai/secrets/machine.local.psd1"
-rm "$home/.aws/config"
 install
-assert_eq "a double-quoted overlay path is read too" "$personal/aws/config" "$(readlink "$home/.aws/config")"
+assert_eq "a double-quoted overlay path is read too" "y" "$(says "$(cat "$home/.aws/config")" "# from $personal/aws/config")"
 overlays "$personal" "$second"
 install
 
@@ -245,13 +317,6 @@ install
 
 out="$(run --check extra)"; rc=$?
 assert_eq "an argument it does not take is refused" "1" "$rc"
-
-mkdir -p "$repo/aws"
-printf '[profile other]\n' > "$repo/aws/config"
-out="$(run)"; rc=$?
-assert_eq "aws/config from two sources fails" "1" "$rc"
-assert_eq "and names both" "y" "$(says "$out" "$repo/aws/config")"
-rm -r "$repo/aws"
 
 mkdir -p "$second/ssh"
 printf 'ssh-ed25519 BBBB desktop\n' > "$second/ssh/authorized_keys"
