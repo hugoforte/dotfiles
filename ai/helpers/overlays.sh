@@ -73,7 +73,8 @@ _overlay_path() {
 #                  uppercased; empty for a machine with no name.
 #   OVERLAY_REPOS  the git repositories the overlays are in, each once, in the order first listed
 # An overlay that does not exist returns 1 and names it: skipping it would drop everything it
-# carries. Run it in the caller's shell, never inside $(...), or nothing it sets survives.
+# carries. OVERLAYS still holds the list then, and nothing else may be asked of the module. Run it
+# in the caller's shell, never inside $(...), or nothing it sets survives.
 overlays_load() {
     OVERLAYS_LOADED=""
     OVERLAYS_BASE="$1"
@@ -185,8 +186,8 @@ EOF
 # merged_skill_registry: one line per skill in every ai/secrets/registry.psd1, the repo's first,
 # its fields separated by REGISTRY_FS:
 #   <id> <marker> <remote> <files, space-separated> <registry path>
-# The same Id in two registries is an error naming both, because either answer would be a guess.
-# Keys are read without case and values in either quote, as PowerShell reads them, so an entry must
+# The same Id in two registries, in any case, is an error naming both, because either answer would
+# be a guess. Keys are read without case and values in either quote, as PowerShell reads them, so an entry must
 # put each key on a line of its own with a quoted value and Files as one @(...) on one line, as
 # every registry here does. An entry it cannot read is an error naming the registry: no Id, no
 # one-line Files, a key whose value is not a quoted string, or a Marker with no Remote, which would
@@ -201,7 +202,8 @@ merged_skill_registry() {
         printf '%s has an entry this cannot read: each key on a line of its own with a quoted value, an Id, Files as one @(...) on one line, and a Remote beside every Marker\n' "$_ov_bad" >&2
         return 1
     fi
-    _ov_twice="$(printf '%s\n' "$_ov_skills" | awk -F "$REGISTRY_FS" 'NF { if ($1 in seen) { print $1 " is registered in both " seen[$1] " and " $5; exit } seen[$1] = $5 }')"
+    # Ids compare without case, as PowerShell's hashtable compares them.
+    _ov_twice="$(printf '%s\n' "$_ov_skills" | awk -F "$REGISTRY_FS" 'NF { id = tolower($1); if (id in seen) { print $1 " is registered in both " seen[id] " and " $5; exit } seen[id] = $5 }')"
     [ -z "$_ov_twice" ] || { printf 'skill %s\n' "$_ov_twice" >&2; return 1; }
     [ -z "$_ov_skills" ] || printf '%s\n' "$_ov_skills"
 }

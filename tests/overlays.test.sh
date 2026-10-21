@@ -168,6 +168,10 @@ out="$(loaded 'merged_skill_registry; echo "rc=$?"')"
 assert_eq "an Id registered twice fails" "y" "$(says "$out" "rc=1")"
 assert_eq "naming both registries" "y" "$(says "$out" "$first/ai/secrets/registry.psd1 and $second/ai/secrets/registry.psd1")"
 
+registry "$first" Beta
+out="$(loaded 'merged_skill_registry; echo "rc=$?"')"
+assert_eq "an Id registered twice in another case fails, as PowerShell's does" "y" "$(says "$out" "rc=1")"
+
 file "$first/ai/secrets/registry.psd1" "@{ Skills = @( @{ Id = 'odd'; Files = 'not-a-list' } ) }"
 out="$(loaded 'merged_skill_registry; echo "rc=$?"')"
 assert_eq "an entry it cannot read fails, naming the registry" "y" "$(says "$out" "$first/ai/secrets/registry.psd1 has an entry this cannot read")"
