@@ -121,8 +121,8 @@ out="$(loaded 'overlay_sources not/a/rule; echo "rc=$?"')"
 assert_eq "a path not in the table is an error" "y" "$(says "$out" "rc=1")"
 out="$(in_sh 'overlay_sources aws/config; echo "rc=$?"')"
 assert_eq "asking for sources before the overlays are loaded returns 2" "y" "$(says "$out" "rc=2")"
-out="$(loaded 'overlay_sources ai/skills; echo "rc=$?"')"
-assert_eq "a directory of entries has no sources of its own" "y" "$(says "$out" "rc=1")"
+out="$(loaded 'overlay_sources "ai/skills/*/"; echo "rc=$?"')"
+assert_eq "a pattern of entries has no sources of its own" "y" "$(says "$out" "rc=1")"
 
 # --- the entries under a directory ----------------------------------------------------------------
 
@@ -136,7 +136,20 @@ assert_eq "each entry in overlay order, an earlier overlay keeping a name withou
 $first/ai/skills/own$TAB$repo/ai/skills/own
 $first/ai/skills/shared$TAB
 $second/ai/skills/Shared$TAB$first/ai/skills/shared" \
-    "$(loaded 'overlay_entries ai/skills "$R/ai/skills"')"
+    "$(loaded 'overlay_entries "ai/skills/*/" "$R/ai/skills"')"
+
+# A pattern of files: only the files it matches, a claimant's file of that name before them.
+file "$first/ai/rules/style.md"
+file "$first/ai/rules/notes.txt"
+mkdir -p "$first/ai/rules/folder.md"
+file "$second/ai/rules/Style.md"
+file "$second/ai/rules/team.md"
+file "$repo/ai/rules/team.md"
+assert_eq "a pattern of files matches only files, by the same first-wins rule" \
+    "$first/ai/rules/style.md$TAB
+$second/ai/rules/Style.md$TAB$first/ai/rules/style.md
+$second/ai/rules/team.md$TAB$repo/ai/rules/team.md" \
+    "$(loaded 'overlay_entries "ai/rules/*.md" "$R/ai/rules"')"
 
 # --- the overlay repositories ---------------------------------------------------------------------
 
@@ -183,11 +196,10 @@ assert_eq "an entry it cannot read fails, naming the registry" "y" "$(says "$out
 # --- the list in the README -----------------------------------------------------------------------
 
 # Every path in the table is in README's list of what an overlay may hold, so the list cannot fall
-# behind the code. {KEY} is written <KEY> there, and a directory of entries ends in /.
+# behind the code. {KEY} is written <KEY> there, and a pattern of entries by its folder.
 section="$(awk '/^## Private configuration: overlays/ { on = 1; next } on && /^## / { exit } on' "$REPO_ROOT/README.md")"
 missing="$(in_sh 'printf "%s\n" "$OVERLAY_RULES"' | while read -r path count roots; do
-    shown="$(printf '%s' "$path" | sed 's/{KEY}/<KEY>/')"
-    [ "$count" = "entries" ] && shown="$shown/"
+    shown="$(printf '%s' "$path" | sed -e 's/{KEY}/<KEY>/' -e 's/\*.*//')"
     printf '%s\n' "$section" | grep -qF -- "- \`$shown" || printf '%s ' "$path"
 done)"
 assert_eq "README lists every path in the table" "" "$missing"

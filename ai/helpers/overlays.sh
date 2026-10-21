@@ -7,7 +7,7 @@
 #
 #   overlays_load <repo> [overlay...]  read the list; sets OVERLAYS, OVERLAY_KEY, OVERLAY_REPOS
 #   overlay_sources <path>             the sources of a path in OVERLAY_RULES
-#   overlay_entries <dir> [claimant...] the entries under a directory in OVERLAY_RULES
+#   overlay_entries <pattern> [claimant...]  the entries an entries row in OVERLAY_RULES matches
 #   merged_skill_registry              every skill the registries list
 #
 # POSIX sh has no local, so every name these functions use is prefixed _ov.
@@ -16,7 +16,8 @@
 # have, and the roots it is read from. README's "Private configuration: overlays" says what each is.
 #   one      at most one source; two is an error naming both
 #   all      every source, in order
-#   entries  a directory whose entries are linked by name; the first to ship a name keeps it
+#   entries  a pattern in one folder (*/ its folders, *.md its .md files) whose matches are linked by
+#            name; the first to ship a name keeps it
 #   overlays the listed overlays, in order; repo+overlays puts the repo first
 # {KEY} in a path is the machine key, and with no key the path matches nothing. A path ending in /
 # is a folder; every other is a file.
@@ -32,8 +33,10 @@ machines/{KEY}.config-dirs all overlays
 machines/ all overlays
 powershell/tools.psd1 all repo+overlays
 ai/secrets/registry.psd1 all repo+overlays
-ai/skills entries overlays
-bruno entries overlays'
+ai/skills/*/ entries overlays
+bruno/*/ entries overlays
+ai/rules/*.md entries overlays
+ai/agents/*.md entries overlays'
 
 # The field separator of a merged_skill_registry line: ASCII unit separator. Not a tab: read
 # collapses runs of a whitespace IFS, which would shift a shipped skill's empty Marker out of place.
@@ -154,26 +157,30 @@ EOF
     [ -z "$_ov_found" ] || printf '%s\n' "$_ov_found"
 }
 
-# overlay_entries <dir> [claimant...]: one line per directory under an entries path in each
-# overlay, in overlay order: its path, a tab, and what already ships that name, or nothing when it
-# is free. A claimant is a directory whose own entries claim their names before any overlay's.
-# Names compare without case, as they do on the NTFS the links live on. A clash is data, never a
-# failure.
+# overlay_entries <pattern> [claimant...]: one line per match of an entries row in each overlay, in
+# overlay order: its path, a tab, and what already ships that name, or nothing when it is free. A
+# claimant is a folder whose own entry of the same name claims it before any overlay's. Names
+# compare without case, as they do on the NTFS the links live on. A clash is data, never a failure.
 overlay_entries() {
     _overlay_rule "$1" entries || return $?
-    _ov_dir="$1"; shift
+    _ov_kind=-f
+    _ov_pattern="$1"
+    case "$_ov_pattern" in */) _ov_kind=-d; _ov_pattern="${_ov_pattern%/}" ;; esac
+    _ov_dir="${_ov_pattern%/*}"
+    _ov_leaf="${_ov_pattern##*/}"
+    shift
     _ov_seen=""
     _ov_tab="$(printf '\t')"
     while IFS= read -r _ov_root; do
         [ -n "$_ov_root" ] || continue
-        for _ov_entry in "$_ov_root/$_ov_dir"/*/; do
-            _ov_entry="${_ov_entry%/}"
-            [ -d "$_ov_entry" ] || continue
+        # The leaf unquoted, so it globs.
+        for _ov_entry in "$_ov_root/$_ov_dir"/$_ov_leaf; do
+            [ "$_ov_kind" "$_ov_entry" ] || continue
             _ov_name="${_ov_entry##*/}"
             _ov_key="$(printf '%s' "$_ov_name" | tr '[:upper:]' '[:lower:]')"
             _ov_clash=""
             for _ov_claimant in "$@"; do
-                [ -d "$_ov_claimant/$_ov_name" ] && { _ov_clash="$_ov_claimant/$_ov_name"; break; }
+                [ "$_ov_kind" "$_ov_claimant/$_ov_name" ] && { _ov_clash="$_ov_claimant/$_ov_name"; break; }
             done
             # "/" cannot appear in a name, so it ends the key unambiguously.
             [ -n "$_ov_clash" ] || case "$_ov_seen" in

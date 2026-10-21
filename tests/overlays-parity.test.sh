@@ -70,6 +70,12 @@ registry "$repo" alpha
 registry "$second" beta
 mkdir -p "$repo/ai/skills/own" "$first/ai/skills/alpha" "$first/ai/skills/own" "$first/ai/skills/shared" \
          "$second/ai/skills/Shared" "$first/bruno/api" "$second/bruno/api" "$second/bruno/web"
+file "$first/ai/rules/style.md"
+file "$first/ai/rules/notes.txt"
+file "$second/ai/rules/Style.md"
+file "$repo/ai/agents/reviewer.md"
+file "$second/ai/agents/reviewer.md"
+file "$second/ai/agents/planner.md"
 git init -q "$work/private"
 
 # swap <from> <to>: every <from> in stdin replaced by <to>, literally
@@ -82,7 +88,7 @@ ps_dump="$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w
     tr -d '\r' | tr '\\' '/' | swap "$root" "<ROOT>")"
 
 TAB="$(printf '\t')"
-case "$sh_dump" in *"bruno$TAB<ROOT>/private/second/bruno/api$TAB<ROOT>/private/first/bruno/api"*"skill${TAB}beta$TAB"*) whole=y ;; *) whole=n ;; esac
+case "$sh_dump" in *"bruno/*/$TAB<ROOT>/private/second/bruno/api$TAB<ROOT>/private/first/bruno/api"*"ai/agents/*.md$TAB<ROOT>/private/second/ai/agents/reviewer.md$TAB<ROOT>/repo/ai/agents/reviewer.md"*"skill${TAB}beta$TAB"*) whole=y ;; *) whole=n ;; esac
 assert_eq "the sh dump reads the whole fixture, so agreeing is not agreeing on nothing" "y" "$whole"
 assert_eq "both readers read the same overlays, key, repositories, sources, entries and skills" "$sh_dump" "$ps_dump"
 

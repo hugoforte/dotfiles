@@ -185,7 +185,7 @@ Describe 'Get-OverlaySource' {
     }
 
     It 'refuses a directory of entries, which has no sources of its own' {
-        { Get-OverlaySource -Set $set -Path 'ai/skills' } | Should -Throw '*ai/skills*'
+        { Get-OverlaySource -Set $set -Path 'ai/skills/*/' } | Should -Throw '*ai/skills*'
     }
 }
 
@@ -199,7 +199,7 @@ Describe 'Get-OverlayEntry' {
         New-File "$a\ai\skills\README.md"
         $set = Get-Overlays -RepoPath $repo -Overlays $a, $b
 
-        $entries = Get-OverlayEntry -Set $set -Path 'ai/skills' -ClaimedBy "$repo\ai\skills" |
+        $entries = Get-OverlayEntry -Set $set -Path 'ai/skills/*/' -ClaimedBy "$repo\ai\skills" |
             ForEach-Object { "$($_.Name)|$($_.Path)|$($_.ClashesWith)" }
 
         $entries | Should -Be @(
@@ -207,6 +207,26 @@ Describe 'Get-OverlayEntry' {
             "own|$a\ai\skills\own|$repo\ai\skills\own"
             "shared|$a\ai\skills\shared|"
             "Shared|$b\ai\skills\Shared|$a\ai\skills\shared"
+        )
+    }
+
+    It 'matches only the files a pattern of files names, by the same first-wins rule' {
+        $repo = New-WorkDir; $a = New-WorkDir; $b = New-WorkDir
+        New-File "$a\ai\rules\style.md"
+        New-File "$a\ai\rules\notes.txt"
+        New-Item -ItemType Directory -Path "$a\ai\rules\folder.md" | Out-Null
+        New-File "$b\ai\rules\Style.md"
+        New-File "$b\ai\rules\team.md"
+        New-File "$repo\ai\rules\team.md"
+        $set = Get-Overlays -RepoPath $repo -Overlays $a, $b
+
+        $entries = Get-OverlayEntry -Set $set -Path 'ai/rules/*.md' -ClaimedBy "$repo\ai\rules" |
+            ForEach-Object { "$($_.Name)|$($_.Path)|$($_.ClashesWith)" }
+
+        $entries | Should -Be @(
+            "style.md|$a\ai\rules\style.md|"
+            "Style.md|$b\ai\rules\Style.md|$a\ai\rules\style.md"
+            "team.md|$b\ai\rules\team.md|$repo\ai\rules\team.md"
         )
     }
 }

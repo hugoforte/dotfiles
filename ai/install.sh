@@ -311,7 +311,7 @@ EOF
 overlay_skills() {
     rig_skills=""
     root="$(rig_root)" && rig_skills="$root/skills"
-    overlay_entries ai/skills "$ZSH/ai/skills" ${rig_skills:+"$rig_skills"}
+    overlay_entries 'ai/skills/*/' "$ZSH/ai/skills" ${rig_skills:+"$rig_skills"}
 }
 
 # report_overlay_skill_clashes <overlay_skills output>: warn about each refused skill; false if any.
@@ -403,7 +403,7 @@ EOF
 # and the directory of an earlier overlay already shipping that name, or nothing when the name is
 # free. Names compare without case, as they do on the NTFS the links live on.
 overlay_bruno() {
-    overlay_entries bruno
+    overlay_entries 'bruno/*/'
 }
 
 # report_overlay_bruno_clashes <overlay_bruno output>: warn about each refused collection; false

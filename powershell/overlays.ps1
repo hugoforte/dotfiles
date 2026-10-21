@@ -14,7 +14,8 @@
 # have, and the roots it is read from.
 #   one      at most one source; two is an error naming both
 #   all      every source, in order
-#   entries  a directory whose entries are linked by name; the first to ship a name keeps it
+#   entries  a pattern in one folder (*/ its folders, *.md its .md files) whose matches are linked by
+#            name; the first to ship a name keeps it
 #   overlays the listed overlays, in order; repo+overlays puts the repo first
 # {KEY} in a path is the machine key, and with no key the path matches nothing. A path ending in /
 # is a folder; every other is a file.
@@ -31,8 +32,10 @@ $OverlayRules = @(
     [pscustomobject]@{ Path = 'machines/';                  Count = 'all';     Roots = 'overlays' }
     [pscustomobject]@{ Path = 'powershell/tools.psd1';      Count = 'all';     Roots = 'repo+overlays' }
     [pscustomobject]@{ Path = 'ai/secrets/registry.psd1';   Count = 'all';     Roots = 'repo+overlays' }
-    [pscustomobject]@{ Path = 'ai/skills';                  Count = 'entries'; Roots = 'overlays' }
-    [pscustomobject]@{ Path = 'bruno';                      Count = 'entries'; Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'ai/skills/*/';               Count = 'entries'; Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'bruno/*/';                   Count = 'entries'; Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'ai/rules/*.md';              Count = 'entries'; Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'ai/agents/*.md';             Count = 'entries'; Roots = 'overlays' }
 )
 
 # Whether a machine.local.psd1 opts the machine into skill secrets: it must declare SearchRoots,
@@ -135,10 +138,10 @@ function Get-OverlaySource {
     $found
 }
 
-# One { Name; Path; ClashesWith } per directory under an entries path in each overlay of Set, in
-# overlay order. ClashesWith is what already ships that name, or $null when it is free. A ClaimedBy
-# directory's own entries claim their names before any overlay's. Names compare without case, as
-# they do on NTFS. A clash is data, never a failure.
+# One { Name; Path; ClashesWith } per match of an entries row (*/ its folders, *.md its .md files)
+# in each overlay of Set, in overlay order. ClashesWith is what already ships that name, or $null
+# when it is free. A ClaimedBy folder's own entry of the same name claims it before any overlay's.
+# Names compare without case, as they do on NTFS. A clash is data, never a failure.
 function Get-OverlayEntry {
     param(
         [Parameter(Mandatory)]$Set,
@@ -147,15 +150,22 @@ function Get-OverlayEntry {
     )
 
     $rule = Get-OverlayRule -Set $Set -Path $Path -Counts 'entries'
+    $kind = if ($Path.EndsWith('/')) { 'Container' } else { 'Leaf' }
+    $pattern = $Path.TrimEnd('/')
+    $leaf = Split-Path $pattern -Leaf
     $seen = @{}
     foreach ($root in $rule.Roots) {
-        $dir = Join-Path $root ($Path -replace '/', '\')
+        $dir = Join-Path $root ((Split-Path $pattern -Parent) -replace '/', '\')
         if (-not (Test-Path -LiteralPath $dir -PathType Container)) { continue }
-        foreach ($name in (Get-ChildItem -LiteralPath $dir -Directory | Sort-Object Name).Name) {
+        # -clike as well as -Filter: sh's glob is case-sensitive, and -Filter is not.
+        $names = (Get-ChildItem -LiteralPath $dir -Filter $leaf |
+            Where-Object { $_.Name -clike $leaf -and (Test-Path -LiteralPath $_.FullName -PathType $kind) } |
+            Sort-Object Name).Name
+        foreach ($name in $names) {
             # Joined, not FullName, which expands a short (8.3) name the overlay was listed by.
             $entryPath = Join-Path $dir $name
             $clash = $ClaimedBy | ForEach-Object { Join-Path $_ $name } |
-                Where-Object { Test-Path -LiteralPath $_ -PathType Container } | Select-Object -First 1
+                Where-Object { Test-Path -LiteralPath $_ -PathType $kind } | Select-Object -First 1
             if (-not $clash) { $clash = $seen[$name.ToLowerInvariant()] }
             if (-not $clash) { $seen[$name.ToLowerInvariant()] = $entryPath }
             [pscustomobject]@{ Name = $name; Path = $entryPath; ClashesWith = $clash }

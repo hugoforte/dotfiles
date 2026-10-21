@@ -15,7 +15,7 @@ foreach ($root in $set.RepoRoots) { "repo`t$root" }
 
 foreach ($rule in $OverlayRules) {
     if ($rule.Count -eq 'entries') {
-        $claimant = Join-Path $RepoPath ($rule.Path -replace '/', '\')
+        $claimant = Join-Path $RepoPath ((Split-Path $rule.Path.TrimEnd('/') -Parent) -replace '/', '\')
         foreach ($entry in (Get-OverlayEntry -Set $set -Path $rule.Path -ClaimedBy $claimant)) {
             "$($rule.Path)`t$($entry.Path)`t$($entry.ClashesWith)"
         }
