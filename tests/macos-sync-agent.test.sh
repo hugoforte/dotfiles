@@ -24,10 +24,14 @@ HOME="$home"; export HOME
 PATH="$stubs:$PATH"; export PATH
 
 plist="$home/Library/LaunchAgents/local.dotfiles.sync.plist"
-# An agent an older checkout installed, under a label that named its owner.
+# An agent an older checkout installed, under a label that named its owner, and another tool's
+# agent whose label happens to end the same way.
 old="$home/Library/LaunchAgents/com.someone.dotfiles-sync.plist"
+other="$home/Library/LaunchAgents/com.example.dotfiles-sync.plist"
+old_agent() { printf '<plist><string>/old/checkout/macos/sync.sh</string></plist>\n' > "$old"; }
 mkdir -p "$(dirname "$old")"
-printf '<plist/>\n' > "$old"
+old_agent
+printf '<plist><string>/opt/example/run.sh</string></plist>\n' > "$other"
 agent()   { (cd "$work" && sh "$REPO_ROOT/macos/install-sync-agent.sh" "$@" 2>&1); }
 has()     { if grep -qF -- "$1" "$plist"; then echo y; else echo n; fi; }
 exists()  { if [ -e "$1" ]; then echo y; else echo n; fi; }
@@ -37,15 +41,17 @@ out="$(agent)"; rc=$?
 assert_eq "install succeeds" "0" "$rc"
 assert_eq "it writes the plist" "y" "$(exists "$plist")"
 assert_eq "the agent is labelled local.dotfiles.sync, naming no one" "y" "$(has "<string>local.dotfiles.sync</string>")"
-assert_eq "it unloads the agent an older checkout installed" "bootout gui/$uid/com.someone.dotfiles-sync" "$(head -n 1 "$work/launchctl.log")"
+assert_eq "once this one is loaded, it unloads the agent an older checkout installed" "bootstrap gui/$uid $plist
+bootout gui/$uid/com.someone.dotfiles-sync" "$(grep -E "^bootstrap|com.someone" "$work/launchctl.log")"
 assert_eq "and removes its plist" "n" "$(exists "$old")"
+assert_eq "but leaves another tool's agent, which runs no macos/sync.sh" "y" "$(exists "$other")"
 assert_eq "it runs this checkout's macos/sync.sh" "y" "$(has "<string>$REPO_ROOT/macos/sync.sh</string>")"
 assert_eq "quietly, since it logs to its own file" "y" "$(has "<string>--quiet</string>")"
 assert_eq "at load" "y" "$(has "<key>RunAtLoad</key>")"
 assert_eq "and every 4 hours" "y" "$(has "<integer>14400</integer>")"
 assert_eq "anything sync.sh does not catch lands in its log" "y" "$(has "<string>$home/Library/Logs/dotfiles-sync.log</string>")"
 assert_eq "it unloads any running agent of its own before loading" "bootout gui/$uid/local.dotfiles.sync" "$(grep -v 'com.someone' "$work/launchctl.log" | head -n 1)"
-assert_eq "and loads this one last" "bootstrap gui/$uid $plist" "$(tail -n 1 "$work/launchctl.log")"
+assert_eq "and loads this one after" "bootstrap gui/$uid $plist" "$(grep -v 'com.someone' "$work/launchctl.log" | tail -n 1)"
 if command -v plutil > /dev/null 2>&1; then
     assert_eq "plutil accepts the plist" "0" "$(plutil -lint "$plist" > /dev/null 2>&1; echo $?)"
 fi
@@ -56,9 +62,11 @@ assert_eq "re-running succeeds" "0" "$rc"
 assert_eq "and writes the same plist" "$first" "$(cat "$plist")"
 
 rm "$work/launchctl.log"
+old_agent
 out="$(agent --uninstall)"; rc=$?
 assert_eq "--uninstall succeeds" "0" "$rc"
-assert_eq "--uninstall unloads the agent" "bootout gui/$uid/local.dotfiles.sync" "$(cat "$work/launchctl.log")"
+assert_eq "--uninstall unloads the agent" "bootout gui/$uid/local.dotfiles.sync" "$(grep -v 'com.someone' "$work/launchctl.log")"
+assert_eq "--uninstall removes an older checkout's agent too" "n" "$(exists "$old")"
 assert_eq "--uninstall removes the plist" "n" "$(exists "$plist")"
 
 assert_summary "macos/install-sync-agent.sh"
