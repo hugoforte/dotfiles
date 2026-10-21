@@ -150,12 +150,12 @@ function Get-OverlayEntry {
         if (-not (Test-Path -LiteralPath $dir -PathType Container)) { continue }
         foreach ($name in (Get-ChildItem -LiteralPath $dir -Directory | Sort-Object Name).Name) {
             # Joined, not FullName, which expands a short (8.3) name the overlay was listed by.
-            $path = Join-Path $dir $name
+            $entryPath = Join-Path $dir $name
             $clash = $ClaimedBy | ForEach-Object { Join-Path $_ $name } |
                 Where-Object { Test-Path -LiteralPath $_ -PathType Container } | Select-Object -First 1
             if (-not $clash) { $clash = $seen[$name.ToLowerInvariant()] }
-            if (-not $clash) { $seen[$name.ToLowerInvariant()] = $path }
-            [pscustomobject]@{ Name = $name; Path = $path; ClashesWith = $clash }
+            if (-not $clash) { $seen[$name.ToLowerInvariant()] = $entryPath }
+            [pscustomobject]@{ Name = $name; Path = $entryPath; ClashesWith = $clash }
         }
     }
 }
