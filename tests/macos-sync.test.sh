@@ -132,6 +132,15 @@ assert_eq "with the output that says why" "y" "$(says "$(cat "$log")" "is this m
 assert_eq "including the lines that are not warnings" "y" "$(says "$(cat "$log")" "Decrypting to")"
 rm -r "$personal/ai/secrets"
 
+# A listed overlay that is gone, as a machine.local.psd1 left behind by a moved checkout lists it.
+printf "@{\n    Overlays = @(\n        '%s'\n    )\n}\n" "$(win "$work/private/gone")" > "$repo/ai/secrets/machine.local.psd1"
+: > "$log"
+out="$(sync)"; rc=$?
+assert_eq "a listed overlay that does not exist fails the run" "1" "$rc"
+assert_eq "and is logged, naming it" "y" "$(says "$(cat "$log")" "private/gone")"
+assert_eq "before anything is applied without it" "n" "$(says "$(cat "$log")" "macos/setup.sh")"
+printf "@{\n    Overlays = @(\n        '%s'\n    )\n}\n" "$(win "$personal")" > "$repo/ai/secrets/machine.local.psd1"
+
 # This repo cannot be pulled, as at a login with no network yet.
 git -C "$repo" remote set-url origin "$work/gone.git"
 : > "$log"

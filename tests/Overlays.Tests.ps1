@@ -1,6 +1,7 @@
-# The overlay rules deploy-secrets.ps1 and setup.ps1 share (hugoforte/dotfiles#26): which
-# overlays a machine lists, how skill registries merge, which source a single-target file comes
-# from, and what ~/.gitconfig-overlays includes. Everything happens under TestDrive:.
+# The overlay rules in PowerShell (hugoforte/dotfiles#67): which overlays a machine lists, the one
+# source or every source of a path, the entries under a directory, the machine key, the overlay
+# repositories, how skill registries merge, and what ~/.gitconfig-overlays includes. The sh twin is
+# tests/overlays.test.sh. Everything happens under TestDrive:.
 
 BeforeAll {
     . (Join-Path (Split-Path $PSScriptRoot -Parent) 'powershell\overlays.ps1')
@@ -56,35 +57,150 @@ Describe 'Test-SkillSecretsOptIn' {
     }
 }
 
-Describe 'Get-OverlayList' {
+Describe 'Get-Overlays' {
 
-    BeforeEach { $work = New-WorkDir }
-
-    It 'is empty when the machine has no machine.local.psd1' {
-        @(Get-OverlayList -LocalPath (Join-Path $work 'machine.local.psd1')).Count | Should -Be 0
+    BeforeEach {
+        $repo = New-WorkDir
+        $local = Join-Path $repo 'ai\secrets\machine.local.psd1'
     }
 
-    It 'is empty when machine.local.psd1 lists no overlays' {
-        $local = Join-Path $work 'machine.local.psd1'
+    It 'lists no overlays when the machine has no machine.local.psd1' {
+        @((Get-Overlays -RepoPath $repo).Overlays).Count | Should -Be 0
+    }
+
+    It 'lists no overlays when machine.local.psd1 lists none' {
         New-File $local "@{ SearchRoots = @('C:\source') }"
 
-        @(Get-OverlayList -LocalPath $local).Count | Should -Be 0
+        @((Get-Overlays -RepoPath $repo).Overlays).Count | Should -Be 0
     }
 
     It 'returns the listed overlays in order' {
         $a = New-WorkDir; $b = New-WorkDir
-        $local = Join-Path $work 'machine.local.psd1'
         New-File $local "@{ Overlays = @('$a', '$b') }"
 
-        Get-OverlayList -LocalPath $local | Should -Be @($a, $b)
+        (Get-Overlays -RepoPath $repo).Overlays | Should -Be @($a, $b)
     }
 
     It 'fails, naming the path, when a listed overlay does not exist' {
-        $missing = Join-Path $work 'no-such-overlay'
-        $local = Join-Path $work 'machine.local.psd1'
+        $missing = Join-Path $repo 'no-such-overlay'
         New-File $local "@{ Overlays = @('$missing') }"
 
-        { Get-OverlayList -LocalPath $local } | Should -Throw "*$missing*"
+        { Get-Overlays -RepoPath $repo } | Should -Throw "*$missing*"
+    }
+
+    It 'takes overlays passed in place of the file''s list, checked the same way' {
+        $a = New-WorkDir
+        New-File $local "@{ Overlays = @('$(Join-Path $repo 'gone')') }"
+
+        (Get-Overlays -RepoPath $repo -Overlays $a).Overlays | Should -Be @($a)
+        { Get-Overlays -RepoPath $repo -Overlays (Join-Path $repo 'also-gone') } | Should -Throw '*also-gone*'
+    }
+
+    It 'keys the machine by its name uppercased, up to its first dot' {
+        (Get-Overlays -RepoPath $repo -ComputerName 'box.example.com').MachineKey | Should -Be 'BOX'
+    }
+
+    It 'lists a repository holding two overlays once' {
+        $private = New-WorkDir
+        git -C $private init -q
+        $a = Join-Path $private 'a'; $b = Join-Path $private 'b'
+        New-Item -ItemType Directory -Path $a, $b | Out-Null
+
+        (Get-Overlays -RepoPath $repo -Overlays $a, $b).RepoRoots | Should -Be @([IO.Path]::GetFullPath($private))
+    }
+
+    It 'leaves out an overlay that is not in a repository' {
+        @((Get-Overlays -RepoPath $repo -Overlays (New-WorkDir)).RepoRoots).Count | Should -Be 0
+    }
+}
+
+Describe 'Get-OverlaySource' {
+
+    BeforeEach {
+        $repo = New-WorkDir; $a = New-WorkDir; $b = New-WorkDir
+        $set = Get-Overlays -RepoPath $repo -Overlays $a, $b -ComputerName 'box'
+    }
+
+    It 'has no source for a one path no root ships' {
+        @(Get-OverlaySource -Set $set -Path 'aws/config').Count | Should -Be 0
+    }
+
+    It 'has the source that ships a one path' {
+        New-File (Join-Path $b 'aws\config')
+
+        Get-OverlaySource -Set $set -Path 'aws/config' | Should -Be (Join-Path $b 'aws\config')
+    }
+
+    It 'fails, naming both, when two roots ship a one path' {
+        New-File (Join-Path $repo 'aws\config')
+        New-File (Join-Path $b 'aws\config')
+
+        { Get-OverlaySource -Set $set -Path 'aws/config' } | Should -Throw "*$repo*$b*"
+    }
+
+    It 'ignores the repo for a path read from the overlays alone' {
+        New-File (Join-Path $repo 'ssh\authorized_keys')
+
+        @(Get-OverlaySource -Set $set -Path 'ssh/authorized_keys').Count | Should -Be 0
+    }
+
+    It 'reads {KEY} as the machine key' {
+        New-File (Join-Path $a 'machines\BOX.psd1')
+        New-File (Join-Path $a 'machines\OTHER.psd1')
+
+        Get-OverlaySource -Set $set -Path 'machines/{KEY}.psd1' | Should -Be (Join-Path $a 'machines\BOX.psd1')
+    }
+
+    It 'matches nothing for a {KEY} path on a machine with no key' {
+        New-File (Join-Path $a 'machines\BOX.psd1')
+        $nameless = Get-Overlays -RepoPath $repo -Overlays $a -ComputerName ''
+
+        @(Get-OverlaySource -Set $nameless -Path 'machines/{KEY}.psd1').Count | Should -Be 0
+    }
+
+    It 'has every source of an all path, in overlay order' {
+        New-File (Join-Path $b 'git\gitconfig')
+        New-File (Join-Path $a 'git\gitconfig')
+
+        Get-OverlaySource -Set $set -Path 'git/gitconfig' | Should -Be @((Join-Path $a 'git\gitconfig'), (Join-Path $b 'git\gitconfig'))
+    }
+
+    It 'puts the repo first for a path read from the repo and the overlays' {
+        New-File (Join-Path $repo 'powershell\tools.psd1')
+        New-File (Join-Path $b 'powershell\tools.psd1')
+
+        Get-OverlaySource -Set $set -Path 'powershell/tools.psd1' |
+            Should -Be @((Join-Path $repo 'powershell\tools.psd1'), (Join-Path $b 'powershell\tools.psd1'))
+    }
+
+    It 'refuses a path not in the table' {
+        { Get-OverlaySource -Set $set -Path 'not/a/rule' } | Should -Throw '*not/a/rule*'
+    }
+
+    It 'refuses a directory of entries, which has no sources of its own' {
+        { Get-OverlaySource -Set $set -Path 'ai/skills' } | Should -Throw '*ai/skills*'
+    }
+}
+
+Describe 'Get-OverlayEntry' {
+
+    It 'lists each entry in overlay order, an earlier overlay keeping a name without case, a claimant before them' {
+        $repo = New-WorkDir; $a = New-WorkDir; $b = New-WorkDir
+        foreach ($dir in "$a\ai\skills\alpha", "$a\ai\skills\own", "$a\ai\skills\shared", "$b\ai\skills\Shared", "$repo\ai\skills\own") {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+        New-File "$a\ai\skills\README.md"
+        $set = Get-Overlays -RepoPath $repo -Overlays $a, $b
+
+        $entries = Get-OverlayEntry -Set $set -Path 'ai/skills' -ClaimedBy "$repo\ai\skills" |
+            ForEach-Object { "$($_.Name)|$($_.Path)|$($_.ClashesWith)" }
+
+        $entries | Should -Be @(
+            "alpha|$a\ai\skills\alpha|"
+            "own|$a\ai\skills\own|$repo\ai\skills\own"
+            "shared|$a\ai\skills\shared|"
+            "Shared|$b\ai\skills\Shared|$a\ai\skills\shared"
+        )
     }
 }
 
@@ -92,124 +208,45 @@ Describe 'Get-MergedSkillRegistry' {
 
     BeforeEach { $repo = New-WorkDir; $overlay = New-WorkDir }
 
-    It 'merges the skills of every root' {
+    It 'merges the skills of every registry' {
         New-Registry $repo 'alpha'
         New-Registry $overlay 'beta'
 
-        $skills = @(Get-MergedSkillRegistry -Roots $repo, $overlay)
+        $skills = @(Get-MergedSkillRegistry -Path "$repo\ai\secrets\registry.psd1", "$overlay\ai\secrets\registry.psd1")
 
         $skills.Id | Should -Be @('alpha', 'beta')
     }
 
-    It 'reads each skill''s secrets from the root that registered it' {
+    It 'reads each skill''s secrets from beside the registry that registered it' {
         New-Registry $repo 'alpha'
         New-Registry $overlay 'beta'
 
-        $beta = Get-MergedSkillRegistry -Roots $repo, $overlay | Where-Object Id -eq 'beta'
+        $beta = Get-MergedSkillRegistry -Path "$repo\ai\secrets\registry.psd1", "$overlay\ai\secrets\registry.psd1" | Where-Object Id -eq 'beta'
 
         $beta.SecretsDir | Should -Be (Join-Path $overlay 'ai\secrets\beta')
     }
 
-    It 'tolerates a root with no registry' {
-        New-Registry $overlay 'beta'
-
-        @(Get-MergedSkillRegistry -Roots $repo, $overlay).Id | Should -Be @('beta')
-    }
-
-    It 'fails, naming both registries, when two roots register the same Id' {
+    It 'fails, naming both registries, when two register the same Id' {
         New-Registry $repo 'alpha'
         New-Registry $overlay 'alpha'
 
-        { Get-MergedSkillRegistry -Roots $repo, $overlay } | Should -Throw "*$repo*$overlay*"
-    }
-}
-
-Describe 'Find-OverlayFile' {
-
-    BeforeEach { $repo = New-WorkDir; $overlay = New-WorkDir }
-
-    It 'is null when no root provides the file' {
-        Find-OverlayFile -Roots $repo, $overlay -RelativePath 'aws\config' | Should -BeNullOrEmpty
-    }
-
-    It 'returns the one root that provides it' {
-        New-File (Join-Path $overlay 'aws\config')
-
-        Find-OverlayFile -Roots $repo, $overlay -RelativePath 'aws\config' |
-            Should -Be (Join-Path $overlay 'aws\config')
-    }
-
-    It 'fails, naming both, when two roots provide it' {
-        New-File (Join-Path $repo 'aws\config')
-        New-File (Join-Path $overlay 'aws\config')
-
-        { Find-OverlayFile -Roots $repo, $overlay -RelativePath 'aws\config' } | Should -Throw "*$repo*$overlay*"
-    }
-}
-
-Describe 'Get-OverlayToolSource' {
-
-    BeforeEach { $a = New-WorkDir; $b = New-WorkDir }
-
-    It 'lists the tools.psd1 of each overlay that ships one, in overlay order' {
-        New-File (Join-Path $a 'powershell\tools.psd1')
-        New-File (Join-Path $b 'powershell\tools.psd1')
-
-        (Get-OverlayToolSource -Overlays $a, $b -ComputerName 'BOX').Manifests |
-            Should -Be @((Join-Path $a 'powershell\tools.psd1'), (Join-Path $b 'powershell\tools.psd1'))
-    }
-
-    It 'lists no manifest for an overlay that ships none' {
-        @((Get-OverlayToolSource -Overlays $a -ComputerName 'BOX').Manifests).Count | Should -Be 0
-    }
-
-    It 'finds the machine file named after the computer' {
-        New-File (Join-Path $b 'machines\BOX.psd1')
-
-        (Get-OverlayToolSource -Overlays $a, $b -ComputerName 'BOX').MachineFile | Should -Be (Join-Path $b 'machines\BOX.psd1')
-    }
-
-    It 'has no machine file when no overlay names this computer' {
-        New-File (Join-Path $b 'machines\OTHER.psd1')
-
-        (Get-OverlayToolSource -Overlays $a, $b -ComputerName 'BOX').MachineFile | Should -BeNullOrEmpty
-    }
-
-    It 'names the machines directories that hold no file for this computer, so a misnamed file is not silent' {
-        New-File (Join-Path $b 'machines\OTHER.psd1')
-
-        (Get-OverlayToolSource -Overlays $a, $b -ComputerName 'BOX').MachineDirs | Should -Be @((Join-Path $b 'machines'))
-    }
-
-    It 'fails, naming both, when two overlays ship this computer''s file' {
-        New-File (Join-Path $a 'machines\BOX.psd1')
-        New-File (Join-Path $b 'machines\BOX.psd1')
-
-        { Get-OverlayToolSource -Overlays $a, $b -ComputerName 'BOX' } | Should -Throw "*$a*$b*"
-    }
-
-    It 'has nothing to offer a machine with no overlays' {
-        $source = Get-OverlayToolSource -Overlays @() -ComputerName 'BOX'
-
-        @($source.Manifests).Count + @($source.MachineDirs).Count | Should -Be 0
+        { Get-MergedSkillRegistry -Path "$repo\ai\secrets\registry.psd1", "$overlay\ai\secrets\registry.psd1" } | Should -Throw "*$repo*$overlay*"
     }
 }
 
 Describe 'Get-GitOverlayIncludeContent' {
 
-    It 'includes only the overlays that ship git/gitconfig, in order, with forward slashes' {
-        $a = New-WorkDir; $none = New-WorkDir; $b = New-WorkDir
-        New-File (Join-Path $a 'git\gitconfig')
-        New-File (Join-Path $b 'git\gitconfig')
+    It 'includes each fragment, in order, with forward slashes' {
+        $a = New-WorkDir; $b = New-WorkDir
 
-        $paths = (Get-GitOverlayIncludeContent -Overlays $a, $none, $b) -split "`n" |
+        $paths = (Get-GitOverlayIncludeContent -Fragments "$a\git\gitconfig", "$b\git\gitconfig") -split "`n" |
             Where-Object { $_ -match '^\tpath = ' } |
             ForEach-Object { $_ -replace '^\tpath = ', '' }
 
         $paths | Should -Be @("$($a -replace '\\', '/')/git/gitconfig", "$($b -replace '\\', '/')/git/gitconfig")
     }
 
-    It 'includes nothing when there are no overlays' {
+    It 'includes nothing when there are no fragments' {
         (Get-GitOverlayIncludeContent) | Should -Not -Match '\[include\]'
     }
 }
@@ -218,51 +255,33 @@ Describe 'Update-GitOverlayInclude' {
 
     BeforeEach {
         $work = New-WorkDir
-        $overlay = New-WorkDir
-        New-File (Join-Path $overlay 'git\gitconfig')
+        $fragment = Join-Path (New-WorkDir) 'git\gitconfig'
         $path = Join-Path $work '.gitconfig-overlays'
     }
 
     It 'writes the file when it is missing' {
-        Update-GitOverlayInclude -Overlays $overlay -Path $path | Should -Be 'Written'
-        [IO.File]::ReadAllText($path) | Should -Be (Get-GitOverlayIncludeContent -Overlays $overlay)
+        Update-GitOverlayInclude -Fragments $fragment -Path $path | Should -Be 'Written'
+        [IO.File]::ReadAllText($path) | Should -Be (Get-GitOverlayIncludeContent -Fragments $fragment)
     }
 
     It 'writes it without a byte-order mark' {
-        Update-GitOverlayInclude -Overlays $overlay -Path $path | Out-Null
+        Update-GitOverlayInclude -Fragments $fragment -Path $path | Out-Null
         [IO.File]::ReadAllBytes($path)[0] | Should -Be ([byte][char]'#')
     }
 
     It 'leaves a current file alone and says so' {
-        Update-GitOverlayInclude -Overlays $overlay -Path $path | Out-Null
-        Update-GitOverlayInclude -Overlays $overlay -Path $path | Should -Be 'AlreadyCorrect'
+        Update-GitOverlayInclude -Fragments $fragment -Path $path | Out-Null
+        Update-GitOverlayInclude -Fragments $fragment -Path $path | Should -Be 'AlreadyCorrect'
     }
 
-    It 'rewrites a file the overlays no longer match' {
+    It 'rewrites a file the fragments no longer match' {
         Set-Content -LiteralPath $path -Value 'stale'
-        Update-GitOverlayInclude -Overlays $overlay -Path $path | Should -Be 'Written'
+        Update-GitOverlayInclude -Fragments $fragment -Path $path | Should -Be 'Written'
     }
 
     It 'with -Check reports and changes nothing' {
-        Update-GitOverlayInclude -Overlays $overlay -Path $path -Check | Should -Be 'WouldWrite'
+        Update-GitOverlayInclude -Fragments $fragment -Path $path -Check | Should -Be 'WouldWrite'
         Test-Path -LiteralPath $path | Should -BeFalse
-    }
-}
-
-Describe 'Get-OverlayRepoRoots' {
-
-    It 'returns a repository once, however many overlays it holds' {
-        $repo = New-WorkDir
-        git -C $repo init -q
-        New-Item -ItemType Directory -Path (Join-Path $repo 'a'), (Join-Path $repo 'b') | Out-Null
-
-        $roots = @(Get-OverlayRepoRoots -Overlays (Join-Path $repo 'a'), (Join-Path $repo 'b'))
-
-        $roots | Should -Be @([IO.Path]::GetFullPath($repo))
-    }
-
-    It 'leaves out an overlay that is not in a repository' {
-        @(Get-OverlayRepoRoots -Overlays (New-WorkDir)).Count | Should -Be 0
     }
 }
 
