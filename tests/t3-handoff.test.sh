@@ -198,7 +198,7 @@ this_computer="$(call "t3.reachableName((await import('node:os')).hostname())")"
 
 # to_mac <this project> <the mac's projects>: prints "<projectId>|<place>" for --to the mac, or the error.
 to_mac() {
-    call "(({ projectId, place }) => projectId + '|' + place)(await t3.destination({ get: async () => ({ projects: [$1] }) }, $current, { name: 'hugos-macbook-pro', server: {}, projects: $2 }))"
+    call "(({ projectId, place }) => projectId + '|' + place)(await t3.destination({ get: async () => ({ projects: [$1] }) }, $current, { name: 'a-macbook-pro', server: {}, projects: $2 }))"
 }
 
 # Through variables, as $copy above.
@@ -208,13 +208,13 @@ mac_clone="{id:'mac',title:'dotfiles-private',workspaceRoot:'/Users/me/dotfiles-
 mac_unresolved="{id:'pending',title:'dotfiles-private',workspaceRoot:'/Users/me/dotfiles-private',repositoryIdentity:null}"
 
 assert_eq "--to finds the project by this checkout's origin when T3 has not said its repository" \
-    "mac|hugos-macbook-pro, /Users/me/dotfiles-private" \
+    "mac|a-macbook-pro, /Users/me/dotfiles-private" \
     "$(to_mac "$unresolved_here" "[$mac_clone]")"
 assert_eq "--to for a project with no remote names this computer, not the destination" \
     "error: project \"scratch\" has no git remote on $this_computer to find it by: $no_remote has neither an upstream nor an origin" \
     "$(to_mac "$no_remote_here" "[$mac_clone]")"
 assert_eq "--to with no match names the projects there whose repository T3 did not say" \
-    "error: hugos-macbook-pro has no one project for github.com/hugoforte/dotfiles-private, the repository of \"dotfiles-private\"; T3 Code there did not say the repository of \"dotfiles-private\"" \
+    "error: a-macbook-pro has no one project for github.com/hugoforte/dotfiles-private, the repository of \"dotfiles-private\"; T3 Code there did not say the repository of \"dotfiles-private\"" \
     "$(to_mac "$unresolved_here" "[$mac_unresolved]")"
 
 # Reads the shell twice: T3 says the repository only on the second read, as when its cache was cold.
@@ -362,8 +362,8 @@ assert_eq "a newer protocol is refused too" \
     "$(protocol "{orchestrationProtocolVersion:3}")"
 
 assert_eq "a Mac's .local host name is reached without it" \
-    "Hugos-MacBook-Pro" \
-    "$(call "t3.reachableName('Hugos-MacBook-Pro.local')")"
+    "A-MacBook-Pro" \
+    "$(call "t3.reachableName('A-MacBook-Pro.local')")"
 assert_eq "a host name without .local is reached as it is" \
     "ZENBOOK" \
     "$(call "t3.reachableName('ZENBOOK')")"
