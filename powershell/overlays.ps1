@@ -4,7 +4,7 @@
 #
 # What an overlay may carry, each at the same path as in this repo:
 #   ai/secrets/registry.psd1 + ai/secrets/<Id>/   skill secrets; registries merge
-#   aws/config                                    at most one source across repo and overlays
+#   aws/config                                    AWS CLI profiles; every source merges (aws-config.ps1)
 #   git/gitconfig                                 a fragment; every overlay's is included
 #   ssh/authorized_keys                           the keys that may log in; at most one overlay, never this repo
 #   ai/skills/<name>/                             skills, linked by ai/install.sh; a name ships from one place
@@ -68,7 +68,8 @@ function Get-MergedSkillRegistry {
 }
 
 # The one root that provides RelativePath, or $null when none does. More than one is an error
-# naming them all: a file linked to a single target cannot come from two places.
+# naming them all: a file that stands for one thing, such as the keys that may log in or one
+# machine's options, cannot come from two places.
 function Find-OverlayFile {
     param(
         [Parameter(Mandatory)][string[]]$Roots,

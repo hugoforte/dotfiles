@@ -17,7 +17,8 @@ would be tested under neither.
 
 What the two entry points must agree on is the contract, not the code: the same managed links
 policy ([0003](0003-back-up-then-link.md), shared in sh through `ai/helpers/managed-link.sh`),
-the same overlay rules (`aws/config` from one source, every `git/gitconfig` included in overlay
+the same overlay rules (`aws/config` merged from every source, as amended by
+[0010](0010-aws-config-is-generated.md), every `git/gitconfig` included in overlay
 order, a missing overlay is an error), and a check mode that changes nothing and exits 1 on
 drift. A Mac has its own `macos/gitconfig` because `git/gitconfig` names the Windows path of
 `gh.exe` and sets `autocrlf = true`.
