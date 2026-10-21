@@ -176,6 +176,15 @@ assert_eq "install fails when a listed overlay does not exist" "1" "$rc"
 case "$out" in *"private/gone"*) named=y ;; *) named=n ;; esac
 assert_eq "and names it" "y" "$named"
 
+# But --uninstall still takes the links into an overlay that is gone, as it did before.
+printf "@{\n    Overlays = @(\n        '%s'\n    )\n}\n" "$(win "$first")" > "$repo/ai/secrets/machine.local.psd1"
+overlays
+mv "$first" "$work/private/moved"
+overlays --uninstall; rc=$?
+assert_eq "--uninstall succeeds when a listed overlay is gone" "0" "$rc"
+assert_eq "and removes the links into it" "n" "$(is_link "$home/.claude/skills/private-thing")"
+mv "$work/private/moved" "$first"
+
 # A machine with no overlays: nothing linked, nothing drifted.
 rm -f "$repo/ai/secrets/machine.local.psd1"
 out="$(check)"; rc=$?

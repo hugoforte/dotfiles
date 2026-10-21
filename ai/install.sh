@@ -616,11 +616,16 @@ if [ "$MODE" = "install" ] && [ "$INSTALL_SETTINGS" = "true" ] && ! command -v j
     warning "jq not found - settings merge will be skipped (winget install jqlang.jq)"
 fi
 
-# Every run, so a listed overlay that is gone fails it rather than dropping all it carries.
-overlays_load "$ZSH" || exit 1
-
-# Export reads ~/.claude alone, so it has no use for the extra folders or a warning about them.
-[ "$MODE" = "export" ] || resolve_claude_dirs
+# A listed overlay that is gone fails an install or a check rather than dropping all it carries.
+# Uninstall carries on, since its prune needs only the overlay's path to take the links into it.
+# Export reads ~/.claude alone, so it has no use for the overlays or the extra folders.
+if [ "$MODE" = "export" ]; then
+    :
+elif overlays_load "$ZSH"; then
+    resolve_claude_dirs
+elif [ "$MODE" != "uninstall" ]; then
+    exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # Run
