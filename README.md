@@ -116,7 +116,7 @@ What an overlay can supply, and how:
 
 - `ai/secrets/registry.psd1` and `ai/secrets/<skill>/`: merged with every other registry; a skill id may be registered only once.
 - `ai/skills/<name>/`: linked beside this repo's skills by `ai/install.sh`, for a skill whose text names something private; a skill name may be shipped from only one place.
-- `ai/rules/<name>.md`: guidance beside this repo's `CLAUDE.md`, linked by `ai/install.sh` into `~/.claude/rules/` and every extra Claude config folder's `rules/`, which Claude Code reads with `CLAUDE.md`; a rule name may be shipped from only one place. This is where one person's or one employer's working rules go.
+- `ai/rules/<name>.md`: guidance beside this repo's `CLAUDE.md`, linked by `ai/install.sh` into `~/.claude/rules/` and every extra Claude config folder's `rules/`, which Claude Code reads with `CLAUDE.md`; a rule name may be shipped from only one place. Only the folder's own `.md` files are rules, not its subfolders', and every one is loaded, so keep notes about them elsewhere. This is where one person's or one employer's working rules go.
 - `ai/agents/<name>.md`: agents linked beside this repo's agents; a name this repo or an earlier overlay already ships is not linked.
 - `bruno/<collection>/`: linked into `~/bruno` by `ai/install.sh`, so Bruno opens every overlay's collections from one home; a collection name may be shipped from only one place.
 - `ai/claude/config-dirs`: extra Claude config folders, one absolute or `~/…` path per line (`#` starts a comment). `ai/install.sh` gives each the same as `~/.claude`; see [Claude accounts](#claude-accounts).

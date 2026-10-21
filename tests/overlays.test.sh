@@ -199,7 +199,8 @@ assert_eq "an entry it cannot read fails, naming the registry" "y" "$(says "$out
 # behind the code. {KEY} is written <KEY> there, and a pattern of entries by its folder.
 section="$(awk '/^## Private configuration: overlays/ { on = 1; next } on && /^## / { exit } on' "$REPO_ROOT/README.md")"
 missing="$(in_sh 'printf "%s\n" "$OVERLAY_TABLE"' | while read -r path count roots; do
-    shown="$(printf '%s' "$path" | sed -e 's/{KEY}/<KEY>/' -e 's/\*.*//')"
+    # A whole path is a whole token, closing backtick and all; a pattern is its folder's prefix.
+    shown="$(printf '%s`' "$path" | sed -e 's/{KEY}/<KEY>/' -e 's/\*.*//')"
     printf '%s\n' "$section" | grep -qF -- "- \`$shown" || printf '%s ' "$path"
 done)"
 assert_eq "README lists every path in the table" "" "$missing"
