@@ -94,7 +94,7 @@ assert_eq "the real ~/.zshrc it displaced is backed up" "# my old zshrc" "$(cat 
 assert_eq "~/.gitconfig is linked to macos/gitconfig" "$repo/macos/gitconfig" "$(readlink "$home/.gitconfig")"
 assert_eq "~/.aws/config is a file, not a link" "n" "$([ -L "$home/.aws/config" ] && echo y || echo n)"
 assert_eq "~/.aws/config holds the one overlay's aws/config under a line naming it" \
-    "$(printf '# from %s\n[profile dev]' "$personal/aws/config")" "$(grep -v '^# Written by\|^# Add a profile\|^$' "$home/.aws/config")"
+    "$(printf '# from %s\n[profile dev]' "$personal/aws/config")" "$(grep -v '^# Written by\|^# dotfiles-cksum\|^# Add a profile\|^$' "$home/.aws/config")"
 assert_eq "~/.ssh/authorized_keys is linked to the one overlay that has it" "$personal/ssh/authorized_keys" "$(readlink "$home/.ssh/authorized_keys")"
 assert_eq "~/.gitconfig-overlays includes each overlay's git/gitconfig, in order" \
     "$(printf '[include]\n\tpath = %s\n[include]\n\tpath = %s' "$personal/git/gitconfig" "$second/git/gitconfig")" \
@@ -210,8 +210,10 @@ aws="$home/.aws/config"
 sections() { grep '^\[' "$aws"; }
 
 mkdir -p "$repo/aws" "$second/aws"
-printf '[profile repo]\r\nregion = us-east-1\r\n' > "$repo/aws/config"
-printf '[sso-session kealu]\nsso_region = us-east-1' > "$second/aws/config"
+# The repo's: CRLF, and no final newline, with another source after it.
+printf '[profile repo]\r\nregion = us-east-1' > "$repo/aws/config"
+# The second overlay's: opening with a byte-order mark.
+printf '\357\273\277[sso-session kealu]\nsso_region = us-east-1\n' > "$second/aws/config"
 out="$(check)"; rc=$?
 assert_eq "--check fails once another source has aws/config" "1" "$rc"
 assert_eq "--check says the file is behind" "y" "$(says "$out" "behind the aws/config files it merges")"
@@ -220,19 +222,59 @@ assert_eq "every source merges, the repo first and then the overlays in order" \
     "$(printf '[profile repo]\n[profile dev]\n[sso-session kealu]')" "$(sections)"
 assert_eq "the header counts the sources" "y" "$(says "$(head -n 1 "$aws")" "from 3 aws/config file(s)")"
 assert_eq "a CRLF source is written with LF" "0" "$(tr -d -c '\r' < "$aws" | wc -c | tr -d ' ')"
-assert_eq "a source with no final newline keeps its last line" "y" "$(says "$(cat "$aws")" "sso_region = us-east-1")"
+assert_eq "a source with no final newline ends before the next one starts" "y" \
+    "$(says "$(cat "$aws")" "$(printf 'region = us-east-1\n\n# from %s' "$personal/aws/config")")"
+assert_eq "a source's byte-order mark is left out" "0" "$(grep -c "$(printf '\357\273\277')" "$aws")"
 out="$(check)"; rc=$?
 assert_eq "--check is clean once merged" "0" "$rc"
 
-printf '\n[profile dev]\n' >> "$second/aws/config"
-before="$(cat "$aws")"
-out="$(run)"; rc=$?
-assert_eq "a section two sources declare fails install" "1" "$rc"
+# clash <label> <second overlay's aws/config>: install fails and names the section, leaving the file
+clash() {
+    printf "$2" > "$second/aws/config"
+    before="$(cat "$aws")"
+    out="$(run)"; rc=$?
+    assert_eq "$1 fails install" "1" "$rc"
+    assert_eq "$1 leaves ~/.aws/config as it was" "$before" "$(cat "$aws")"
+}
+clash "a section two sources declare" '[profile dev]\n'
 assert_eq "and names the section and both sources" "y" "$(says "$out" "[profile dev] is in both $personal/aws/config and $second/aws/config")"
-assert_eq "and leaves ~/.aws/config as it was" "$before" "$(cat "$aws")"
 out="$(check)"; rc=$?
 assert_eq "--check fails on it too" "1" "$rc"
+clash "a section line with a comment after it" '[profile dev] ; a copy\n'
+clash "a quoted profile name" '[profile "dev"]\n'
+printf '[default]\n' > "$repo/aws/config"
+clash "[profile default] beside [default]" '[profile default]\n'
+clash "a byte-order mark before a section another source declares" '\357\273\277[profile dev]\n'
+printf '[profile repo]\n' > "$repo/aws/config"
+printf '[profile Dev]\n' > "$second/aws/config"
+out="$(run)"; rc=$?
+assert_eq "names that differ only in case merge, as the AWS CLI reads them" "0" "$rc"
 printf '[sso-session kealu]\nsso_region = us-east-1\n' > "$second/aws/config"
+install
+
+overlays "$personal" "$personal/" "$second"
+install
+assert_eq "an overlay listed twice goes in once" "1" "$(grep -c '^\[profile dev\]' "$aws")"
+overlays "$personal" "$second"
+install
+
+printf '\n[profile added-by-aws-configure]\nregion = us-east-1\n' >> "$aws"
+out="$(check)"; rc=$?
+assert_eq "--check fails on a profile aws configure appended" "1" "$rc"
+install
+set -- "$home"/.aws/config.backup.*
+assert_eq "install backs up a profile aws configure appended" "y" "$(says "$(cat "$1")" "[profile added-by-aws-configure]")"
+assert_eq "and writes the merged file without it" "n" "$(says "$(cat "$aws")" "added-by-aws-configure")"
+rm "$1"
+
+if chmod 000 "$second/aws/config" 2> /dev/null && [ ! -r "$second/aws/config" ]; then
+    before="$(cat "$aws")"
+    out="$(run)"; rc=$?
+    assert_eq "an unreadable source fails install" "1" "$rc"
+    assert_eq "and names it" "y" "$(says "$out" "cannot read $second/aws/config")"
+    assert_eq "and leaves ~/.aws/config as it was" "$before" "$(cat "$aws")"
+fi
+chmod 644 "$second/aws/config"
 install
 
 rm "$aws"
@@ -264,7 +306,11 @@ install
 assert_eq "install removes it" "n" "$(exists "$aws")"
 ln -s "$work/unlisted/aws/config" "$aws"
 install
-assert_eq "and a link to an aws/config that setup made" "n" "$(exists "$aws")"
+assert_eq "with no source, a link that still resolves stays, since someone made it" "y" "$(exists "$aws")"
+rm "$aws"
+ln -s "$work/gone/aws/config" "$aws"
+install
+assert_eq "and a link left dangling goes" "n" "$(exists "$aws")"
 printf '[profile mine]\n' > "$aws"
 out="$(run)"; rc=$?
 assert_eq "with no source, a file of someone's own stays" "[profile mine]" "$(cat "$aws")"

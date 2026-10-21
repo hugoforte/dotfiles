@@ -84,7 +84,11 @@ if ($Check) {
     }
 
     # ~/.aws/config merges every aws/config, so it is generated rather than linked; see aws-config.ps1.
-    $awsConfig = Test-AwsConfig -Path $awsConfigPath -Roots (@($repoPath) + (Get-SetupOverlays -RepoPath $repoPath))
+    try {
+        $awsConfig = Test-AwsConfig -Path $awsConfigPath -Roots (@($repoPath) + (Get-SetupOverlays -RepoPath $repoPath))
+    } catch {
+        $awsConfig = [pscustomobject]@{ IsCorrect = $false; Reason = 'Error'; Message = $_.Exception.Message }
+    }
     if ($awsConfig.IsCorrect) {
         Write-Host "[OK] ~/.aws/config" -ForegroundColor Green
     } else {
@@ -94,6 +98,7 @@ if ($Check) {
             'Stale'    { "behind the aws/config files it merges" }
             'NotOurs'  { "not the merged file (a link, or edited); setup.ps1 replaces it, backing up an edited one" }
             'Leftover' { "no aws/config is left in this repo or an overlay; setup.ps1 removes it" }
+            'Error'    { $awsConfig.Message }
         }
         Write-Host "[!!] ~/.aws/config: $detail" -ForegroundColor Yellow
     }
@@ -233,7 +238,13 @@ foreach ($entry in (Get-ManagedLinkPlan -RepoPath $dotfilesPath)) {
     }
 }
 
-$awsConfig = Set-AwsConfig -Path $awsConfigPath -Roots (@($dotfilesPath) + (Get-SetupOverlays -RepoPath $dotfilesPath))
+# A failure here leaves ~/.aws/config as it was and setup carries on with the rest.
+try {
+    $awsConfig = Set-AwsConfig -Path $awsConfigPath -Roots (@($dotfilesPath) + (Get-SetupOverlays -RepoPath $dotfilesPath))
+} catch {
+    Write-Host "[XX] ~/.aws/config left as it was: $($_.Exception.Message)" -ForegroundColor Red
+    $awsConfig = [pscustomobject]@{ Action = 'Failed' }
+}
 switch ($awsConfig.Action) {
     'AlreadyCorrect'     { Write-Host "[OK] ~/.aws/config already current" -ForegroundColor Green }
     'Created'            { Write-Host "[OK] ~/.aws/config written" -ForegroundColor Green }

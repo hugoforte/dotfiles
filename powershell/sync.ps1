@@ -138,12 +138,16 @@ try {
 
     # Every aws/config among this repo and the overlays, merged; see aws-config.ps1.
     . (Join-Path $PSScriptRoot "aws-config.ps1")
+    # A failure, such as two overlays declaring one section, is logged and the run carries on, as a
+    # failed overlay pull does: stopping here would leave the SSH keys and the secrets below stale.
     $awsConfigPath = "$env:USERPROFILE\.aws\config"
+    $awsFailed = $false
     try {
         $awsConfig = Set-AwsConfig -Path $awsConfigPath -Roots (@($repoRoot) + $overlays)
     } catch {
-        Write-Log $_.Exception.Message
-        exit 1
+        Write-Log "~/.aws/config left as it was: $($_.Exception.Message)"
+        $awsFailed = $true
+        $awsConfig = [pscustomobject]@{ Action = 'AlreadyCorrect'; BackupPath = $null }
     }
     switch ($awsConfig.Action) {
         'AlreadyCorrect' { }
@@ -192,6 +196,10 @@ try {
     }
     if ($toolsFailed) {
         Write-Log "sync finished, but install-tools.ps1 failed (above)"
+        exit 1
+    }
+    if ($awsFailed) {
+        Write-Log "sync finished, but ~/.aws/config could not be written (above)"
         exit 1
     }
 }

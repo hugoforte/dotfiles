@@ -92,6 +92,42 @@ Describe 'Get-AwsConfigContent' {
 
         { Get-AwsConfigContent -Roots $texo, $kealu } | Should -Not -Throw
     }
+
+    It 'reads a section line as the AWS CLI does, ignoring what follows the bracket' {
+        $texo = New-Root $work 'linenmaster' "[profile texo]`n"
+        $kealu = New-Root $work 'kealu' "[profile texo] ; a copy`n"
+
+        { Get-AwsConfigContent -Roots $texo, $kealu } | Should -Throw "*[profile texo]*"
+    }
+
+    It 'treats [default] and [profile default] as the one profile they are to the AWS CLI' {
+        $texo = New-Root $work 'linenmaster' "[default]`n"
+        $kealu = New-Root $work 'kealu' "[profile default]`n"
+
+        { Get-AwsConfigContent -Roots $texo, $kealu } | Should -Throw "*[profile default]*"
+    }
+
+    It 'treats a quoted profile name as the name' {
+        $texo = New-Root $work 'linenmaster' "[profile texo]`n"
+        $kealu = New-Root $work 'kealu' "[profile `"texo`"]`n"
+
+        { Get-AwsConfigContent -Roots $texo, $kealu } | Should -Throw "*[profile texo]*"
+    }
+
+    It 'lets names that differ only in case through, as the AWS CLI does' {
+        $texo = New-Root $work 'linenmaster' "[profile Prod]`n"
+        $kealu = New-Root $work 'kealu' "[profile prod]`n"
+
+        { Get-AwsConfigContent -Roots $texo, $kealu } | Should -Not -Throw
+    }
+
+    It 'puts a root listed twice in once' {
+        $texo = New-Root $work 'linenmaster' "[profile texo]`n"
+
+        $content = Get-AwsConfigContent -Roots $texo, "$texo\"
+
+        ([regex]::Matches($content, '\[profile texo\]')).Count | Should -Be 1
+    }
 }
 
 Describe 'Set-AwsConfig' {
@@ -106,7 +142,13 @@ Describe 'Set-AwsConfig' {
     It 'writes the merged file when nothing is there' {
         (Set-AwsConfig -Path $dst -Roots $texo, $kealu).Action | Should -Be 'Created'
 
-        [IO.File]::ReadAllText($dst) | Should -Be (Get-AwsConfigContent -Roots $texo, $kealu)
+        (Get-Content -LiteralPath $dst | Where-Object { $_ -like '`[*' }) | Should -Be '[profile texo]', '[sso-session kealu]'
+    }
+
+    It 'records a checksum of what follows the header, on its second line' {
+        Set-AwsConfig -Path $dst -Roots $texo | Out-Null
+
+        (Get-Content -LiteralPath $dst -TotalCount 2)[1] | Should -Match '^# dotfiles-sha256: [0-9a-f]{64}$'
     }
 
     It 'leaves a current file alone' {
@@ -153,6 +195,29 @@ Describe 'Set-AwsConfig' {
         (Set-AwsConfig -Path $dst -Roots $texo).Action | Should -Be 'BackedUpAndWritten'
     }
 
+    It 'keeps a profile aws configure appended, in a backup, when the sources change' {
+        Set-AwsConfig -Path $dst -Roots $texo | Out-Null
+        [IO.File]::AppendAllText($dst, "`n[profile added-by-aws-configure]`nregion = us-east-1`n")
+
+        $result = Set-AwsConfig -Path $dst -Roots $texo, $kealu
+
+        $result.Action, ([IO.File]::ReadAllText($result.BackupPath) -match 'added-by-aws-configure') | Should -Be 'BackedUpAndWritten', $true
+    }
+
+    It 'keeps a profile aws configure appended, in a backup, when the sources did not change' {
+        Set-AwsConfig -Path $dst -Roots $texo | Out-Null
+        [IO.File]::AppendAllText($dst, "`n[profile added-by-aws-configure]`n")
+
+        (Set-AwsConfig -Path $dst -Roots $texo).Action | Should -Be 'BackedUpAndWritten'
+    }
+
+    It 'leaves no staged file behind' {
+        Set-AwsConfig -Path $dst -Roots $texo | Out-Null
+        Set-AwsConfig -Path $dst -Roots $texo, $kealu | Out-Null
+
+        Test-Path -LiteralPath "$dst.dotfiles-new" | Should -BeFalse
+    }
+
     It 'writes nothing when two sources declare one section' {
         $clash = New-Root $work 'clash' "[profile texo]`n"
 
@@ -167,10 +232,24 @@ Describe 'Set-AwsConfig' {
         Test-Path -LiteralPath $dst | Should -BeFalse
     }
 
-    It 'removes a link to an aws/config once no source is left' {
+    It 'removes a link left dangling once no source is left' {
         New-Link -Path $dst -Target (Join-Path $texo 'aws\config')
+        Remove-Item -LiteralPath (Join-Path $texo 'aws\config')
 
         (Set-AwsConfig -Path $dst -Roots @()).Action | Should -Be 'Removed'
+    }
+
+    It 'leaves a link that still resolves when no source is left, since someone made it' {
+        New-Link -Path $dst -Target (Join-Path $texo 'aws\config')
+
+        (Set-AwsConfig -Path $dst -Roots @()).Action | Should -Be 'Missing'
+    }
+
+    It 'leaves its own file once edited when no source is left' {
+        Set-AwsConfig -Path $dst -Roots $texo | Out-Null
+        [IO.File]::AppendAllText($dst, "`n[profile mine]`n")
+
+        (Set-AwsConfig -Path $dst -Roots @()).Action | Should -Be 'Missing'
     }
 
     It 'leaves a file it did not write when no source is left' {
