@@ -1,6 +1,4 @@
-[user]
-	name = Hugo Forte
-	email = hugo@hugoforte.com
+# No [user]: the identity comes from an overlay's git/gitconfig, through ~/.gitconfig-overlays below.
 [core]
 	autocrlf = true
 	longpaths = true

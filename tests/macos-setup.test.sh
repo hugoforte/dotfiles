@@ -97,6 +97,12 @@ assert_eq "~/.ssh/authorized_keys is linked to the one overlay that has it" "$pe
 assert_eq "~/.gitconfig-overlays includes each overlay's git/gitconfig, in order" \
     "$(printf '[include]\n\tpath = %s\n[include]\n\tpath = %s' "$personal/git/gitconfig" "$second/git/gitconfig")" \
     "$(grep -v '^#' "$home/.gitconfig-overlays")"
+assert_eq "this repo's gitconfig names no one" "" "$(git config -f "$repo/macos/gitconfig" user.email)"
+# Asked of git only off Git Bash: there the include paths are MSYS paths, which Windows git cannot open,
+# and no Mac ever writes them.
+if [ -z "${MSYS:-}" ]; then
+    assert_eq "so git takes the identity from the overlay" "me@example.com" "$(HOME="$home" git config --file "$home/.gitconfig" --includes user.email)"
+fi
 assert_eq "brew bundle applies each overlay's Brewfile, then the machine's, upgrading nothing" \
     "$(printf 'bundle --no-upgrade --file=%s\nbundle --no-upgrade --file=%s\nbundle --no-upgrade --file=%s' "$personal/macos/Brewfile" "$second/macos/Brewfile" "$personal/machines/MACBOOK.Brewfile")" \
     "$(cat "$brew_log")"
