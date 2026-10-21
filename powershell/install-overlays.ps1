@@ -103,7 +103,7 @@ try {
     # The new list as a machine would read it: no path with one source may have two, and no skill
     # may be registered twice.
     $candidate = Get-Overlays -RepoPath $repoRoot -Overlays $overlays
-    foreach ($rule in ($OverlayRules | Where-Object { $_.Count -eq 'one' })) {
+    foreach ($rule in ($OverlayTable | Where-Object { $_.Count -eq 'one' })) {
         Get-OverlaySource -Set $candidate -Path $rule.Path | Out-Null
     }
     Get-MergedSkillRegistry -Path (Get-OverlaySource -Set $candidate -Path "ai/secrets/registry.psd1") | Out-Null

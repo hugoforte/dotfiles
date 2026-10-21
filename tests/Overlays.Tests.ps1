@@ -1,4 +1,4 @@
-# The overlay rules in PowerShell (hugoforte/dotfiles#67): which overlays a machine lists, the one
+# The overlay table in PowerShell (hugoforte/dotfiles#67): which overlays a machine lists, the one
 # source or every source of a path, the entries under a directory, the machine key, the overlay
 # repositories, how skill registries merge, and what ~/.gitconfig-overlays includes. The sh twin is
 # tests/overlays.test.sh. Everything happens under TestDrive:.

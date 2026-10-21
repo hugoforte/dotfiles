@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Fixture suite for ai/helpers/overlays.sh, the overlay rules in sh: which overlays a machine
+# Fixture suite for ai/helpers/overlays.sh, the overlay table in sh: which overlays a machine
 # lists, the one source or every source of a path, the entries under a directory, the machine key,
 # the overlay repositories, and the merged skill registry. Each rule is asked through the module's
 # interface, in a fresh sh, so nothing it sets leaks between assertions.
@@ -198,7 +198,7 @@ assert_eq "an entry it cannot read fails, naming the registry" "y" "$(says "$out
 # Every path in the table is in README's list of what an overlay may hold, so the list cannot fall
 # behind the code. {KEY} is written <KEY> there, and a pattern of entries by its folder.
 section="$(awk '/^## Private configuration: overlays/ { on = 1; next } on && /^## / { exit } on' "$REPO_ROOT/README.md")"
-missing="$(in_sh 'printf "%s\n" "$OVERLAY_RULES"' | while read -r path count roots; do
+missing="$(in_sh 'printf "%s\n" "$OVERLAY_TABLE"' | while read -r path count roots; do
     shown="$(printf '%s' "$path" | sed -e 's/{KEY}/<KEY>/' -e 's/\*.*//')"
     printf '%s\n' "$section" | grep -qF -- "- \`$shown" || printf '%s ' "$path"
 done)"

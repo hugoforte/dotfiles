@@ -1,4 +1,4 @@
-# The overlay rules in PowerShell: which overlays a machine lists, where each path an overlay may
+# The overlay table in PowerShell: which overlays a machine lists, where each path an overlay may
 # ship comes from, and the skill registries they merge. Overlays are private directories laid out
 # like this repo's root; a machine lists them in ai/secrets/machine.local.psd1 (git-ignored), so no
 # tracked file here ever names one. What each path is for is README's "Private configuration:
@@ -6,8 +6,8 @@
 # (docs/adr/0007-a-parallel-macos-entry-point.md), and tests/overlays-parity.test.sh holds them to it.
 #
 #   Get-Overlays          read the list: the overlays, the machine key, the overlay repositories
-#   Get-OverlaySource     the sources of a path in $OverlayRules
-#   Get-OverlayEntry      the entries under a directory in $OverlayRules
+#   Get-OverlaySource     the sources of a path in $OverlayTable
+#   Get-OverlayEntry      the entries under a directory in $OverlayTable
 #   Get-MergedSkillRegistry  every skill the registries list
 
 # What an overlay may ship, one row per path: the path relative to a root, how many sources it may
@@ -19,7 +19,7 @@
 #   overlays the listed overlays, in order; repo+overlays puts the repo first
 # {KEY} in a path is the machine key, and with no key the path matches nothing. A path ending in /
 # is a folder; every other is a file.
-$OverlayRules = @(
+$OverlayTable = @(
     [pscustomobject]@{ Path = 'aws/config';                 Count = 'one';     Roots = 'repo+overlays' }
     [pscustomobject]@{ Path = 'ssh/authorized_keys';        Count = 'one';     Roots = 'overlays' }
     [pscustomobject]@{ Path = 'machines/{KEY}.psd1';        Count = 'one';     Roots = 'overlays' }
@@ -98,17 +98,17 @@ function Get-Overlays {
     }
 }
 
-# The row of $OverlayRules for Path, with the roots it is read from in Set. A path not in the table,
+# The row of $OverlayTable for Path, with the roots it is read from in Set. A path not in the table,
 # or with a count not among Counts, is an error.
-function Get-OverlayRule {
+function Get-OverlayRow {
     param(
         [Parameter(Mandatory)]$Set,
         [Parameter(Mandatory)][string]$Path,
         [Parameter(Mandatory)][string[]]$Counts
     )
 
-    $rule = $OverlayRules | Where-Object { $_.Path -ceq $Path }
-    if (-not $rule) { throw "$Path is not a path an overlay may ship (`$OverlayRules)" }
+    $rule = $OverlayTable | Where-Object { $_.Path -ceq $Path }
+    if (-not $rule) { throw "$Path is not a path an overlay may ship (`$OverlayTable)" }
     if ($Counts -notcontains $rule.Count) { throw "$Path is a $($rule.Count) path, not $($Counts -join ' ')" }
     $roots = if ($rule.Roots -eq 'repo+overlays') { @($Set.Repo) + $Set.Overlays } else { $Set.Overlays }
     [pscustomobject]@{ Count = $rule.Count; Roots = @($roots) }
@@ -122,7 +122,7 @@ function Get-OverlaySource {
         [Parameter(Mandatory)][string]$Path
     )
 
-    $rule = Get-OverlayRule -Set $Set -Path $Path -Counts 'one', 'all'
+    $rule = Get-OverlayRow -Set $Set -Path $Path -Counts 'one', 'all'
     $relative = $Path
     if ($relative.Contains('{KEY}')) {
         if (-not $Set.MachineKey) { return }
@@ -149,7 +149,7 @@ function Get-OverlayEntry {
         [string[]]$ClaimedBy = @()
     )
 
-    $rule = Get-OverlayRule -Set $Set -Path $Path -Counts 'entries'
+    $rule = Get-OverlayRow -Set $Set -Path $Path -Counts 'entries'
     $kind = if ($Path.EndsWith('/')) { 'Container' } else { 'Leaf' }
     $pattern = $Path.TrimEnd('/')
     $leaf = Split-Path $pattern -Leaf

@@ -1,13 +1,13 @@
 #!/bin/sh
 
-# The overlay rules in sh: which overlays a machine lists, where each path an overlay may ship
+# The overlay table in sh: which overlays a machine lists, where each path an overlay may ship
 # comes from, and the skill registries they merge. Sourced by ai/install.sh and macos/. Its
 # PowerShell twin is powershell/overlays.ps1; the two agree on the rules, not the code
 # (docs/adr/0007-a-parallel-macos-entry-point.md), and tests/overlays-parity.test.sh holds them to it.
 #
 #   overlays_load <repo> [overlay...]  read the list; sets OVERLAYS, OVERLAY_KEY, OVERLAY_REPOS
-#   overlay_sources <path>             the sources of a path in OVERLAY_RULES
-#   overlay_entries <pattern> [claimant...]  the entries an entries row in OVERLAY_RULES matches
+#   overlay_sources <path>             the sources of a path in OVERLAY_TABLE
+#   overlay_entries <pattern> [claimant...]  the entries an entries row in OVERLAY_TABLE matches
 #   merged_skill_registry              every skill the registries list
 #
 # POSIX sh has no local, so every name these functions use is prefixed _ov.
@@ -21,7 +21,7 @@
 #   overlays the listed overlays, in order; repo+overlays puts the repo first
 # {KEY} in a path is the machine key, and with no key the path matches nothing. A path ending in /
 # is a folder; every other is a file.
-OVERLAY_RULES='aws/config one repo+overlays
+OVERLAY_TABLE='aws/config one repo+overlays
 ssh/authorized_keys one overlays
 machines/{KEY}.psd1 one overlays
 machines/{KEY}.Brewfile one overlays
@@ -108,13 +108,13 @@ EOF
     OVERLAYS_LOADED=1
 }
 
-# _overlay_rule <path> <count...>: look a path up in OVERLAY_RULES, setting _ov_count to its count
+# _overlay_row <path> <count...>: look a path up in OVERLAY_TABLE, setting _ov_count to its count
 # and _ov_roots to the roots it is read from, one per line. Returns 1 for a path not in the table
 # or with a count not among those given, and 2 before overlays_load.
-_overlay_rule() {
+_overlay_row() {
     [ -n "${OVERLAYS_LOADED:-}" ] || { printf '%s: run overlays_load first\n' "$1" >&2; return 2; }
-    _ov_rule="$(printf '%s\n' "$OVERLAY_RULES" | awk -v p="$1" '$1 == p { print $2, $3 }')"
-    [ -n "$_ov_rule" ] || { printf '%s is not a path an overlay may ship (OVERLAY_RULES)\n' "$1" >&2; return 1; }
+    _ov_rule="$(printf '%s\n' "$OVERLAY_TABLE" | awk -v p="$1" '$1 == p { print $2, $3 }')"
+    [ -n "$_ov_rule" ] || { printf '%s is not a path an overlay may ship (OVERLAY_TABLE)\n' "$1" >&2; return 1; }
     _ov_count="${_ov_rule% *}"
     _ov_want="$1"; shift
     case " $* " in
@@ -131,7 +131,7 @@ $OVERLAYS}"
 # so it may be piped. A path not in the table returns 1, and before overlays_load, 2.
 #   x="$(overlay_sources aws/config)" || exit 1
 overlay_sources() {
-    _overlay_rule "$1" one all || return $?
+    _overlay_row "$1" one all || return $?
     _ov_rel="$1"
     case "$_ov_rel" in
         *'{KEY}'*)
@@ -162,7 +162,7 @@ EOF
 # claimant is a folder whose own entry of the same name claims it before any overlay's. Names
 # compare without case, as they do on the NTFS the links live on. A clash is data, never a failure.
 overlay_entries() {
-    _overlay_rule "$1" entries || return $?
+    _overlay_row "$1" entries || return $?
     _ov_kind=-f
     _ov_pattern="$1"
     case "$_ov_pattern" in */) _ov_kind=-d; _ov_pattern="${_ov_pattern%/}" ;; esac

@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # overlays-dump.sh <repo>: everything ai/helpers/overlays.sh reads for <repo>, one fact per line,
-# tab-separated, walking OVERLAY_RULES in order. tests/Dump-Overlays.ps1 prints the same for
+# tab-separated, walking OVERLAY_TABLE in order. tests/Dump-Overlays.ps1 prints the same for
 # powershell/overlays.ps1, and tests/overlays-parity.test.sh diffs the two. Test-only.
 #
 #   key <machine key>             overlay <path>               repo <overlay repository>
@@ -16,7 +16,7 @@ printf 'key\t%s\n' "$OVERLAY_KEY"
 printf '%s\n' "$OVERLAYS" | while IFS= read -r overlay; do [ -z "$overlay" ] || printf 'overlay\t%s\n' "$overlay"; done
 printf '%s\n' "$OVERLAY_REPOS" | while IFS= read -r root; do [ -z "$root" ] || printf 'repo\t%s\n' "$root"; done
 
-printf '%s\n' "$OVERLAY_RULES" | while read -r path count roots; do
+printf '%s\n' "$OVERLAY_TABLE" | while read -r path count roots; do
     if [ "$count" = "entries" ]; then
         folder="${path%/}"; folder="${folder%/*}"
         overlay_entries "$path" "$1/$folder" | while IFS= read -r line; do printf '%s\t%s\n' "$path" "$line"; done
