@@ -18,7 +18,8 @@
 #   all      every source, in order
 #   entries  a directory whose entries are linked by name; the first to ship a name keeps it
 #   overlays the listed overlays, in order; repo+overlays puts the repo first
-# {KEY} in a path is the machine key, and with no key the path matches nothing.
+# {KEY} in a path is the machine key, and with no key the path matches nothing. A path ending in /
+# is a folder; every other is a file.
 OVERLAY_RULES='aws/config one repo+overlays
 ssh/authorized_keys one overlays
 machines/{KEY}.psd1 one overlays
@@ -28,6 +29,7 @@ macos/Brewfile all overlays
 macos/bootstrap.sh all overlays
 ai/claude/config-dirs all overlays
 machines/{KEY}.config-dirs all overlays
+machines/ all overlays
 powershell/tools.psd1 all repo+overlays
 ai/secrets/registry.psd1 all repo+overlays
 ai/skills entries overlays
@@ -133,9 +135,11 @@ overlay_sources() {
             [ -n "$OVERLAY_KEY" ] || return 0
             _ov_rel="${_ov_rel%%'{KEY}'*}$OVERLAY_KEY${_ov_rel#*'{KEY}'}" ;;
     esac
+    _ov_kind=-f
+    case "$_ov_rel" in */) _ov_kind=-d; _ov_rel="${_ov_rel%/}" ;; esac
     _ov_found=""
     while IFS= read -r _ov_root; do
-        [ -n "$_ov_root" ] && [ -f "$_ov_root/$_ov_rel" ] || continue
+        [ -n "$_ov_root" ] && [ "$_ov_kind" "$_ov_root/$_ov_rel" ] || continue
         if [ "$_ov_count" = "all" ]; then
             printf '%s\n' "$_ov_root/$_ov_rel"
         elif [ -n "$_ov_found" ]; then

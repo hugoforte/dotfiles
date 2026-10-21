@@ -101,6 +101,10 @@ assert_eq "and with no key the path matches nothing" "" "$(KEY_NAME='' loaded 'o
 
 # --- every source of a path -----------------------------------------------------------------------
 
+file "$second/machines"
+assert_eq "a path ending in / has each overlay's folder there, and not a file" "$first/machines" "$(loaded 'overlay_sources machines/')"
+rm -f "$second/machines"
+
 file "$second/git/gitconfig"
 file "$first/git/gitconfig"
 assert_eq "an all path has every source, in overlay order" "$first/git/gitconfig

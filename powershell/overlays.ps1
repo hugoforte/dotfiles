@@ -16,7 +16,8 @@
 #   all      every source, in order
 #   entries  a directory whose entries are linked by name; the first to ship a name keeps it
 #   overlays the listed overlays, in order; repo+overlays puts the repo first
-# {KEY} in a path is the machine key, and with no key the path matches nothing.
+# {KEY} in a path is the machine key, and with no key the path matches nothing. A path ending in /
+# is a folder; every other is a file.
 $OverlayRules = @(
     [pscustomobject]@{ Path = 'aws/config';                 Count = 'one';     Roots = 'repo+overlays' }
     [pscustomobject]@{ Path = 'ssh/authorized_keys';        Count = 'one';     Roots = 'overlays' }
@@ -27,6 +28,7 @@ $OverlayRules = @(
     [pscustomobject]@{ Path = 'macos/bootstrap.sh';         Count = 'all';     Roots = 'overlays' }
     [pscustomobject]@{ Path = 'ai/claude/config-dirs';      Count = 'all';     Roots = 'overlays' }
     [pscustomobject]@{ Path = 'machines/{KEY}.config-dirs'; Count = 'all';     Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'machines/';                  Count = 'all';     Roots = 'overlays' }
     [pscustomobject]@{ Path = 'powershell/tools.psd1';      Count = 'all';     Roots = 'repo+overlays' }
     [pscustomobject]@{ Path = 'ai/secrets/registry.psd1';   Count = 'all';     Roots = 'repo+overlays' }
     [pscustomobject]@{ Path = 'ai/skills';                  Count = 'entries'; Roots = 'overlays' }
@@ -123,9 +125,10 @@ function Get-OverlaySource {
         if (-not $Set.MachineKey) { return }
         $relative = $relative.Replace('{KEY}', $Set.MachineKey)
     }
+    $kind = if ($relative.EndsWith('/')) { 'Container' } else { 'Leaf' }
     $found = @($rule.Roots |
-        ForEach-Object { Join-Path $_ ($relative -replace '/', '\') } |
-        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
+        ForEach-Object { Join-Path $_ ($relative.TrimEnd('/') -replace '/', '\') } |
+        Where-Object { Test-Path -LiteralPath $_ -PathType $kind })
     if ($rule.Count -eq 'one' -and $found.Count -gt 1) {
         throw "$relative is provided by more than one source: $($found -join ', ')"
     }

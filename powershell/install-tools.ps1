@@ -205,8 +205,12 @@ if (@($tools | Where-Object { $_.Source -eq 'uv' }).Count -and -not (Get-Command
 
 foreach ($path in $manifestPaths) { Say "Reading $path" Cyan }
 if ($machinePath) { Say "Reading $machinePath" Cyan }
-if ($overlaySet.Overlays.Count -and -not $machinePath) {
-    Warn "no overlay ships machines/$($overlaySet.MachineKey).psd1 - this machine's options come from machine.local.psd1 alone"
+# Only where an overlay has machines/ at all, so a misnamed file there is not silent and a machine
+# whose overlays keep no machine files is not warned.
+if (-not $machinePath) {
+    foreach ($dir in (Get-OverlaySource -Set $overlaySet -Path "machines/")) {
+        Warn "no $($overlaySet.MachineKey).psd1 in $dir - this machine's options come from machine.local.psd1 alone"
+    }
 }
 
 # An unknown name is a missing tool in every mode: it fails -Check and holds back the hash, so a

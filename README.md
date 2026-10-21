@@ -127,6 +127,7 @@ What an overlay can supply, and how:
 - `macos/Brewfile`: applied on every Mac that lists the overlay, with `brew bundle`, in overlay order ([ADR 0008](docs/adr/0008-a-brewfile-per-overlay.md)).
 - `machines/<KEY>.Brewfile`: one Mac's own tools, found by its `HostName` (else its `LocalHostName`) uppercased and applied after the overlays' Brewfiles. Only one source across all overlays.
 - `macos/bootstrap.sh`: run by `macos/bootstrap.sh` here, after setup and the sync agent, for the steps of a new Mac that are the overlay's to know. It must be safe to re-run; the sync never runs it.
+- `machines/`: the files above that belong to one machine each, named by its key. `install-tools.ps1` warns when an overlay has this folder and no `<KEY>.psd1` in it, so a misnamed file is not silent.
 
 The sync task pulls each overlay repo and re-applies all of these, so a change pushed to an overlay reaches every machine that lists it. Skills are linked by `ai/install.sh`, which the sync runs before it pulls the overlays, so an overlay's skill change lands one sync later. Tools are installed after the pull, so an overlay's tool lands on the same sync. `install-overlays.ps1` is idempotent; re-run it when an overlay repo gains an overlay.
 

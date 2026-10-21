@@ -158,6 +158,13 @@ Describe 'Get-OverlaySource' {
         @(Get-OverlaySource -Set $nameless -Path 'machines/{KEY}.psd1').Count | Should -Be 0
     }
 
+    It 'has each overlay''s folder for a path ending in /' {
+        New-File (Join-Path $a 'machines\OTHER.psd1')
+        New-File (Join-Path $b 'machines')
+
+        Get-OverlaySource -Set $set -Path 'machines/' | Should -Be (Join-Path $a 'machines')
+    }
+
     It 'has every source of an all path, in overlay order' {
         New-File (Join-Path $b 'git\gitconfig')
         New-File (Join-Path $a 'git\gitconfig')
