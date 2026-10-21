@@ -24,7 +24,7 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
 | Tools and programs a machine needs | `powershell/tools.psd1`, here or in an overlay | installed via winget, npm, uv and GitHub releases | `powershell/install-tools.ps1` |
 | Default markdownlint rules | `powershell/markdownlint.jsonc` | passed to `markdownlint-cli2` by `bin/md-lint` | none (used in place) |
 | Automatic pull-and-relink | `powershell/sync.ps1` | Windows scheduled task "Dotfiles Sync" | `powershell/install-sync-task.ps1` |
-| Automatic pull-and-relink on a Mac | `macos/sync.sh` | LaunchAgent `com.hugoforte.dotfiles-sync`, logging to `~/Library/Logs/dotfiles-sync.log` | `macos/install-sync-agent.sh` |
+| Automatic pull-and-relink on a Mac | `macos/sync.sh` | LaunchAgent `local.dotfiles.sync`, logging to `~/Library/Logs/dotfiles-sync.log` | `macos/install-sync-agent.sh` |
 | Claude account rotation (`cswap auto`), on machines with the `claude-swap` option | none | Windows scheduled task "Claude Swap Auto", at sign-in | `powershell/install-cswap-task.ps1` |
 | Copilot repo instructions and prompts | `.github/` | used in place by GitHub Copilot | none |
 | Engineering-skill config for this repo | `AGENTS.md`, `docs/agents/` | used in place by Claude Code | none |

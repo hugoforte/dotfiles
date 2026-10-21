@@ -10,15 +10,28 @@ REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 . "$REPO/ai/helpers/output.sh"
 
-LABEL="com.hugoforte.dotfiles-sync"
+# Neutral, so the label names no owner.
+LABEL="local.dotfiles.sync"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME/Library/Logs/dotfiles-sync.log"
 EVERY_SECONDS=14400
 DOMAIN="gui/$(id -u)"
 
+# remove_old_agents: unload and remove an agent an older checkout installed under the label it used,
+# <owner>.dotfiles-sync, so two agents never sync the same Mac.
+remove_old_agents() {
+    for old in "$HOME/Library/LaunchAgents/"*.dotfiles-sync.plist; do
+        [ -f "$old" ] || continue
+        old_label="${old##*/}"
+        launchctl bootout "$DOMAIN/${old_label%.plist}" > /dev/null 2>&1
+        rm -f "$old" && success "Removed the LaunchAgent ${old_label%.plist}, which this one replaces"
+    done
+}
+
 case "${1:-}" in
     '') ;;
     --uninstall)
+        remove_old_agents
         launchctl bootout "$DOMAIN/$LABEL" > /dev/null 2>&1
         rm -f "$PLIST"
         success "Removed the LaunchAgent $LABEL"
@@ -27,6 +40,7 @@ case "${1:-}" in
 esac
 
 [ -f "$REPO/macos/sync.sh" ] || die "$REPO/macos/sync.sh not found"
+remove_old_agents
 
 # xml <text>: text escaped for a plist string
 xml() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
