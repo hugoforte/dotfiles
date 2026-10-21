@@ -157,9 +157,10 @@ function Get-OverlayEntry {
     foreach ($root in $rule.Roots) {
         $dir = Join-Path $root ((Split-Path $pattern -Parent) -replace '/', '\')
         if (-not (Test-Path -LiteralPath $dir -PathType Container)) { continue }
-        # -clike as well as -Filter: sh's glob is case-sensitive, and -Filter is not.
-        $names = (Get-ChildItem -LiteralPath $dir -Filter $leaf |
-            Where-Object { $_.Name -clike $leaf -and (Test-Path -LiteralPath $_.FullName -PathType $kind) } |
+        # -clike as well as -Filter: sh's glob is case-sensitive, and -Filter is not. A name starting
+        # with a dot is left out, as sh's * leaves it out.
+        $names = (Get-ChildItem -LiteralPath $dir -Filter $leaf -Force |
+            Where-Object { $_.Name -clike $leaf -and -not $_.Name.StartsWith('.') -and (Test-Path -LiteralPath $_.FullName -PathType $kind) } |
             Sort-Object Name).Name
         foreach ($name in $names) {
             # Joined, not FullName, which expands a short (8.3) name the overlay was listed by.
