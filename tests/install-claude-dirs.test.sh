@@ -180,7 +180,7 @@ printf '#!/bin/sh\ncase "$*" in\n  "--get LocalHostName") [ -n "${STUB_HOSTNAME:
 chmod +x "$stubs/scutil"
 PATH="$stubs:$PATH"; export PATH
 printf '~/.claude-mac\n' > "$overlay/machines/MACBOOK.config-dirs"
-printf '~/.claude-pc\r\n' > "$overlay/machines/ZENBOOK.config-dirs"
+printf '~/.claude-pc\r\n' > "$overlay/machines/WORKPC.config-dirs"
 # on_mac <LocalHostName> <HostName> <command>, on_windows <COMPUTERNAME> <command>
 on_mac()     { (unset COMPUTERNAME; STUB_HOSTNAME="$1"; STUB_HOST_NAME="$2"; export STUB_HOSTNAME STUB_HOST_NAME; shift 2; "$@"); }
 on_windows() { (COMPUTERNAME="$1"; export COMPUTERNAME; shift; "$@"); }
@@ -197,7 +197,7 @@ out="$(on_mac macbook "" check)"; rc=$?
 assert_eq "--check fails on a link missing from a machine's folder" "1" "$rc"
 
 fresh_home
-on_windows ZENBOOK install
+on_windows WORKPC install
 assert_eq "a Windows machine gets the folders its COMPUTERNAME's file names" "y" "$(is_link "$home/.claude-pc/CLAUDE.md")"
 assert_eq "and not another machine's" "n" "$(exists "$home/.claude-mac")"
 

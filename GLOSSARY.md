@@ -55,7 +55,7 @@ A report-only run: it says what would change and changes nothing. Every installe
 _Avoid_: verify, validate, test
 
 **Component**:
-One unit `ai/install.sh` installs, checks and uninstalls: CLAUDE.md, agents, skills, rig skills, overlay skills, settings, secrets. Each has an `install_`, `uninstall_` and `check_` of its own.
+One unit `ai/install.sh` installs, checks and uninstalls: CLAUDE.md, agents (this repo's and the overlays'), rules, skills, rig skills, overlay skills, Bruno collections, settings, secrets. Each has an `install_`, `uninstall_` and `check_` of its own.
 _Avoid_: module, feature, part
 
 **Sync**:
@@ -101,6 +101,10 @@ _Avoid_: skill (unqualified), local skill, app skill
 **rig skill**:
 A skill the rig checkout ships under its `skills/`, linked *out* by this repo exactly as a shipped skill is, but owned and versioned by rig. Present only on a machine that has a rig checkout.
 _Avoid_: skill (unqualified), external skill, vendored skill (that is `matt-*`, a copy this repo owns)
+
+**Rule**:
+A guidance file an overlay ships under its `ai/rules/`, linked into every Claude config folder's `rules/`, where Claude Code reads it beside `CLAUDE.md`: how one person's or one employer's working rules reach a session without this repo naming them. A rule name is linked from one place only.
+_Avoid_: rule for a row of the overlay table, which is a row
 
 **Overlay skill**:
 A skill an overlay ships under its `ai/skills/`, linked *out* exactly as a shipped skill is, for a skill whose text names something private. A skill name is linked from one place only: a name this repo, rig or an earlier overlay already ships is not linked.

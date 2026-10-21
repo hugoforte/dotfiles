@@ -350,23 +350,23 @@ assert_eq "a run that failed stops the handoff" \
 
 # protocol <environment>: prints what the environment's protocol comes to, or the error.
 protocol() {
-    call "t3.speaksProtocol('http://zenbook:3773', $1)"
+    call "t3.speaksProtocol('http://workpc:3773', $1)"
 }
 
 assert_eq "a server on protocol 2 is spoken to" "true" "$(protocol "{orchestrationProtocolVersion:2}")"
 assert_eq "a server that names no protocol is from before protocol 2" \
-    "error: T3 Code at http://zenbook:3773 speaks orchestration protocol 1, and this script speaks 2" \
+    "error: T3 Code at http://workpc:3773 speaks orchestration protocol 1, and this script speaks 2" \
     "$(protocol "{serverVersion:'0.0.45'}")"
 assert_eq "a newer protocol is refused too" \
-    "error: T3 Code at http://zenbook:3773 speaks orchestration protocol 3, and this script speaks 2" \
+    "error: T3 Code at http://workpc:3773 speaks orchestration protocol 3, and this script speaks 2" \
     "$(protocol "{orchestrationProtocolVersion:3}")"
 
 assert_eq "a Mac's .local host name is reached without it" \
     "A-MacBook-Pro" \
     "$(call "t3.reachableName('A-MacBook-Pro.local')")"
 assert_eq "a host name without .local is reached as it is" \
-    "ZENBOOK" \
-    "$(call "t3.reachableName('ZENBOOK')")"
+    "WORKPC" \
+    "$(call "t3.reachableName('WORKPC')")"
 
 # cli <args...>: runs t3.mjs and prints the first line it wrote to stderr. Each case
 # here is refused while the arguments are read, before anything reaches T3 Code.
