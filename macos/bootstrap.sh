@@ -150,8 +150,9 @@ if [ -n "$ONLY" ]; then
 fi
 [ -n "$overlays" ] || die "$OVERLAY_DIR has no overlay directories"
 
-# The overlays checked as a machine would read them, before anything is written: none of them may
-# clash with this repo or with each other.
+# The overlays found in the clone, checked as a machine would read them before anything is written:
+# none may clash with this repo or with another found here. Overlays a machine.local.psd1 already
+# lists from elsewhere are setup.sh's to check, below.
 . "$DOTFILES/ai/helpers/overlays.sh"
 set --
 while IFS= read -r o; do set -- "$@" "$o"; done <<EOF

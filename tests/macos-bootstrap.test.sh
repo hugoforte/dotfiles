@@ -140,6 +140,19 @@ assert_eq "overlays that clash fail the run" "1" "$rc"
 assert_eq "... naming what both ship" "y" "$(says "$out" "aws/config is provided by more than one source")"
 assert_eq "... before machine.local.psd1 is written" "n" "$([ -f "$src/dotfiles/ai/secrets/machine.local.psd1" ] && echo y || echo n)"
 git -C "$fixture_overlays" rm --quiet -r personal/aws
+
+# Two overlays that register the same skill.
+mkdir -p "$fixture_overlays/personal/ai/secrets" "$fixture_overlays/company/ai/secrets"
+for o in personal company; do
+    printf "@{\n    Skills = @(\n        @{\n            Id    = 'tool'\n            Files = @('.env')\n        }\n    )\n}\n" > "$fixture_overlays/$o/ai/secrets/registry.psd1"
+done
+git -C "$fixture_overlays" add -A
+git -C "$fixture_overlays" -c user.name=t -c user.email=t@example.com commit --quiet -m "same skill"
+rm -rf "$src"
+out="$(run --overlays "$fixture_overlays" --dir "$src")"; rc=$?
+assert_eq "overlays that register the same skill fail the run" "1" "$rc"
+assert_eq "... before machine.local.psd1 is written" "n" "$([ -f "$src/dotfiles/ai/secrets/machine.local.psd1" ] && echo y || echo n)"
+git -C "$fixture_overlays" rm --quiet -r personal/ai
 git -C "$fixture_overlays" -c user.name=t -c user.email=t@example.com commit --quiet -m "no clash"
 
 printf 'exit 3\n' >> "$fixture_overlays/personal/macos/bootstrap.sh"
