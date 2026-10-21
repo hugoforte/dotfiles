@@ -180,8 +180,10 @@ assert_eq "and names it" "y" "$named"
 printf "@{\n    Overlays = @(\n        '%s'\n    )\n}\n" "$(win "$first")" > "$repo/ai/secrets/machine.local.psd1"
 overlays
 mv "$first" "$work/private/moved"
-overlays --uninstall; rc=$?
+out="$(sh "$repo/ai/install.sh" --uninstall 2>&1)"; rc=$?
 assert_eq "--uninstall succeeds when a listed overlay is gone" "0" "$rc"
+case "$out" in *"overlays_load first"*) noisy=y ;; *) noisy=n ;; esac
+assert_eq "and says so once, not once a component" "n" "$noisy"
 assert_eq "and removes the links into it" "n" "$(is_link "$home/.claude/skills/private-thing")"
 mv "$work/private/moved" "$first"
 

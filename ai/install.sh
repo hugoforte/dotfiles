@@ -321,7 +321,13 @@ EOF
 # in messages. Variables are prefixed ol_, since sh has no local.
 overlay_link() {
     ol_mode="$1"; ol_pattern="$2"; ol_kind="$3"; ol_targets="$4"; shift 4
-    ol_entries="$(overlay_entries "$ol_pattern" "$@")"
+    if [ "$ol_mode" = "uninstall" ]; then
+        # Past a gone overlay there are no entries to ask for, only links to prune, and the load
+        # has already said which overlay is gone.
+        ol_entries="$(overlay_entries "$ol_pattern" "$@" 2> /dev/null)"
+    else
+        ol_entries="$(overlay_entries "$ol_pattern" "$@")"
+    fi
     ol_folder="${ol_pattern%/}"; ol_folder="${ol_folder%/*}"
     [ "$ol_mode" = "uninstall" ] || while IFS="$TAB" read -r ol_entry ol_clash; do
         [ -n "$ol_clash" ] || continue
