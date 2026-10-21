@@ -12,7 +12,10 @@ So `~/.aws/config` is now written, not linked: a header, then each source under 
 `# from <path>` line, the repo first and then the overlays in the order `machine.local.psd1`
 lists them, with LF line endings. The same section in two sources is an error naming both, and
 nothing is written, since either answer would be a guess, as the same skill id in two registries
-is.
+is. A section is named as the AWS CLI names it, not as the line reads: `[default]` and
+`[profile default]` are one profile, text after the `]` is ignored, and case counts. Read any other
+way, a merge the check passed could still fail every AWS command with a duplicate section, or
+quietly let one overlay's profile win.
 
 A link to one file per source was ruled out by the AWS CLI itself: it reads one config file and
 has no include directive. Setting `AWS_CONFIG_FILE` per shell would reach only the shells that set
@@ -24,15 +27,18 @@ change to a profile is rare, and the sync runs at logon and every four hours, so
 price. The other cost is that the AWS CLI writes to its config itself (`aws configure sso`), and
 through a link that edit used to land in the overlay's checkout. It now lands in the generated
 file, and the header says the next sync replaces it. The sync backs an edited file up before
-replacing it, by the same rule `ssh/authorized_keys`' copy on Windows follows: a file that opens
-with dotfiles' header is dotfiles' own, anything else is someone's and is backed up first
-([0003](0003-back-up-then-link.md)). That rule lives once per language, in
+replacing it ([0003](0003-back-up-then-link.md)). The header alone cannot tell an edited file from
+dotfiles' own, as it does for `ssh/authorized_keys`' copy on Windows, because the AWS CLI appends
+and leaves the header as it was. So a second line holds a checksum of the rest, and the file is
+dotfiles' own only while that still matches: SHA-256 on Windows, `cksum` on a Mac, each read only
+by the platform that wrote it. That rule lives once per language, in
 `powershell/generated-file.ps1` and `ai/helpers/aws-config.sh` with `move_aside` in
 `ai/helpers/managed-link.sh`.
 
 A link at `~/.aws/config` is what every machine had before this, and holds no content of its own,
 so it is replaced without a backup. With no source left, the generated file is removed, and so is
-a link to an `aws/config`.
+a link left dangling, as one into an overlay whose `aws/config` went is. A link that still
+resolves is someone's own and stays.
 
 `ssh/authorized_keys` keeps its single source: it decides who may log in, and nothing has needed
 two.

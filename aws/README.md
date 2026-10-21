@@ -15,11 +15,11 @@ The configuration uses AWS SSO (Single Sign-On) for authentication. No static cr
 When you run the setup script, or on the next sync, it will:
 1. Find every `aws/config` among this repo and the machine's overlays
 2. Create the `~/.aws/` directory
-3. Write `~/.aws/config`: a header naming how many files it merged, then each one under a `# from <path>` line, the repo first and then the overlays in the order `machine.local.psd1` lists them
+3. Write `~/.aws/config`: a header naming how many files it merged, a checksum of the rest, then each one under a `# from <path>` line, the repo first and then the overlays in the order `machine.local.psd1` lists them
 
-The same section, such as `[default]` or `[profile dev]`, in two of them is an error naming both, and `~/.aws/config` is left as it was. A link at `~/.aws/config`, which setup made before the file was generated, is replaced without a backup; a file dotfiles did not write is backed up first. With no `aws/config` left, the generated file is removed.
+The same section in two of them is an error naming both, and `~/.aws/config` is left as it was. Sections are named as the AWS CLI names them: `[default]` and `[profile default]` are the same profile, and case counts. A link at `~/.aws/config`, which setup made before the file was generated, is replaced without a backup; a file dotfiles did not write, or one edited since, is backed up first. With no `aws/config` left, the generated file is removed, and so is a link left dangling.
 
-**Add a profile in its overlay**, not in `~/.aws/config`: the next sync replaces the generated file, and an edited one, such as by `aws configure sso`, is backed up and replaced.
+**Add a profile in its overlay**, not in `~/.aws/config`: an edit there, such as a profile `aws configure sso` appends, is backed up and replaced on the next sync.
 
 **After setup:** Run `aws sso login` to authenticate with your SSO provider.
 

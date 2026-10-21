@@ -129,21 +129,21 @@ Describe 'Find-OverlayFile' {
     BeforeEach { $repo = New-WorkDir; $overlay = New-WorkDir }
 
     It 'is null when no root provides the file' {
-        Find-OverlayFile -Roots $repo, $overlay -RelativePath 'aws\config' | Should -BeNullOrEmpty
+        Find-OverlayFile -Roots $repo, $overlay -RelativePath 'ssh\authorized_keys' | Should -BeNullOrEmpty
     }
 
     It 'returns the one root that provides it' {
-        New-File (Join-Path $overlay 'aws\config')
+        New-File (Join-Path $overlay 'ssh\authorized_keys')
 
-        Find-OverlayFile -Roots $repo, $overlay -RelativePath 'aws\config' |
-            Should -Be (Join-Path $overlay 'aws\config')
+        Find-OverlayFile -Roots $repo, $overlay -RelativePath 'ssh\authorized_keys' |
+            Should -Be (Join-Path $overlay 'ssh\authorized_keys')
     }
 
     It 'fails, naming both, when two roots provide it' {
-        New-File (Join-Path $repo 'aws\config')
-        New-File (Join-Path $overlay 'aws\config')
+        New-File (Join-Path $repo 'ssh\authorized_keys')
+        New-File (Join-Path $overlay 'ssh\authorized_keys')
 
-        { Find-OverlayFile -Roots $repo, $overlay -RelativePath 'aws\config' } | Should -Throw "*$repo*$overlay*"
+        { Find-OverlayFile -Roots $repo, $overlay -RelativePath 'ssh\authorized_keys' } | Should -Throw "*$repo*$overlay*"
     }
 }
 
