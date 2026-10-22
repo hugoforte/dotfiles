@@ -12,11 +12,26 @@
 # which puts it back in global scope however the one before it ended.
 #
 # With no source, a file this wrote and nobody edited is removed; any other ~/.ssh/config stays.
-# Every apply sets ~/.ssh to mode 700 and the file to 600; the check compares content, not modes,
-# which Git Bash, where the suite also runs, cannot hold.
+# Every apply sets ~/.ssh to mode 700 and the file to 600. The check compares content, and reports
+# either one writable by group or others, which ssh refuses for the file; but not on Git Bash,
+# where the suite also runs and which holds no Unix modes.
 #
 # POSIX sh has no `local`: these assign in the caller's shell. ssh_config_check sets CHECK_FAILED=1
 # on drift.
+
+# Git Bash (MSYS) holds no Unix modes, so there the check leaves them be.
+SSH_CONFIG_HOLDS_MODES=true
+case "$(uname -s)" in
+    MINGW*|MSYS*) SSH_CONFIG_HOLDS_MODES=false ;;
+esac
+
+# ssh_config_writable_by_others <path>: true when its group or others may write to it
+ssh_config_writable_by_others() {
+    case "$(ls -ld "$1" | cut -c6,9)" in
+        *w*) return 0 ;;
+    esac
+    return 1
+}
 
 # ssh_config_body <sources>: what follows the checksum line
 ssh_config_body() {
@@ -76,4 +91,13 @@ ssh_config_check() {
     fi
 
     generated_file_check "$1" "~/.ssh/config" ssh/config ssh_config_body "$sources"
+    [ "$SSH_CONFIG_HOLDS_MODES" = "true" ] || return 0
+    if [ -d "$(dirname "$1")" ] && ssh_config_writable_by_others "$(dirname "$1")"; then
+        warning "~/.ssh is writable by group or others; setup sets it to 700"
+        CHECK_FAILED=1
+    fi
+    if [ -f "$1" ] && [ ! -L "$1" ] && ssh_config_writable_by_others "$1"; then
+        warning "~/.ssh/config is writable by group or others, so ssh refuses it; setup sets it to 600"
+        CHECK_FAILED=1
+    fi
 }

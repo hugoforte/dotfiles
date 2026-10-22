@@ -27,8 +27,10 @@ write, or one edited since, is backed up before it is replaced
 ([0003](0003-back-up-then-link.md)). So is a link, unlike at `~/.aws/config`: dotfiles never
 linked `~/.ssh/config`, so a link there is its owner's, pointing at config kept elsewhere, and
 setup says where it pointed. Setup sets `~/.ssh` to
-mode 700 and the file to 600 on every run. `--check` compares content only, as for `aws/config`,
-since the suite also runs under Git Bash, which holds no Unix modes.
+mode 700 and the file to 600 on every run. `--check` compares content, as for `aws/config`, and
+also reports a file or `~/.ssh` that group or others may write to, since ssh refuses such a
+config with "Bad owner or permissions". It looks only at those write bits, not for 700 and 600
+exactly, and not at all on Git Bash, which holds no Unix modes and where the suite also runs.
 
 When no listed overlay ships `ssh/config`, a `~/.ssh/config` of anyone else's is left alone, and
 setup says it skipped. A file dotfiles wrote and nobody edited since is removed, as 0010 removes

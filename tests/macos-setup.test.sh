@@ -389,8 +389,16 @@ assert_eq "and leaves the link's target untouched" "Host mine" "$(cat "$work/mys
 rm "$1"
 
 if [ "$holds_modes" = "true" ]; then
+    chmod 664 "$ssh_config"
+    out="$(check)"; rc=$?
+    assert_eq "--check fails on a group-writable ~/.ssh/config, which ssh refuses" "1" "$rc"
+    assert_eq "and says so" "y" "$(says "$out" "~/.ssh/config is writable by group or others")"
+    chmod 600 "$ssh_config"
+    chmod 775 "$home/.ssh"
+    out="$(check)"; rc=$?
+    assert_eq "--check fails on a group-writable ~/.ssh" "1" "$rc"
+    assert_eq "and says so" "y" "$(says "$out" "~/.ssh is writable by group or others")"
     chmod 644 "$ssh_config"
-    chmod 755 "$home/.ssh"
     install
     assert_eq "install sets ~/.ssh/config back to 600" "-rw-------" "$(mode "$ssh_config")"
     assert_eq "and ~/.ssh back to 700" "drwx------" "$(mode "$home/.ssh")"
