@@ -7,8 +7,9 @@
 #
 # Each source goes in under a line naming it, in the order given, which overlay_sources ssh/config
 # gives as the repo first and then the overlays as machine.local.psd1 lists them; a file given twice
-# goes in once. ssh keeps the first
-# value it finds for a setting, so for a setting two sources both give, the earlier one wins. A line
+# goes in once. ssh keeps the first value it finds for a single-value setting, so where two sources
+# both give one, the earlier wins; IdentityFile, CertificateFile, LocalForward, RemoteForward,
+# DynamicForward and SendEnv add up across sources instead (ssh_config(5)). A line
 # belongs to the Host or Match block above it, Include too, so each source opens with `Match all`,
 # which puts it back in global scope however the one before it ended.
 #
