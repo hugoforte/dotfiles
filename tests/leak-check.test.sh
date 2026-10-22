@@ -107,9 +107,14 @@ out="$(check)"; rc=$?
 assert_eq "a term that is not a valid regular expression fails the check" "1" "$rc"
 assert_eq "naming its line in the list" "y" "$(says "$out" "term 2 is not a valid")"
 assert_eq "and not the term" "n" "$(says "$out" "unclosed")"
+# GNU grep takes a lone | as matching every line, BSD grep as invalid: either way it is named.
 LEAK_CHECK_TERMS="$(printf 'acme\n|')"
 out="$(check)"; rc=$?
-assert_eq "a term that matches everything fails the check, by its line" "y" "$(says "$out" "term 2 matches every line")"
+assert_eq "a term that matches everything fails the check" "1" "$rc"
+assert_eq "naming it by its line" "y" "$(says "$out" "term 2 ")"
+LEAK_CHECK_TERMS="$(printf 'acme\nx*')"
+out="$(check)"
+assert_eq "as does one that matches an empty line in either grep" "y" "$(says "$out" "term 2 matches every line")"
 LEAK_CHECK_TERMS='acme ?corp'
 
 # --- private terms from the overlays ---------------------------------------------------------------
