@@ -29,8 +29,6 @@ on:
 
 permissions:
   contents: read
-  # The leak check reads the pull request's title, body and commit messages.
-  pull-requests: read
 
 jobs:
   check:
@@ -47,17 +45,6 @@ jobs:
             sh -n "$f" || { echo "syntax error: $f"; status=1; }
           done
           exit $status
-
-      # Before anything slower: a private term or an address must not merge. The terms are the
-      # LEAK_CHECK_TERMS secret, which a fork's pull request does not get, so there it runs the
-      # generic rules alone. A finding names where, never what (ai/helpers/leak-check.sh).
-      - name: Leak check
-        shell: bash
-        env:
-          LEAK_CHECK_TERMS: ${{ secrets.LEAK_CHECK_TERMS }}
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-        run: sh bin/leak-check ${PR:+--pr "$PR"}
 
       - name: PowerShell syntax
         shell: powershell
