@@ -8,7 +8,12 @@ than one overlay may ship such a line, so `~/.ssh/config` is written the way `~/
 every `ssh/config` among this repo and the listed overlays, the repo first and then the overlays in
 the order `machine.local.psd1` lists them, each under a `# from <path>` line. The repo is a root as
 it is for `aws/config`, though it ships none. ssh keeps the first value it finds for a setting, so
-when two sources both give one, the earlier wins, and the overlays' order is the precedence.
+when two sources both give one, the earlier wins, and the overlays' order is the precedence. That
+holds however broad the earlier block is: a `Host *` with `User hugo` in the personal overlay,
+listed first, gives Kealu's `Host kealu-box` with `User ubuntu`, listed after it, the user `hugo`.
+So `Host *` defaults belong in the last-listed overlay, or under a `Match` that leaves the other
+overlays' hosts out. The generator does not reorder blocks to fix this, since which block is the
+default is the overlays' to say.
 
 Unlike the AWS CLI, ssh has `Include`, and a link to each source's file through one `Include` per
 overlay was the alternative. It was rejected because the line that names those files would itself
