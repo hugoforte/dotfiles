@@ -84,6 +84,7 @@ install()   { run > /dev/null; }
 check()     { run --check; }
 says()      { case "$1" in *"$2"*) echo y ;; *) echo n ;; esac; }
 exists()    { if [ -e "$1" ] || [ -L "$1" ]; then echo y; else echo n; fi; }
+mode()      { ls -ld "$1" | cut -c1-10; }
 
 # --- install ---------------------------------------------------------------------------------
 
@@ -238,6 +239,11 @@ assert_eq "a source with no final newline ends before the next one starts" "y" \
 assert_eq "a source's byte-order mark is left out" "0" "$(grep -c "$(printf '\357\273\277')" "$aws")"
 out="$(check)"; rc=$?
 assert_eq "--check is clean once merged" "0" "$rc"
+if [ "$holds_modes" = "true" ]; then
+    rm "$aws"
+    (umask 022; install)
+    assert_eq "~/.aws/config gets the mode the umask gives a new file" "-rw-r--r--" "$(mode "$aws")"
+fi
 
 # clash <label> <second overlay's aws/config>: install fails and names the section, leaving the file
 clash() {
@@ -333,8 +339,6 @@ install
 # --- ~/.ssh/config ---------------------------------------------------------------------------
 
 ssh_config="$home/.ssh/config"
-# mode <path>: its permissions as ls shows them
-mode() { ls -ld "$1" | cut -c1-10; }
 
 printf 'Host mine\n' > "$ssh_config"
 out="$(run)"; rc=$?
@@ -384,6 +388,15 @@ assert_eq "--check says so" "y" "$(says "$out" "~/.ssh/config is behind the ssh/
 assert_eq "--check leaves it as it was" "$before" "$(cat "$ssh_config")"
 install
 assert_eq "install rewrites it" "y" "$(says "$(cat "$ssh_config")" "Compression yes")"
+assert_eq "and leaves no staging file behind" "" "$(ls -A "$home/.ssh" | grep '^\.config\.')"
+
+# A fixed staging name would collide with a setup that overlaps it, or with one an earlier run left.
+mkdir "$ssh_config.dotfiles-new" "$ssh_config.body"
+printf 'Compression no\n' >> "$second/ssh/config"
+out="$(run)"; rc=$?
+assert_eq "a staging path an earlier run left does not stop the next" "0" "$rc"
+assert_eq "which writes the file" "y" "$(says "$(cat "$ssh_config")" "Compression no")"
+rmdir "$ssh_config.dotfiles-new" "$ssh_config.body"
 
 mkdir -p "$work/mysync"
 printf 'Host mine\n' > "$work/mysync/ssh_config"

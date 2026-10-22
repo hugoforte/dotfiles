@@ -49,10 +49,16 @@ generated_file_checksum() {
     cksum | awk '{ print $1 "-" $2 }'
 }
 
+# generated_file_staging <file>: a new empty file of this run's own beside <file>, mode 600, so the
+# mv that swaps it in stays on one filesystem and a setup overlapping the sync stages elsewhere
+generated_file_staging() {
+    mktemp "$(dirname "$1")/.${1##*/}.XXXXXX"
+}
+
 # generated_file_write <relative path> <body function> <sources> <file>: the header, the checksum
 # and what <body function> <sources> prints, into <file>
 generated_file_write() {
-    body_file="$4.body"
+    body_file="$(generated_file_staging "$4")" || return 1
     "$2" "$3" > "$body_file" || { rm -f "$body_file"; return 1; }
     {
         printf '%s%s %s file(s); the next sync replaces any edit made here.\n' \
@@ -75,17 +81,18 @@ generated_file_is_ours() {
 }
 
 # generated_file_apply <dst> <label> <relative path> <body function> <sources> <written message>
-# <links> [mode]: bring dst in line with the sources, with that mode when one is given, set before
-# the file is swapped in; report what it did. Returns 1 when it could not.
+# <links> [mode]: bring dst in line with the sources, with that mode, else the one the umask gives a
+# new file, set before the file is swapped in; report what it did. Returns 1 when it could not.
 # <links> is replace-links where a link at dst can only be one an earlier setup made, which is
 # removed, or back-up-links where it can only be someone's own, which is moved aside like a file.
 generated_file_apply() {
     mkdir -p "$(dirname "$1")" || return 1
-    staged="$1.dotfiles-new"
+    staged_mode="${8:-$(printf '%o' $((0666 & ~$(umask))))}"
+    staged="$(generated_file_staging "$1")" || { error "could not stage $2 beside it"; return 1; }
     generated_file_write "$3" "$4" "$5" "$staged" || { rm -f "$staged"; return 1; }
-    if [ -n "$8" ] && ! chmod "$8" "$staged"; then
+    if ! chmod "$staged_mode" "$staged"; then
         rm -f "$staged"
-        error "could not set $2 to mode $8"
+        error "could not set $2 to mode $staged_mode"
         return 1
     fi
     if [ -f "$1" ] && [ ! -L "$1" ] && cmp -s "$staged" "$1"; then
