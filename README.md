@@ -20,7 +20,7 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
 | Claude Code settings (model, plugins, allowlist) | `ai/claude/settings.json` | merged into `~/.claude/settings.json` and each extra Claude config folder's | `ai/install.sh` |
 | Extra Claude config folders, one login each | an overlay's `ai/claude/config-dirs`, and `machines/<KEY>.config-dirs` for one machine | the folders it names get the same as `~/.claude` | `ai/install.sh` |
 | Skill secrets (encrypted with SOPS + age) | `ai/secrets/<skill>/`, here or in an overlay | `%USERPROFILE%\.agent-secrets\` (`~/.agent-secrets/` on a Mac), then symlinked into every checkout that has the skill (shipped skills read them in place) | `powershell/deploy-secrets.ps1`, `macos/deploy-secrets.sh` |
-| Commands for every shell, agents' included (`md-lint`, `check-encrypted`) | `bin/` | the user PATH | `powershell/setup.ps1`, `powershell/sync.ps1` |
+| Commands for every shell, agents' included (`md-lint`, `check-encrypted`, `leak-check`) | `bin/` | the user PATH | `powershell/setup.ps1`, `powershell/sync.ps1` |
 | Tools and programs a machine needs | `powershell/tools.psd1`, here or in an overlay | installed via winget, npm, uv and GitHub releases | `powershell/install-tools.ps1` |
 | Default markdownlint rules | `powershell/markdownlint.jsonc` | passed to `markdownlint-cli2` by `bin/md-lint` | none (used in place) |
 | Automatic pull-and-relink | `powershell/sync.ps1` | Windows scheduled task "Dotfiles Sync" | `powershell/install-sync-task.ps1` |
@@ -136,15 +136,22 @@ The sync task pulls each overlay repo and re-applies all of these, so a change p
 
 ## Leak check
 
-This repo is public, so nothing private may merge into it. `leak-check` (in `bin/`, on PATH like `check-encrypted`) fails when the tracked files hold an email address outside the domains kept for examples and tests, a private key, a token, a real SSH public key, or a private term. With `--pr <n>` it also checks that pull request's title, body and commit messages, which are public too. A finding names the file and line and which rule, never what matched.
+This repo is public, so nothing private may merge into it. `leak-check` (in `bin/`, on PATH like `check-encrypted`) checks the checkout you run it in. It fails on:
 
-The private terms never live here. Locally they are every overlay's `leak-check/terms.txt`; in CI they are the `LEAK_CHECK_TERMS` repository secret, which `check.yml` gives the check on every pull request. A fork's pull request gets no secret, so there the check runs the generic rules alone. Run `leak-check` before pushing; after an overlay's terms change, refresh the secret from them:
+- a private term, in a file or in a file's path
+- an email address outside the domains kept for examples and tests, GitHub's and Anthropic's noreply senders, and a public forge's `git@` remote
+- a private key, a token, or a real SSH public key
+- a UTF-16 file, which it cannot read
+
+With `--pr <n>` it also checks that pull request's title, body, commit messages and commit authors, which are public too. A finding names the file and line (or the part of the pull request) and which rule, never what matched.
+
+The private terms never live here. Locally they are every overlay's `leak-check/terms.txt`, from the overlays the dotfiles checkout that `leak-check` belongs to lists, so run it from a rig worktree before you push. In CI they are the `LEAK_CHECK_TERMS` repository secret, which `.github/workflows/leak-check.yml` gives the check on every pull request, and again whenever its title or body is edited. A fork's or Dependabot's pull request gets no secret, so there it runs the generic rules alone; anywhere else, an empty secret fails the run. A term that is not a valid regular expression, or matches every line, fails the check by its line number. After an overlay's terms change, refresh the secret from them:
 
 ```sh
 leak-check --terms | gh secret set LEAK_CHECK_TERMS -R hugoforte/dotfiles
 ```
 
-`--terms` prints the terms, so pipe it straight into `gh` and never into a log. The overlay repo's own daily scan stays: it also covers this repo's history, every branch, and issue and pull request comments and their edit history, which a check on one pull request never sees.
+`--terms` always reads the overlays, never the secret, and refuses to print an empty list. It does print the terms, so pipe it straight into `gh` and never into a log. The overlay repo's own daily scan stays: it also covers this repo's history, every branch, and issue and pull request comments and their edit history, which a check on one pull request never sees.
 
 ## Claude accounts
 
