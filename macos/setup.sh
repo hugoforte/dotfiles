@@ -14,6 +14,9 @@
 #   ~/.ssh/authorized_keys -> the one overlay's ssh/authorized_keys, if any
 #   ~/.aws/config             written: every aws/config in this repo and the overlays, merged
 #                             (ai/helpers/aws-config.sh)
+#   ~/.ssh/config             written: every ssh/config in this repo and the overlays, merged,
+#                             mode 600 in a 700 ~/.ssh; with none, a file of anyone else's is
+#                             left alone (ai/helpers/ssh-config.sh)
 #   ~/.gitconfig-overlays     written: an include of each overlay's git/gitconfig
 #   Brewfiles                 each overlay's macos/Brewfile, then the one overlay's
 #                             machines/<KEY>.Brewfile, KEY being the HostName (else the
@@ -34,12 +37,14 @@ REPO="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 . "$REPO/ai/helpers/output.sh"
 . "$REPO/ai/helpers/managed-link.sh"
 . "$REPO/ai/helpers/overlays.sh"
+. "$REPO/ai/helpers/generated-file.sh"
 . "$REPO/ai/helpers/aws-config.sh"
+. "$REPO/ai/helpers/ssh-config.sh"
 
 show_help() {
     echo "Usage: $0 [--check | --brew-if-changed]"
     echo ""
-    echo "Links ~/.zshrc, ~/.gitconfig and ~/.ssh/authorized_keys, writes ~/.aws/config and ~/.gitconfig-overlays, applies"
+    echo "Links ~/.zshrc, ~/.gitconfig and ~/.ssh/authorized_keys, writes ~/.aws/config, ~/.ssh/config and ~/.gitconfig-overlays, applies"
     echo "each overlay's Brewfile and this Mac's, then runs ai/install.sh."
     echo ""
     echo "  --check            Report what would change without changing anything (exit 1 if anything would)"
@@ -142,6 +147,13 @@ elif [ -L "$ssh_keys" ] && case "$(readlink "$ssh_keys")" in */ssh/authorized_ke
     fi
 else
     info "SSH keys: no overlay has ssh/authorized_keys; skipped"
+fi
+if [ "$MODE" = "check" ]; then
+    ssh_config_check "$HOME/.ssh/config" "$REPO
+$OVERLAYS"
+else
+    ssh_config_apply "$HOME/.ssh/config" "$REPO
+$OVERLAYS" || FAILED=1
 fi
 
 # --- ~/.gitconfig-overlays -----------------------------------------------------------------------

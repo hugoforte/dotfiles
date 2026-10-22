@@ -12,8 +12,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 . "$SCRIPT_DIR/assert.sh"
 
+# Git Bash has no Unix modes for setup to set.
+holds_modes=true
 case "$(uname -s)" in
-    MINGW*|MSYS*) MSYS="winsymlinks:nativestrict"; export MSYS ;;
+    MINGW*|MSYS*) MSYS="winsymlinks:nativestrict"; export MSYS; holds_modes=false ;;
 esac
 
 # Physical, as setup.sh links its checkout: the temp folder is often reached through a symlink
@@ -317,6 +319,76 @@ assert_eq "with no source, a file of someone's own stays" "[profile mine]" "$(ca
 assert_eq "and says it skipped" "y" "$(says "$out" "neither this repo nor an overlay has aws/config; skipped")"
 rm "$aws"
 mv "$work/unlisted/aws/config" "$personal/aws/config"
+install
+
+# --- ~/.ssh/config ---------------------------------------------------------------------------
+
+ssh_config="$home/.ssh/config"
+# mode <path>: its permissions as ls shows them
+mode() { ls -ld "$1" | cut -c1-10; }
+
+printf 'Host mine\n' > "$ssh_config"
+out="$(run)"; rc=$?
+assert_eq "with no ssh/config in an overlay, install succeeds" "0" "$rc"
+assert_eq "and leaves an existing ~/.ssh/config untouched" "Host mine" "$(cat "$ssh_config")"
+assert_eq "and says it skipped" "y" "$(says "$out" "neither this repo nor an overlay has ssh/config; skipped")"
+out="$(check)"; rc=$?
+assert_eq "--check counts no ssh/config as no drift" "0" "$rc"
+
+mkdir -p "$second/ssh"
+# The first ends inside a Host block, so the second's lines would apply to that host alone.
+printf 'Host first\n    User one\n' > "$personal/ssh/config"
+printf 'ServerAliveInterval 30\n' > "$second/ssh/config"
+out="$(check)"; rc=$?
+assert_eq "--check fails on a ~/.ssh/config dotfiles did not write" "1" "$rc"
+assert_eq "--check leaves it as it was" "Host mine" "$(cat "$ssh_config")"
+install
+set -- "$home"/.ssh/config.backup.*
+assert_eq "install backs up the ~/.ssh/config dotfiles did not write" "Host mine" "$(cat "$1")"
+rm "$1"
+assert_eq "every overlay's ssh/config merges in overlay order, each opening with Match all" \
+    "$(printf '# from %s\nMatch all\nHost first\n    User one\n# from %s\nMatch all\nServerAliveInterval 30' "$personal/ssh/config" "$second/ssh/config")" \
+    "$(grep -v '^# Written by\|^# dotfiles-cksum\|^# Add a host\|^$' "$ssh_config")"
+if [ "$holds_modes" = "true" ]; then
+    assert_eq "~/.ssh/config is mode 600" "-rw-------" "$(mode "$ssh_config")"
+    assert_eq "~/.ssh is mode 700" "drwx------" "$(mode "$home/.ssh")"
+fi
+if command -v ssh > /dev/null 2>&1; then
+    assert_eq "a later overlay's setting applies to every host, though an earlier one ended in a Host block" \
+        "serveraliveinterval 30" "$(ssh -G -F "$ssh_config" elsewhere 2> /dev/null | grep '^serveraliveinterval ')"
+fi
+out="$(check)"; rc=$?
+assert_eq "--check is clean once merged" "0" "$rc"
+
+rm "$ssh_config"
+out="$(check)"; rc=$?
+assert_eq "--check fails on a missing ~/.ssh/config" "1" "$rc"
+assert_eq "--check names it" "y" "$(says "$out" "~/.ssh/config missing")"
+assert_eq "--check does not write it" "n" "$(exists "$ssh_config")"
+install
+
+printf 'Compression yes\n' >> "$second/ssh/config"
+before="$(cat "$ssh_config")"
+out="$(check)"; rc=$?
+assert_eq "--check fails on a ~/.ssh/config behind its sources" "1" "$rc"
+assert_eq "--check says so" "y" "$(says "$out" "~/.ssh/config is behind the ssh/config files it merges")"
+assert_eq "--check leaves it as it was" "$before" "$(cat "$ssh_config")"
+install
+assert_eq "install rewrites it" "y" "$(says "$(cat "$ssh_config")" "Compression yes")"
+
+if [ "$holds_modes" = "true" ]; then
+    chmod 644 "$ssh_config"
+    chmod 755 "$home/.ssh"
+    install
+    assert_eq "install sets ~/.ssh/config back to 600" "-rw-------" "$(mode "$ssh_config")"
+    assert_eq "and ~/.ssh back to 700" "drwx------" "$(mode "$home/.ssh")"
+fi
+
+rm -r "$personal/ssh/config" "$second/ssh"
+out="$(check)"; rc=$?
+assert_eq "--check fails on a merged ~/.ssh/config with no source left" "1" "$rc"
+install
+assert_eq "install removes the file it wrote" "n" "$(exists "$ssh_config")"
 install
 
 # --- reading machine.local.psd1 --------------------------------------------------------------
