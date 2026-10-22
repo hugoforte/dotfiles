@@ -79,15 +79,21 @@ assert_eq "the machine key is the name uppercased, up to its first dot" "BOX" "$
 # --- the one source of a path ---------------------------------------------------------------------
 
 list "$first" "$second"
-assert_eq "a one path no root ships has no source" "" "$(loaded 'overlay_sources aws/config')"
+assert_eq "a one path no root ships has no source" "" "$(loaded 'overlay_sources ssh/authorized_keys')"
 
-file "$second/aws/config"
-assert_eq "a one path has the source that ships it" "$second/aws/config" "$(loaded 'overlay_sources aws/config')"
+file "$second/ssh/authorized_keys"
+assert_eq "a one path has the source that ships it" "$second/ssh/authorized_keys" "$(loaded 'overlay_sources ssh/authorized_keys')"
+
+file "$first/ssh/authorized_keys"
+out="$(loaded 'overlay_sources ssh/authorized_keys; echo "rc=$?"')"
+assert_eq "two sources of a one path fail" "y" "$(says "$out" "rc=1")"
+assert_eq "naming both" "y" "$(says "$out" "$first/ssh/authorized_keys and $second/ssh/authorized_keys")"
+rm -rf "$first/ssh" "$second/ssh"
 
 file "$repo/aws/config"
-out="$(loaded 'overlay_sources aws/config; echo "rc=$?"')"
-assert_eq "two sources of a one path fail" "y" "$(says "$out" "rc=1")"
-assert_eq "naming both" "y" "$(says "$out" "$repo/aws/config and $second/aws/config")"
+file "$second/aws/config"
+assert_eq "every aws/config, the repo first, which aws-config.sh merges" "$repo/aws/config
+$second/aws/config" "$(loaded 'overlay_sources aws/config')"
 rm -f "$repo/aws/config" "$second/aws/config"
 
 file "$repo/ssh/authorized_keys"

@@ -50,6 +50,7 @@ file "$repo/ai/secrets/machine.local.psd1" "@{
         '$(cygpath -w "$second")'
     )
 }"
+file "$repo/aws/config"
 file "$second/aws/config"
 file "$first/ssh/authorized_keys"
 file "$second/ssh/authorized_keys"

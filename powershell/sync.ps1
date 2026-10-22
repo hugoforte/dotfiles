@@ -130,26 +130,36 @@ try {
 
     # A link into this repo whose source the repo no longer ships is left over from a file that
     # moved out, to an overlay or away entirely.
-    $awsConfigPath = "$env:USERPROFILE\.aws\config"
-    $leftovers = @(Get-ChildItem -LiteralPath $env:USERPROFILE -Filter ".gitconfig-*" -Force | ForEach-Object { $_.FullName }) + $awsConfigPath
-    foreach ($path in $leftovers) {
+    foreach ($path in @(Get-ChildItem -LiteralPath $env:USERPROFILE -Filter ".gitconfig-*" -Force | ForEach-Object { $_.FullName })) {
         if ((Remove-DanglingManagedLink -Path $path -Under $repoRoot).Action -eq 'Removed') {
             Write-Log "removed $path`: its source is no longer in the repo"
         }
     }
 
+    # Every aws/config among this repo and the overlays, merged; see aws-config.ps1.
+    . (Join-Path $PSScriptRoot "aws-config.ps1")
+    # A failure, such as two overlays declaring one section, is logged and the run carries on, as a
+    # failed overlay pull does: stopping here would leave the SSH keys and the secrets below stale.
+    $awsConfigPath = "$env:USERPROFILE\.aws\config"
+    $awsFailed = $false
     try {
-        $awsSource = Get-OverlaySource -Set $overlaySet -Path "aws/config"
+        $awsConfig = Set-AwsConfig -Path $awsConfigPath -Sources (Get-OverlaySource -Set $overlaySet -Path "aws/config")
     } catch {
-        Write-Log $_.Exception.Message
-        exit 1
+        Write-Log "~/.aws/config left as it was: $($_.Exception.Message)"
+        $awsFailed = $true
+        $awsConfig = [pscustomobject]@{ Action = 'AlreadyCorrect'; BackupPath = $null }
     }
-    if ($awsSource) {
-        $awsLink = Set-ManagedLink -Path $awsConfigPath -Source $awsSource
-        if ($awsLink.Action -ne 'AlreadyCorrect') { Write-Log "~/.aws/config -> $awsSource ($($awsLink.Action))" }
-    } elseif (-not (Test-Path -LiteralPath $awsConfigPath)) {
-        Write-Log "no aws/config in the repo or any overlay, and ~/.aws/config is absent; if this machine should have one, run install-overlays.ps1"
+    switch ($awsConfig.Action) {
+        'AlreadyCorrect' { }
+        'Missing'        {
+            if (-not (Test-Path -LiteralPath $awsConfigPath)) {
+                Write-Log "no aws/config in the repo or any overlay, and ~/.aws/config is absent; if this machine should have one, run install-overlays.ps1"
+            }
+        }
+        'Removed'        { Write-Log "removed ~/.aws/config: no aws/config is left in the repo or any overlay" }
+        default          { Write-Log "~/.aws/config: $($awsConfig.Action)" }
     }
+    if ($awsConfig.BackupPath) { Write-Log "backed up what was in ~/.aws/config to $($awsConfig.BackupPath)" }
 
     # The keys that may log in over SSH: overlays only, since the public repo never ships them.
     . (Join-Path $PSScriptRoot "authorized-keys.ps1")
@@ -186,6 +196,10 @@ try {
     }
     if ($toolsFailed) {
         Write-Log "sync finished, but install-tools.ps1 failed (above)"
+        exit 1
+    }
+    if ($awsFailed) {
+        Write-Log "sync finished, but ~/.aws/config could not be written (above)"
         exit 1
     }
 }

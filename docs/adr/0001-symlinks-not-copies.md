@@ -18,3 +18,6 @@ with a stale file.
 One thing is deliberately not a link: `ai/claude/settings.json` is *merged* into
 `~/.claude/settings.json`, because Claude Code writes to that file itself. See
 [0002](0002-mklink-not-new-item.md) for how the links are made.
+
+Amended: `~/.aws/config` is generated too, from every overlay's `aws/config`, because the AWS CLI
+has no include and a link has one target ([0010](0010-aws-config-is-generated.md)).

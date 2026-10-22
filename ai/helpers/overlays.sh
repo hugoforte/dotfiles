@@ -21,7 +21,7 @@
 #   overlays the listed overlays, in order; repo+overlays puts the repo first
 # {KEY} in a path is the machine key, and with no key the path matches nothing. A path ending in /
 # is a folder; every other is a file.
-OVERLAY_TABLE='aws/config one repo+overlays
+OVERLAY_TABLE='aws/config all repo+overlays
 ssh/authorized_keys one overlays
 machines/{KEY}.psd1 one overlays
 machines/{KEY}.Brewfile one overlays
@@ -130,7 +130,7 @@ $OVERLAYS}"
 # overlay_sources <path>: print the sources of a one or all path, one per line. A one path prints
 # none or one, and two sources print an error naming both and return 1; an all path never fails,
 # so it may be piped. A path not in the table returns 1, and before overlays_load, 2.
-#   x="$(overlay_sources aws/config)" || exit 1
+#   x="$(overlay_sources ssh/authorized_keys)" || exit 1
 overlay_sources() {
     _overlay_row "$1" one all || return $?
     _ov_rel="$1"

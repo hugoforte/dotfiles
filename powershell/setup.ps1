@@ -14,8 +14,10 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "overlays.ps1")
 . (Join-Path $PSScriptRoot "user-path.ps1")
 . (Join-Path $PSScriptRoot "authorized-keys.ps1")
+. (Join-Path $PSScriptRoot "aws-config.ps1")
 
 $sshKeysPath = "$env:USERPROFILE\.ssh\authorized_keys"
+$awsConfigPath = "$env:USERPROFILE\.aws\config"
 
 # The one overlay's ssh/authorized_keys, or $null; see overlays.ps1.
 function Get-SshKeysSource {
@@ -28,15 +30,9 @@ function Get-SshKeysSource {
 function Get-ManagedLinkPlan {
     param([Parameter(Mandatory)][string]$RepoPath)
 
-    $awsConfig = Get-OverlaySource -Set (Get-Overlays -RepoPath $RepoPath) -Path "aws/config"
-    if (-not $awsConfig) {
-        Write-Host "[--] AWS config: neither this repo nor an overlay has aws/config; skipped" -ForegroundColor DarkGray
-    }
-
     $plan = @(
         @{ Label = "PowerShell profile";           Path = $PROFILE;                                   Source = "$RepoPath\powershell\profile.ps1" }
         @{ Label = "PowerShell all-hosts profile"; Path = $PROFILE.CurrentUserAllHosts;               Source = "$RepoPath\powershell\profile.ps1" }
-        @{ Label = "AWS config";                   Path = "$env:USERPROFILE\.aws\config";             Source = $awsConfig }
         @{ Label = "~/.gitconfig";                 Path = "$env:USERPROFILE\.gitconfig";              Source = "$RepoPath\git\gitconfig" }
     )
     # A source the repo does not ship is not a link this machine is missing.
@@ -79,6 +75,26 @@ if ($Check) {
         Write-Host "[!!] ~/.gitconfig-overlays: missing or out of date" -ForegroundColor Yellow
     }
 
+    # ~/.aws/config merges every aws/config, so it is generated rather than linked; see aws-config.ps1.
+    try {
+        $awsConfig = Test-AwsConfig -Path $awsConfigPath -Sources (Get-OverlaySource -Set (Get-Overlays -RepoPath $repoPath) -Path "aws/config")
+    } catch {
+        $awsConfig = [pscustomobject]@{ IsCorrect = $false; Reason = 'Error'; Message = $_.Exception.Message }
+    }
+    if ($awsConfig.IsCorrect) {
+        Write-Host "[OK] ~/.aws/config" -ForegroundColor Green
+    } else {
+        $wrong++
+        $detail = switch ($awsConfig.Reason) {
+            'Missing'  { "missing" }
+            'Stale'    { "behind the aws/config files it merges" }
+            'NotOurs'  { "not the merged file (a link, or edited); setup.ps1 replaces it, backing up an edited one" }
+            'Leftover' { "no aws/config is left in this repo or an overlay; setup.ps1 removes it" }
+            'Error'    { $awsConfig.Message }
+        }
+        Write-Host "[!!] ~/.aws/config: $detail" -ForegroundColor Yellow
+    }
+
     # ~/.ssh/authorized_keys is copied rather than linked; see authorized-keys.ps1.
     $sshKeysSource = Get-SshKeysSource -RepoPath $repoPath
     if ($sshKeysSource) {
@@ -112,7 +128,7 @@ if ($Check) {
         Write-Host "$wrong item(s) would change. Run setup.ps1 to apply." -ForegroundColor Yellow
         exit 1
     }
-    Write-Host "Every managed link is in place, and bin/ is on the user PATH." -ForegroundColor Green
+    Write-Host "Every managed file is in place, and bin/ is on the user PATH." -ForegroundColor Green
     exit 0
 }
 
@@ -189,9 +205,9 @@ Write-Host ""
 # generalisation, defined below the copies that should have used it and called only for the
 # gitconfigs. All of it now lives in managed-link.ps1 (hugoforte/dotfiles#6).
 
-# Parent directories the links need. Set-ManagedLink creates a missing parent itself, but these
-# two are directories Windows and the AWS CLI expect to exist in their own right, not just as
-# somewhere to put a link.
+# Parent directories the managed files need. Set-ManagedLink and Set-AwsConfig create a missing
+# parent themselves, but these two are directories Windows and the AWS CLI expect to exist in
+# their own right, not just as somewhere to put a file.
 foreach ($dir in @("$env:USERPROFILE\Documents\WindowsPowerShell", "$env:USERPROFILE\.aws")) {
     if (!(Test-Path $dir)) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
@@ -200,7 +216,6 @@ foreach ($dir in @("$env:USERPROFILE\Documents\WindowsPowerShell", "$env:USERPRO
 }
 
 Write-Host "Linking managed files..." -ForegroundColor Green
-$linkedAws = $false
 foreach ($entry in (Get-ManagedLinkPlan -RepoPath $dotfilesPath)) {
     $result = Set-ManagedLink -Path $entry.Path -Source $entry.Source
 
@@ -213,11 +228,27 @@ foreach ($entry in (Get-ManagedLinkPlan -RepoPath $dotfilesPath)) {
             Write-Host "     backed up what was there to $(Split-Path $result.BackupPath -Leaf)" -ForegroundColor Yellow
         }
     }
-
-    if ($entry.Label -eq "AWS config" -and $result.Action -ne 'AlreadyCorrect') { $linkedAws = $true }
 }
 
-if ($linkedAws) {
+# A failure here leaves ~/.aws/config as it was and setup carries on with the rest.
+try {
+    $awsConfig = Set-AwsConfig -Path $awsConfigPath -Sources (Get-OverlaySource -Set (Get-Overlays -RepoPath $dotfilesPath) -Path "aws/config")
+} catch {
+    Write-Host "[XX] ~/.aws/config left as it was: $($_.Exception.Message)" -ForegroundColor Red
+    $awsConfig = [pscustomobject]@{ Action = 'Failed' }
+}
+switch ($awsConfig.Action) {
+    'AlreadyCorrect'     { Write-Host "[OK] ~/.aws/config already current" -ForegroundColor Green }
+    'Created'            { Write-Host "[OK] ~/.aws/config written" -ForegroundColor Green }
+    'Updated'            { Write-Host "[OK] ~/.aws/config updated" -ForegroundColor Green }
+    'BackedUpAndWritten' {
+        Write-Host "[OK] ~/.aws/config written" -ForegroundColor Green
+        Write-Host "     backed up what was there to $(Split-Path $awsConfig.BackupPath -Leaf)" -ForegroundColor Yellow
+    }
+    'Removed'            { Write-Host "[OK] ~/.aws/config removed: no aws/config is left in this repo or an overlay" -ForegroundColor Green }
+    'Missing'            { Write-Host "[--] AWS config: neither this repo nor an overlay has aws/config; skipped" -ForegroundColor DarkGray }
+}
+if ($awsConfig.Action -in 'Created', 'Updated', 'BackedUpAndWritten') {
     Write-Host "     Run 'aws sso login' to authenticate" -ForegroundColor DarkGray
 }
 

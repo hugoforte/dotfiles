@@ -19,9 +19,8 @@ function aws-profile {
     }
 }
 
-# Points ~/.aws/config at the aws/config in this repo or in one overlay, the same link setup.ps1
-# makes, so running this after setup leaves the managed link in place instead of replacing it
-# with a copy that goes stale.
+# Writes ~/.aws/config from every aws/config in this repo and the overlays, the same file setup.ps1
+# and the sync write (aws-config.ps1).
 function aws-setup-profile {
     $repoRoot = Split-Path -Parent $PSScriptRoot
     $targetConfigPath = Join-Path (Join-Path $env:USERPROFILE ".aws") "config"
@@ -29,43 +28,37 @@ function aws-setup-profile {
     # Loaded here, not at file scope: profile.ps1 dot-sources aws.ps1 into every shell, and a
     # checkout without these modules beside it would then error on every shell start. The
     # repo's rule is to dot-source helpers only after a path check (powershell.instructions.md).
-    foreach ($module in @("managed-link.ps1", "overlays.ps1")) {
+    foreach ($module in @("overlays.ps1", "aws-config.ps1")) {
         $modulePath = Join-Path $PSScriptRoot $module
         if (-not (Test-Path -LiteralPath $modulePath)) {
-            Write-Host "Cannot link AWS config: $modulePath not found" -ForegroundColor Red
+            Write-Host "Cannot write AWS config: $modulePath not found" -ForegroundColor Red
             return
         }
         . $modulePath
     }
 
     try {
-        $sourceConfigPath = Get-OverlaySource -Set (Get-Overlays -RepoPath $repoRoot) -Path "aws/config"
-    } catch {
-        Write-Host $_.Exception.Message -ForegroundColor Red
-        return
-    }
-    if (-not $sourceConfigPath) {
-        Write-Host "No aws/config in $repoRoot or any overlay" -ForegroundColor Red
-        return
-    }
-
-    try {
-        $link = Set-ManagedLink -Path $targetConfigPath -Source $sourceConfigPath
+        $sources = @(Get-OverlaySource -Set (Get-Overlays -RepoPath $repoRoot) -Path "aws/config")
+        if (-not $sources.Count) {
+            Write-Host "No aws/config in $repoRoot or any overlay" -ForegroundColor Red
+            return
+        }
+        $result = Set-AwsConfig -Path $targetConfigPath -Sources $sources
     } catch {
         Write-Host $_.Exception.Message -ForegroundColor Red
         return
     }
 
-    if ($link.Action -eq "AlreadyCorrect") {
-        Write-Host "AWS config is already linked to: $sourceConfigPath" -ForegroundColor Green
+    if ($result.Action -eq "AlreadyCorrect") {
+        Write-Host "AWS config is already current: $targetConfigPath" -ForegroundColor Green
         return
     }
 
-    if ($link.BackupPath) {
-        Write-Host "Backed up existing AWS config to: $($link.BackupPath)" -ForegroundColor Yellow
+    if ($result.BackupPath) {
+        Write-Host "Backed up existing AWS config to: $($result.BackupPath)" -ForegroundColor Yellow
     }
 
-    Write-Host "Linked AWS config: $targetConfigPath -> $sourceConfigPath" -ForegroundColor Green
+    Write-Host "Wrote AWS config: $targetConfigPath, from $($sources -join ', ')" -ForegroundColor Green
     Write-Host "Run 'aws sso login' to authenticate." -ForegroundColor DarkGray
 }
 

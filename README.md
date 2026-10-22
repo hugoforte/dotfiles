@@ -7,7 +7,7 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
 | Area | Source in repo | Installed to | Installer |
 |---|---|---|---|
 | PowerShell profile + helper functions | `powershell/` | `$PROFILE` and the all-hosts profile (symlinks) | `powershell/setup.ps1` |
-| AWS CLI profiles (SSO, no secrets) | an overlay's `aws/config` | `%USERPROFILE%\.aws\config`, `~/.aws/config` on a Mac (symlink) | `powershell/setup.ps1`, `powershell/sync.ps1`, `macos/setup.sh` |
+| AWS CLI profiles (SSO, no secrets) | each overlay's `aws/config` | `%USERPROFILE%\.aws\config`, `~/.aws/config` on a Mac (generated: every source merged) | `powershell/setup.ps1`, `powershell/sync.ps1`, `macos/setup.sh` |
 | The SSH keys that may log in | an overlay's `ssh/authorized_keys` | `~/.ssh/authorized_keys`: a copy on Windows, a symlink on a Mac | `powershell/setup.ps1`, `powershell/sync.ps1`, `macos/setup.sh` |
 | Git identity | `git/`, and `macos/gitconfig` on a Mac | `~/.gitconfig` (symlink) | `powershell/setup.ps1`, `macos/setup.sh` |
 | Per-org git identities and other overlay git config | an overlay's `git/gitconfig` | included by `~/.gitconfig-overlays` (generated) | `powershell/setup.ps1`, `powershell/sync.ps1`, `macos/setup.sh` |
@@ -41,7 +41,7 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
    .\install-sync-task.ps1
    ```
 
-   `setup.ps1` links both PowerShell profiles, `~/.aws/config` (when a source exists) and `~/.gitconfig`, writes `~/.gitconfig-overlays` and, when an overlay ships `ssh/authorized_keys`, `~/.ssh/authorized_keys`, backs up any real file it displaces, installs everything in [powershell/tools.psd1](powershell/tools.psd1), and offers to reload the profile. `install-sync-task.ps1` registers the "Dotfiles Sync" task (at logon and every 4 hours). Both are safe to re-run.
+   `setup.ps1` links both PowerShell profiles and `~/.gitconfig`, writes `~/.aws/config` (when a source exists), `~/.gitconfig-overlays` and, when an overlay ships `ssh/authorized_keys`, `~/.ssh/authorized_keys`, backs up any real file it displaces, installs everything in [powershell/tools.psd1](powershell/tools.psd1), and offers to reload the profile. `install-sync-task.ps1` registers the "Dotfiles Sync" task (at logon and every 4 hours). Both are safe to re-run.
 
    `setup.ps1` elevates itself, but **not for the symlinks** — those work unelevated once Developer Mode is on. It elevates so winget installs the manifest machine-wide; unelevated it would quietly fall back to `--scope user`. See [ADR 0002](docs/adr/0002-mklink-not-new-item.md).
 
@@ -96,7 +96,7 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/hugoforte/dotfiles/main/ma
    sh macos/setup.sh --check
    ```
 
-   `setup.sh` links `~/.zshrc`, `~/.gitconfig`, `~/.aws/config` and `~/.ssh/authorized_keys` (each when a source exists), writes `~/.gitconfig-overlays`, applies each overlay's Brewfile and this Mac's with `brew bundle`, then runs `ai/install.sh`. It backs up any real file it displaces and is safe to re-run. `--check` changes nothing and exits 1 if anything would change; `dotfiles-check` in a new terminal runs it. `~/.zshrc` is a link into this repo, so lines that are this Mac's alone, and what installers such as nvm want to append, go in `~/.zshrc.local`, which it sources.
+   `setup.sh` links `~/.zshrc`, `~/.gitconfig` and `~/.ssh/authorized_keys` (each when a source exists), writes `~/.aws/config` (when a source exists) and `~/.gitconfig-overlays`, applies each overlay's Brewfile and this Mac's with `brew bundle`, then runs `ai/install.sh`. It backs up any real file it displaces and is safe to re-run. `--check` changes nothing and exits 1 if anything would change; `dotfiles-check` in a new terminal runs it. `~/.zshrc` is a link into this repo, so lines that are this Mac's alone, and what installers such as nvm want to append, go in `~/.zshrc.local`, which it sources.
 
 5. Keep the Mac in sync:
 
@@ -121,7 +121,7 @@ What an overlay can supply, and how:
 - `bruno/<collection>/`: linked into `~/bruno` by `ai/install.sh`, so Bruno opens every overlay's collections from one home; a collection name may be shipped from only one place.
 - `ai/claude/config-dirs`: extra Claude config folders, one absolute or `~/…` path per line (`#` starts a comment). `ai/install.sh` gives each the same as `~/.claude`; see [Claude accounts](#claude-accounts).
 - `machines/<KEY>.config-dirs`: the same, for one machine only, found by its Windows computer name, or on a Mac by its `HostName` (else its `LocalHostName`), uppercased.
-- `aws/config`: linked to `~/.aws/config`; only one source across this repo and all overlays.
+- `aws/config`: AWS CLI profiles. Every one in this repo and the overlays is merged into a generated `~/.aws/config`, the repo first and then the overlays in the order listed; the same section in two of them is an error. Add a profile in its overlay: an edit to `~/.aws/config` is backed up and replaced on the next sync ([ADR 0010](docs/adr/0010-aws-config-is-generated.md)).
 - `ssh/authorized_keys`: the public keys that may log in to the machine over SSH, put at `~/.ssh/authorized_keys` by setup and every sync; only one overlay may ship it, and this repo never does. A Mac links it. Windows gets a copy headed by a comment naming its source, which the unelevated sync rewrites whenever the source changes; a file it did not write is backed up first. Once no listed overlay ships it, setup and the sync remove the link or copy they made, so the keys stop working; `--check`/`-Check` report it until then. On a Mac, sshd follows the link and refuses the keys unless the overlay checkout and every directory above it up to your home are yours and not group- or world-writable. An administrator's account reads that file only once `sshd_config`'s `Match Group administrators` block is gone; turning the SSH server on is the overlay's to do.
 - `git/gitconfig`: included, in overlay order, by the generated `~/.gitconfig-overlays`. This repo ships no name or email, so the git identity comes from here, and until one does git refuses to commit (`user.useConfigOnly`). The last setting git reads wins, so list an overlay that sets a default `[user]` before one whose `includeIf` sets another for its remotes.
 - `powershell/tools.psd1`: merged with this repo's manifest by `install-tools.ps1`; a tool id may be declared only once. Its entries may be optional, so an overlay can declare its own options.

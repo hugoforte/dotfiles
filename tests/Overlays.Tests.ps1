@@ -122,20 +122,27 @@ Describe 'Get-OverlaySource' {
     }
 
     It 'has no source for a one path no root ships' {
-        @(Get-OverlaySource -Set $set -Path 'aws/config').Count | Should -Be 0
+        @(Get-OverlaySource -Set $set -Path 'ssh/authorized_keys').Count | Should -Be 0
     }
 
     It 'has the source that ships a one path' {
-        New-File (Join-Path $b 'aws\config')
+        New-File (Join-Path $b 'ssh\authorized_keys')
 
-        Get-OverlaySource -Set $set -Path 'aws/config' | Should -Be (Join-Path $b 'aws\config')
+        Get-OverlaySource -Set $set -Path 'ssh/authorized_keys' | Should -Be (Join-Path $b 'ssh\authorized_keys')
     }
 
     It 'fails, naming both, when two roots ship a one path' {
+        New-File (Join-Path $a 'ssh\authorized_keys')
+        New-File (Join-Path $b 'ssh\authorized_keys')
+
+        { Get-OverlaySource -Set $set -Path 'ssh/authorized_keys' } | Should -Throw "*$a*$b*"
+    }
+
+    It 'has every aws/config, the repo first, which aws-config.ps1 merges' {
         New-File (Join-Path $repo 'aws\config')
         New-File (Join-Path $b 'aws\config')
 
-        { Get-OverlaySource -Set $set -Path 'aws/config' } | Should -Throw "*$repo*$b*"
+        Get-OverlaySource -Set $set -Path 'aws/config' | Should -Be @((Join-Path $repo 'aws\config'), (Join-Path $b 'aws\config'))
     }
 
     It 'ignores the repo for a path read from the overlays alone' {

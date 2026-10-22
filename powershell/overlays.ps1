@@ -20,7 +20,7 @@
 # {KEY} in a path is the machine key, and with no key the path matches nothing. A path ending in /
 # is a folder; every other is a file.
 $OverlayTable = @(
-    [pscustomobject]@{ Path = 'aws/config';                 Count = 'one';     Roots = 'repo+overlays' }
+    [pscustomobject]@{ Path = 'aws/config';                 Count = 'all';     Roots = 'repo+overlays' }
     [pscustomobject]@{ Path = 'ssh/authorized_keys';        Count = 'one';     Roots = 'overlays' }
     [pscustomobject]@{ Path = 'machines/{KEY}.psd1';        Count = 'one';     Roots = 'overlays' }
     [pscustomobject]@{ Path = 'machines/{KEY}.Brewfile';    Count = 'one';     Roots = 'overlays' }
