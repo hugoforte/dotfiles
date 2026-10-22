@@ -40,6 +40,9 @@ function Get-MergedToolManifest {
             }
             $seen[$tool.Id] = $file
             if ($tool.Configure) {
+                if ($tool.Source -eq 'manual') {
+                    throw "tool '$($tool.Id)': a manual entry is never installed, so its Configure would never run, declared in $file"
+                }
                 $root = Split-Path (Split-Path $file -Parent) -Parent
                 $tool.Configure = Join-Path $root $tool.Configure
                 if (-not (Test-Path -LiteralPath $tool.Configure)) {
@@ -103,9 +106,20 @@ function Select-ReleaseAsset {
 function Test-InstallerEntry {
     param([Parameter(Mandatory)][hashtable]$Tool)
 
-    $needs = if ($Tool.Source -eq 'download') { 'Url', 'InstallArgs', 'Present' } else { 'Asset', 'InstallArgs', 'Present' }
+    $needs = if ($Tool.Source -eq 'download') { 'Url', 'Sha256', 'InstallArgs', 'Present' } else { 'Asset', 'InstallArgs', 'Present' }
     $missing = @($needs | Where-Object { -not $Tool[$_] })
     if ($missing.Count -gt 0) { return "$($Tool.Id): a $($Tool.Source) entry needs $($missing -join ', ')" }
+
+    # The installer is saved under the last segment of the Url's path, and run by its extension.
+    if ($Tool.Source -eq 'download') {
+        $uri = $null
+        if (-not [Uri]::TryCreate($Tool.Url, 'Absolute', [ref]$uri) -or $uri.Scheme -ne 'https') {
+            return "$($Tool.Id): a download Url must be an absolute https address, not '$($Tool.Url)'"
+        }
+        if (-not [IO.Path]::GetExtension($uri.AbsolutePath)) {
+            return "$($Tool.Id): a download Url's path must end in the installer's file name, not '$($Tool.Url)'"
+        }
+    }
 }
 
 # The tools `uv tool list` reports installed. It prints each tool as "<name> v<version>", followed

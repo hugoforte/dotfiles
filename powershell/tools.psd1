@@ -9,9 +9,10 @@
 #   Optional    the name of the option this entry belongs to; omit for every machine
 #   Note        what it is, or - for manual entries - what you have to do
 #   Url         optional, for manual entries that need a page
-#   Configure   optional: a script, relative to the root of the repo whose manifest declares it,
-#               run once the program is present to set it up. It takes -Check, changes only what
-#               has drifted, and exits non-zero on failure, or under -Check on drift
+#   Configure   optional, not on a manual entry: a script, relative to the root of the repo whose
+#               manifest declares it, run once the program is present to set it up, on every run,
+#               the sync's included. It takes -Check, changes only what has drifted, and exits
+#               non-zero on failure, or under -Check on drift
 #
 # A 'github-release' entry installs its repo's latest release, and also needs:
 #   Asset        -like pattern naming the installer among the release's assets
@@ -20,8 +21,9 @@
 #                make it tell this build from any other of the same app
 #
 # A 'download' entry installs the installer at a fixed address, for a program with neither a
-# winget package nor GitHub releases, and needs Url (here, the installer's), InstallArgs and
-# Present as above.
+# winget package nor GitHub releases, and needs Url (here, an https address ending in the
+# installer's file name), Sha256 (the installer's, which it must match before it runs),
+# InstallArgs and Present as above.
 #
 # Entries install only when missing; nothing here is ever upgraded or uninstalled by the
 # installer. Add a tool, push, and every machine picks it up on its next sync.
