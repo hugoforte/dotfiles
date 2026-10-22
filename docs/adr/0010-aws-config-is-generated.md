@@ -5,8 +5,8 @@ linked, every `git/gitconfig` is included, every `macos/Brewfile` applies. `aws/
 exception. `~/.aws/config` was a link ([0001](0001-symlinks-not-copies.md)), a link has one
 target, and so one `aws/config` across the repo and the overlays was the rule and two was an
 error. That held while one employer had AWS accounts. It broke with the second: a machine could
-not list Kealu's overlay beside one that already shipped Texo's profiles, and a Kealu
-`aws/config` in an overlay every machine lists would have broken the machines that list Texo's.
+not list the second employer's overlay beside one that already shipped the first's profiles, and
+the second's `aws/config` in an overlay every machine lists would have broken the machines that list the first's.
 
 So `~/.aws/config` is now written, not linked: a header, then each source under a
 `# from <path>` line, the repo first and then the overlays in the order `machine.local.psd1`

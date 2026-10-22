@@ -13,13 +13,13 @@ Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in tu
 - `output.ps1`: the reporting vocabulary and the result object the scripts return
 - `managed-link.ps1`: the one implementation of "point this path at that file in the repo" — `Set-ManagedLink`, `Test-ManagedLink`, `Remove-ManagedLink`
 - `authorized-keys.ps1`: keeps `~/.ssh/authorized_keys` a copy of the one overlay's `ssh/authorized_keys` — `Set-AuthorizedKeysCopy`, `Test-AuthorizedKeysCopy`. A copy rather than a link, because sshd checks the ownership and access of the file it reads
-- `overlays.ps1`: reads `ai/secrets/machine.local.psd1` — whether the machine opts into skill secrets, and the overlays it lists — and applies the overlays' rules: merged skill registries, the contents of `~/.gitconfig-overlays`
+- `overlays.ps1`: the overlay table, one row for each path an overlay may ship. `Get-Overlays` reads the overlays `ai/secrets/machine.local.psd1` lists, the machine key and the overlay repos; `Get-OverlaySource` gives a path's one source or every source, `Get-OverlayEntry` the entries under a directory, `Get-MergedSkillRegistry` the merged registries. Also whether the machine opts into skill secrets, the contents of `~/.gitconfig-overlays`, and the writers of `machine.local.psd1`. `ai/helpers/overlays.sh` is its sh twin
 - `aws-config.ps1`: `~/.aws/config`, generated from every `aws/config` in the repo and the overlays, merged (`docs/adr/0010-aws-config-is-generated.md`)
 - `generated-file.ps1`: a managed path that holds content dotfiles writes, under a header that says so; `aws-config.ps1` and `authorized-keys.ps1` use it
 - `native.ps1`: `Invoke-Native`, which runs a native command and judges it by its exit code, because Windows PowerShell 5.1 under `$ErrorActionPreference = "Stop"` turns any line it writes to stderr — git's progress, say — into a terminating error
 - `tools.psd1`: the tools and programs a machine needs, declared
 - `install-tools.ps1`: installs what `tools.psd1` and each overlay's `powershell/tools.psd1` declare (`-Check` reports only)
-- `tool-selection.ps1`: which manifest entries a machine gets (an optional entry only where `machine.local.psd1` or an overlay's `machines/<COMPUTERNAME>.psd1` lists its option under `OptionalTools`), how the manifests merge, and the pure parts of the `github-release` and `uv` install methods
+- `tool-selection.ps1`: which manifest entries a machine gets (an optional entry only where `machine.local.psd1` or an overlay's `machines/<KEY>.psd1` lists its option under `OptionalTools`), how the manifests merge, and the pure parts of the `github-release` and `uv` install methods
 - `markdownlint.jsonc`: default markdownlint rules, used by `bin/md-lint` when a repo has none of its own
 - `user-path.ps1`: `Add-UserPathEntry`, which puts the repo's `bin/` on the user PATH for `setup.ps1` and `sync.ps1`
 - `setup.ps1`: symlink/setup automation (`-Check` reports the managed links and changes nothing)

@@ -19,19 +19,10 @@ $ErrorActionPreference = "Stop"
 $sshKeysPath = "$env:USERPROFILE\.ssh\authorized_keys"
 $awsConfigPath = "$env:USERPROFILE\.aws\config"
 
-# The overlays this machine lists; see overlays.ps1.
-function Get-SetupOverlays {
-    param([Parameter(Mandatory)][string]$RepoPath)
-    return @(Get-OverlayList -LocalPath "$RepoPath\ai\secrets\machine.local.psd1")
-}
-
-# The one overlay's ssh/authorized_keys, or $null. Overlays only: this repo never ships the keys
-# that may log in to a machine.
+# The one overlay's ssh/authorized_keys, or $null; see overlays.ps1.
 function Get-SshKeysSource {
     param([Parameter(Mandatory)][string]$RepoPath)
-    $overlays = Get-SetupOverlays -RepoPath $RepoPath
-    if (-not $overlays.Count) { return $null }
-    return Find-OverlayFile -Roots $overlays -RelativePath "ssh\authorized_keys"
+    return Get-OverlaySource -Set (Get-Overlays -RepoPath $RepoPath) -Path "ssh/authorized_keys"
 }
 
 # Every managed link this script owns, in one list, so -Check and the apply path can never
@@ -76,7 +67,8 @@ if ($Check) {
     }
 
     # ~/.gitconfig-overlays is generated rather than linked; see overlays.ps1.
-    if ((Update-GitOverlayInclude -Overlays (Get-SetupOverlays -RepoPath $repoPath) -Check) -eq 'AlreadyCorrect') {
+    $fragments = Get-OverlaySource -Set (Get-Overlays -RepoPath $repoPath) -Path "git/gitconfig"
+    if ((Update-GitOverlayInclude -Fragments $fragments -Check) -eq 'AlreadyCorrect') {
         Write-Host "[OK] ~/.gitconfig-overlays" -ForegroundColor Green
     } else {
         $wrong++
@@ -85,7 +77,7 @@ if ($Check) {
 
     # ~/.aws/config merges every aws/config, so it is generated rather than linked; see aws-config.ps1.
     try {
-        $awsConfig = Test-AwsConfig -Path $awsConfigPath -Roots (@($repoPath) + (Get-SetupOverlays -RepoPath $repoPath))
+        $awsConfig = Test-AwsConfig -Path $awsConfigPath -Sources (Get-OverlaySource -Set (Get-Overlays -RepoPath $repoPath) -Path "aws/config")
     } catch {
         $awsConfig = [pscustomobject]@{ IsCorrect = $false; Reason = 'Error'; Message = $_.Exception.Message }
     }
@@ -240,7 +232,7 @@ foreach ($entry in (Get-ManagedLinkPlan -RepoPath $dotfilesPath)) {
 
 # A failure here leaves ~/.aws/config as it was and setup carries on with the rest.
 try {
-    $awsConfig = Set-AwsConfig -Path $awsConfigPath -Roots (@($dotfilesPath) + (Get-SetupOverlays -RepoPath $dotfilesPath))
+    $awsConfig = Set-AwsConfig -Path $awsConfigPath -Sources (Get-OverlaySource -Set (Get-Overlays -RepoPath $dotfilesPath) -Path "aws/config")
 } catch {
     Write-Host "[XX] ~/.aws/config left as it was: $($_.Exception.Message)" -ForegroundColor Red
     $awsConfig = [pscustomobject]@{ Action = 'Failed' }
@@ -260,7 +252,7 @@ if ($awsConfig.Action -in 'Created', 'Updated', 'BackedUpAndWritten') {
     Write-Host "     Run 'aws sso login' to authenticate" -ForegroundColor DarkGray
 }
 
-switch (Update-GitOverlayInclude -Overlays (Get-SetupOverlays -RepoPath $dotfilesPath)) {
+switch (Update-GitOverlayInclude -Fragments (Get-OverlaySource -Set (Get-Overlays -RepoPath $dotfilesPath) -Path "git/gitconfig")) {
     'AlreadyCorrect' { Write-Host "[OK] ~/.gitconfig-overlays already current" -ForegroundColor Green }
     'Written'        { Write-Host "[OK] ~/.gitconfig-overlays written" -ForegroundColor Green }
 }

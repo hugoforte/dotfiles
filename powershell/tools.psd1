@@ -20,7 +20,7 @@
 # installer. Add a tool, push, and every machine picks it up on its next sync.
 #
 # Every machine gets every entry, except optional ones: a machine opts into an option by listing
-# its name under OptionalTools in an overlay's machines/<COMPUTERNAME>.psd1 or in
+# its name under OptionalTools in an overlay's machines/<KEY>.psd1 or in
 # ai/secrets/machine.local.psd1, and then gets every entry of that option, manual steps included.
 #
 # An overlay may ship its own powershell/tools.psd1 in this format; install-tools.ps1 merges it

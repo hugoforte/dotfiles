@@ -5,8 +5,9 @@
 # generated-file.sh. macOS only, with no PowerShell counterpart
 # (docs/adr/0011-ssh-config-is-generated.md).
 #
-# Each source goes in under a line naming it, in the order of the roots, the repo first and then the
-# overlays as machine.local.psd1 lists them; a root listed twice goes in once. ssh keeps the first
+# Each source goes in under a line naming it, in the order given, which overlay_sources ssh/config
+# gives as the repo first and then the overlays as machine.local.psd1 lists them; a file given twice
+# goes in once. ssh keeps the first
 # value it finds for a setting, so for a setting two sources both give, the earlier one wins. A line
 # belongs to the Host or Match block above it, Include too, so each source opens with `Match all`,
 # which puts it back in global scope however the one before it ended.
@@ -43,10 +44,10 @@ ssh_config_body() {
     done
 }
 
-# ssh_config_apply <dst> <roots>: bring dst in line with the sources; report what it did. Returns 1
-# when it could not, writing nothing.
+# ssh_config_apply <dst> <ssh/config files>: bring dst in line with them; report what it did.
+# Returns 1 when it could not, writing nothing.
 ssh_config_apply() {
-    sources="$(generated_file_sources ssh/config "$2")"
+    sources="$(generated_file_sources "$2")"
     if [ -z "$sources" ]; then
         if generated_file_is_ours "$1"; then
             rm -f "$1" && success "~/.ssh/config removed: no ssh/config is left in this repo or an overlay"
@@ -72,9 +73,9 @@ ssh_config_apply() {
         back-up-links 600
 }
 
-# ssh_config_check <dst> <roots>: report the state of dst and change nothing
+# ssh_config_check <dst> <ssh/config files>: report the state of dst and change nothing
 ssh_config_check() {
-    sources="$(generated_file_sources ssh/config "$2")"
+    sources="$(generated_file_sources "$2")"
     if [ -z "$sources" ]; then
         if generated_file_is_ours "$1"; then
             warning "~/.ssh/config: no ssh/config is left in this repo or an overlay; setup removes it"

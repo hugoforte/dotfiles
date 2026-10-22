@@ -101,6 +101,15 @@ assert_eq "~/.ssh/authorized_keys is linked to the one overlay that has it" "$pe
 assert_eq "~/.gitconfig-overlays includes each overlay's git/gitconfig, in order" \
     "$(printf '[include]\n\tpath = %s\n[include]\n\tpath = %s' "$personal/git/gitconfig" "$second/git/gitconfig")" \
     "$(grep -v '^#' "$home/.gitconfig-overlays")"
+for gitconfig in macos/gitconfig git/gitconfig; do
+    assert_eq "$gitconfig names no one" "" "$(git config -f "$REPO_ROOT/$gitconfig" --get-regexp '^user\.(name|email)$')"
+    assert_eq "$gitconfig makes git refuse to commit until an overlay names someone" "true" "$(git config -f "$REPO_ROOT/$gitconfig" user.useConfigOnly)"
+done
+# Asked of git only off Git Bash: there the include paths are MSYS paths, which Windows git cannot open,
+# and no Mac ever writes them.
+if [ -z "${MSYS:-}" ]; then
+    assert_eq "so git takes the identity from the overlay" "me@example.com" "$(HOME="$home" git config --file "$home/.gitconfig" --includes user.email)"
+fi
 assert_eq "brew bundle applies each overlay's Brewfile, then the machine's, upgrading nothing" \
     "$(printf 'bundle --no-upgrade --file=%s\nbundle --no-upgrade --file=%s\nbundle --no-upgrade --file=%s' "$personal/macos/Brewfile" "$second/macos/Brewfile" "$personal/machines/MACBOOK.Brewfile")" \
     "$(cat "$brew_log")"
@@ -215,13 +224,13 @@ mkdir -p "$repo/aws" "$second/aws"
 # The repo's: CRLF, and no final newline, with another source after it.
 printf '[profile repo]\r\nregion = us-east-1' > "$repo/aws/config"
 # The second overlay's: opening with a byte-order mark.
-printf '\357\273\277[sso-session kealu]\nsso_region = us-east-1\n' > "$second/aws/config"
+printf '\357\273\277[sso-session globex]\nsso_region = us-east-1\n' > "$second/aws/config"
 out="$(check)"; rc=$?
 assert_eq "--check fails once another source has aws/config" "1" "$rc"
 assert_eq "--check says the file is behind" "y" "$(says "$out" "behind the aws/config files it merges")"
 install
 assert_eq "every source merges, the repo first and then the overlays in order" \
-    "$(printf '[profile repo]\n[profile dev]\n[sso-session kealu]')" "$(sections)"
+    "$(printf '[profile repo]\n[profile dev]\n[sso-session globex]')" "$(sections)"
 assert_eq "the header counts the sources" "y" "$(says "$(head -n 1 "$aws")" "from 3 aws/config file(s)")"
 assert_eq "a CRLF source is written with LF" "0" "$(tr -d -c '\r' < "$aws" | wc -c | tr -d ' ')"
 assert_eq "a source with no final newline ends before the next one starts" "y" \
@@ -251,7 +260,7 @@ printf '[profile repo]\n' > "$repo/aws/config"
 printf '[profile Dev]\n' > "$second/aws/config"
 out="$(run)"; rc=$?
 assert_eq "names that differ only in case merge, as the AWS CLI reads them" "0" "$rc"
-printf '[sso-session kealu]\nsso_region = us-east-1\n' > "$second/aws/config"
+printf '[sso-session globex]\nsso_region = us-east-1\n' > "$second/aws/config"
 install
 
 overlays "$personal" "$personal/" "$second"

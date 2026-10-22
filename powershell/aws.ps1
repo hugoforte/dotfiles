@@ -38,13 +38,12 @@ function aws-setup-profile {
     }
 
     try {
-        $overlays = Get-OverlayList -LocalPath (Join-Path $repoRoot "ai\secrets\machine.local.psd1")
-        $roots = @($repoRoot) + $overlays
-        if (-not (Get-AwsConfigSource -Roots $roots).Count) {
+        $sources = @(Get-OverlaySource -Set (Get-Overlays -RepoPath $repoRoot) -Path "aws/config")
+        if (-not $sources.Count) {
             Write-Host "No aws/config in $repoRoot or any overlay" -ForegroundColor Red
             return
         }
-        $result = Set-AwsConfig -Path $targetConfigPath -Roots $roots
+        $result = Set-AwsConfig -Path $targetConfigPath -Sources $sources
     } catch {
         Write-Host $_.Exception.Message -ForegroundColor Red
         return
@@ -59,7 +58,7 @@ function aws-setup-profile {
         Write-Host "Backed up existing AWS config to: $($result.BackupPath)" -ForegroundColor Yellow
     }
 
-    Write-Host "Wrote AWS config: $targetConfigPath, from $((Get-AwsConfigSource -Roots $roots) -join ', ')" -ForegroundColor Green
+    Write-Host "Wrote AWS config: $targetConfigPath, from $($sources -join ', ')" -ForegroundColor Green
     Write-Host "Run 'aws sso login' to authenticate." -ForegroundColor DarkGray
 }
 

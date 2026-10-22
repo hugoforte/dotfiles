@@ -1,0 +1,8 @@
+#!/bin/sh
+
+# Git Bash entry point for ai/helpers/leak-check.sh; leak-check.cmd is the one for PowerShell and
+# cmd. On PATH so an agent can check the checkout it stands in, a rig worktree say, before it
+# pushes, with the private terms of the overlays this dotfiles checkout lists:
+#   leak-check            the tracked files of the checkout you are in
+#   leak-check --pr 12    and pull request 12's title, body, commit messages and authors
+exec sh "$(dirname "$0")/../ai/helpers/leak-check.sh" "$@"

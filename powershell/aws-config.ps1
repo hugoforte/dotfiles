@@ -1,15 +1,16 @@
 # ~/.aws/config: every aws/config among this repo and the machine's overlays, merged into one file.
 #
 #   . (Join-Path $PSScriptRoot "aws-config.ps1")
-#   Get-AwsConfigContent -Roots $roots                       the merged file, or $null with no source
-#   Set-AwsConfig        -Path "$env:USERPROFILE\.aws\config" -Roots $roots
-#   Test-AwsConfig       -Path "$env:USERPROFILE\.aws\config" -Roots $roots
+#   $sources = Get-OverlaySource -Set (Get-Overlays -RepoPath $repo) -Path "aws/config"
+#   Get-AwsConfigContent -Sources $sources                       the merged file, or $null with no source
+#   Set-AwsConfig        -Path "$env:USERPROFILE\.aws\config" -Sources $sources
+#   Test-AwsConfig       -Path "$env:USERPROFILE\.aws\config" -Sources $sources
 #
 # A generated file (generated-file.ps1), where most managed files are links: the AWS CLI reads one
 # config file and has no include, so several sources cannot be one link
 # (docs/adr/0010-aws-config-is-generated.md). Each source goes in under a line naming it, in the
-# order of $Roots, the repo first and then the overlays as machine.local.psd1 lists them; a root
-# listed twice goes in once. The same section in two sources, as the AWS CLI names sections, is an
+# order of $Sources, which overlays.ps1 gives as the repo first and then the overlays as
+# machine.local.psd1 lists them; a file listed twice goes in once. The same section in two sources, as the AWS CLI names sections, is an
 # error naming both, since either answer would be a guess. The file carries a checksum, because the
 # AWS CLI edits it by appending (aws configure sso), and an edit is backed up before it is replaced.
 # With no source left, the file this wrote is removed, and so is a link left dangling.
@@ -18,12 +19,13 @@
 
 $script:AwsConfigHeaderPrefix = '# Written by dotfiles from '
 
-# Each root's aws/config that exists, in the order of $Roots, each path once.
+# The sources that exist, in order, each file once however it was spelled.
 function Get-AwsConfigSource {
-    param([Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Roots)
+    param([Parameter(Mandatory)][AllowEmptyCollection()][AllowNull()][string[]]$Sources)
     $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-    return @($Roots |
-        ForEach-Object { [IO.Path]::GetFullPath((Join-Path $_ "aws\config")) } |
+    return @($Sources |
+        Where-Object { $_ } |
+        ForEach-Object { [IO.Path]::GetFullPath($_) } |
         Where-Object { (Test-Path -LiteralPath $_ -PathType Leaf) -and $seen.Add($_) })
 }
 
@@ -40,11 +42,11 @@ function Get-AwsConfigSectionKey {
 }
 
 # The merged file: a header, then each source under a "# from <path>" line, with LF line endings.
-# $null when no root has an aws/config.
+# $null when there is no source.
 function Get-AwsConfigContent {
-    param([Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Roots)
+    param([Parameter(Mandatory)][AllowEmptyCollection()][AllowNull()][string[]]$Sources)
 
-    $sources = Get-AwsConfigSource -Roots $Roots
+    $sources = Get-AwsConfigSource -Sources $Sources
     if (-not $sources.Count) { return $null }
 
     # Ordinal: profile names are case-sensitive to the AWS CLI.
@@ -73,10 +75,10 @@ function Get-AwsConfigContent {
 function Test-AwsConfig {
     param(
         [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Roots
+        [Parameter(Mandatory)][AllowEmptyCollection()][AllowNull()][string[]]$Sources
     )
 
-    $content = Get-AwsConfigContent -Roots $Roots
+    $content = Get-AwsConfigContent -Sources $Sources
     if ($null -ne $content) {
         return Test-GeneratedFile -Path $Path -Content $content -HeaderPrefix $script:AwsConfigHeaderPrefix -Checksum
     }
@@ -91,10 +93,10 @@ function Test-AwsConfig {
 function Set-AwsConfig {
     param(
         [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Roots
+        [Parameter(Mandatory)][AllowEmptyCollection()][AllowNull()][string[]]$Sources
     )
 
-    $content = Get-AwsConfigContent -Roots $Roots
+    $content = Get-AwsConfigContent -Sources $Sources
     if ($null -ne $content) {
         return Set-GeneratedFile -Path $Path -Content $content -HeaderPrefix $script:AwsConfigHeaderPrefix -Checksum
     }

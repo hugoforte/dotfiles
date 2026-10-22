@@ -10,15 +10,29 @@ REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 . "$REPO/ai/helpers/output.sh"
 
-LABEL="com.hugoforte.dotfiles-sync"
+# Neutral, so the label names no owner.
+LABEL="local.dotfiles.sync"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME/Library/Logs/dotfiles-sync.log"
 EVERY_SECONDS=14400
 DOMAIN="gui/$(id -u)"
 
+# remove_old_agents: unload and remove an agent an older checkout installed under the label it used,
+# <owner>.dotfiles-sync, so two agents never sync the same Mac. Only one that runs a macos/sync.sh:
+# another tool's agent may end its label the same way.
+remove_old_agents() {
+    for old in "$HOME/Library/LaunchAgents/"*.dotfiles-sync.plist; do
+        [ -f "$old" ] && grep -q '/macos/sync\.sh</string>' "$old" || continue
+        old_label="${old##*/}"
+        launchctl bootout "$DOMAIN/${old_label%.plist}" > /dev/null 2>&1
+        rm -f "$old" && success "Removed the LaunchAgent ${old_label%.plist}, which this one replaces"
+    done
+}
+
 case "${1:-}" in
     '') ;;
     --uninstall)
+        remove_old_agents
         launchctl bootout "$DOMAIN/$LABEL" > /dev/null 2>&1
         rm -f "$PLIST"
         success "Removed the LaunchAgent $LABEL"
@@ -67,6 +81,8 @@ while launchctl print "$DOMAIN/$LABEL" > /dev/null 2>&1 && [ "$waited" -lt 20 ];
     waited=$((waited + 1))
 done
 launchctl bootstrap "$DOMAIN" "$PLIST" || die "launchctl could not load $PLIST"
+# After, so a failed load leaves the Mac its old agent rather than none.
+remove_old_agents
 
 success "Installed the LaunchAgent $LABEL"
 info "    Runs at login, now, and every $((EVERY_SECONDS / 3600)) hours. Log: $LOG"

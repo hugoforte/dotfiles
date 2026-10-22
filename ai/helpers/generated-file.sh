@@ -19,14 +19,14 @@ GENERATED_FILE_HEADER_PREFIX='# Written by dotfiles from '
 GENERATED_FILE_CHECKSUM_PREFIX='# dotfiles-cksum: '
 GENERATED_FILE_BOM="$(printf '\357\273\277')"
 
-# generated_file_sources <relative path> <roots, one per line>: each root's file at that path that
-# exists, one per line, each file once however its root was spelled.
+# generated_file_sources <files, one per line>: each that exists, one per line, each file once
+# however it was spelled.
 generated_file_sources() {
-    while IFS= read -r root; do
-        [ -n "$root" ] && [ -f "$root/$1" ] || continue
-        printf '%s/%s\n' "$(cd "$(dirname "$root/$1")" && pwd -P)" "${1##*/}"
+    while IFS= read -r file; do
+        [ -n "$file" ] && [ -f "$file" ] || continue
+        printf '%s/%s\n' "$(cd "$(dirname "$file")" && pwd -P)" "${file##*/}"
     done <<EOF | awk '!seen[$0]++'
-$2
+$1
 EOF
 }
 

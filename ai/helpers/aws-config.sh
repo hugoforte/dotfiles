@@ -5,9 +5,10 @@
 # powershell/aws-config.ps1 is the same file in PowerShell (docs/adr/0010-aws-config-is-generated.md).
 #
 # The AWS CLI reads one config file and has no include, so several sources cannot be one link. Each
-# source goes in under a line naming it, in the order of the roots, the repo first and then the
-# overlays as machine.local.psd1 lists them; a root listed twice goes in once. The same section in
-# two sources, as the AWS CLI names sections, is an error naming both, and nothing is written.
+# source goes in under a line naming it, in the order given, which overlay_sources aws/config gives
+# as the repo first and then the overlays as machine.local.psd1 lists them; a file given twice goes
+# in once. The same section in two sources, as the AWS CLI names sections, is an error naming both,
+# and nothing is written.
 # With no source left, the file this wrote is removed, and so is a link left dangling.
 #
 # POSIX sh has no `local`: these assign in the caller's shell. aws_config_check sets CHECK_FAILED=1
@@ -76,10 +77,10 @@ aws_config_problem() {
     [ -z "$clash" ] || printf 'aws/config section %s\n' "$clash"
 }
 
-# aws_config_apply <dst> <roots>: bring dst in line with the sources; report what it did. Returns 1
-# when it could not, writing nothing.
+# aws_config_apply <dst> <aws/config files>: bring dst in line with them; report what it did.
+# Returns 1 when it could not, writing nothing.
 aws_config_apply() {
-    sources="$(generated_file_sources aws/config "$2")"
+    sources="$(generated_file_sources "$2")"
     if [ -z "$sources" ]; then
         if aws_config_is_leftover "$1"; then
             rm -f "$1" && success "~/.aws/config removed: no aws/config is left in this repo or an overlay"
@@ -100,9 +101,9 @@ aws_config_apply() {
         replace-links
 }
 
-# aws_config_check <dst> <roots>: report the state of dst and change nothing
+# aws_config_check <dst> <aws/config files>: report the state of dst and change nothing
 aws_config_check() {
-    sources="$(generated_file_sources aws/config "$2")"
+    sources="$(generated_file_sources "$2")"
     if [ -z "$sources" ]; then
         if aws_config_is_leftover "$1"; then
             warning "~/.aws/config: no aws/config is left in this repo or an overlay; setup removes it"
