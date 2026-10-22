@@ -74,20 +74,6 @@ try {
         Write-Log "updated $($before.Substring(0,7)) -> $($after.Substring(0,7))"
     }
 
-    $sh = Find-Sh
-    if (-not $sh) {
-        Write-Log "sh.exe (Git Bash) not found; skipping ai/install.sh"
-        exit 1
-    }
-
-    # install.sh colours its output; the escape sequences are noise in a log file.
-    $install = Invoke-Native $sh "$repoRoot/ai/install.sh"
-    if (-not $install.Ok) {
-        Write-Log "ai/install.sh failed:`n$(Remove-AnsiEscape $install.Output)"
-        exit 1
-    }
-    Write-Log "ai/install.sh ok"
-
     # bin/ on the user PATH, so a machine set up before bin/ existed picks it up without setup.ps1.
     . (Join-Path $PSScriptRoot "user-path.ps1")
     $binPath = Join-Path $repoRoot "bin"
@@ -115,6 +101,22 @@ try {
         }
         Write-Log "pulled $overlayRepo"
     }
+
+    # After the overlay pull, as macos/sync.sh runs it, so the skills, Bruno collections, rules and
+    # agents an overlay now ships are linked on this sync rather than the next.
+    $sh = Find-Sh
+    if (-not $sh) {
+        Write-Log "sh.exe (Git Bash) not found; skipping ai/install.sh"
+        exit 1
+    }
+
+    # install.sh colours its output; the escape sequences are noise in a log file.
+    $install = Invoke-Native $sh "$repoRoot/ai/install.sh"
+    if (-not $install.Ok) {
+        Write-Log "ai/install.sh failed:`n$(Remove-AnsiEscape $install.Output)"
+        exit 1
+    }
+    Write-Log "ai/install.sh ok"
     Write-Log "~/.gitconfig-overlays: $(Update-GitOverlayInclude -Fragments (Get-OverlaySource -Set $overlaySet -Path 'git/gitconfig'))"
 
     # Tools: after the overlay pull, so a tool an overlay adds lands on this sync rather than the
