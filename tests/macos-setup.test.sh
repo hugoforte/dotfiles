@@ -222,13 +222,13 @@ mkdir -p "$repo/aws" "$second/aws"
 # The repo's: CRLF, and no final newline, with another source after it.
 printf '[profile repo]\r\nregion = us-east-1' > "$repo/aws/config"
 # The second overlay's: opening with a byte-order mark.
-printf '\357\273\277[sso-session kealu]\nsso_region = us-east-1\n' > "$second/aws/config"
+printf '\357\273\277[sso-session globex]\nsso_region = us-east-1\n' > "$second/aws/config"
 out="$(check)"; rc=$?
 assert_eq "--check fails once another source has aws/config" "1" "$rc"
 assert_eq "--check says the file is behind" "y" "$(says "$out" "behind the aws/config files it merges")"
 install
 assert_eq "every source merges, the repo first and then the overlays in order" \
-    "$(printf '[profile repo]\n[profile dev]\n[sso-session kealu]')" "$(sections)"
+    "$(printf '[profile repo]\n[profile dev]\n[sso-session globex]')" "$(sections)"
 assert_eq "the header counts the sources" "y" "$(says "$(head -n 1 "$aws")" "from 3 aws/config file(s)")"
 assert_eq "a CRLF source is written with LF" "0" "$(tr -d -c '\r' < "$aws" | wc -c | tr -d ' ')"
 assert_eq "a source with no final newline ends before the next one starts" "y" \
@@ -258,7 +258,7 @@ printf '[profile repo]\n' > "$repo/aws/config"
 printf '[profile Dev]\n' > "$second/aws/config"
 out="$(run)"; rc=$?
 assert_eq "names that differ only in case merge, as the AWS CLI reads them" "0" "$rc"
-printf '[sso-session kealu]\nsso_region = us-east-1\n' > "$second/aws/config"
+printf '[sso-session globex]\nsso_region = us-east-1\n' > "$second/aws/config"
 install
 
 overlays "$personal" "$personal/" "$second"
