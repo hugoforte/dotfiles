@@ -418,11 +418,37 @@ assert_eq "and says so" "y" "$(says "$out" "could not set ~/.ssh/config to mode 
 assert_eq "and does not say it was written" "n" "$(says "$out" "~/.ssh/config written")"
 install
 
+printf 'Host added-by-hand\n' >> "$ssh_config"
+out="$(check)"; rc=$?
+assert_eq "--check fails on an edited ~/.ssh/config" "1" "$rc"
+install
+set -- "$home"/.ssh/config.backup.*
+assert_eq "install backs up the edit" "y" "$(says "$(cat "$1")" "Host added-by-hand")"
+assert_eq "and writes the merged file without it" "n" "$(says "$(cat "$ssh_config")" "added-by-hand")"
+rm "$1"
+
+if chmod 000 "$second/ssh/config" 2> /dev/null && [ ! -r "$second/ssh/config" ]; then
+    before="$(cat "$ssh_config")"
+    out="$(run)"; rc=$?
+    assert_eq "an unreadable ssh/config fails install" "1" "$rc"
+    assert_eq "and names it" "y" "$(says "$out" "cannot read $second/ssh/config; ~/.ssh/config left as it was")"
+    assert_eq "and leaves ~/.ssh/config as it was" "$before" "$(cat "$ssh_config")"
+    out="$(check)"; rc=$?
+    assert_eq "--check fails on it too" "1" "$rc"
+fi
+chmod 644 "$second/ssh/config"
+install
+
 rm -r "$personal/ssh/config" "$second/ssh"
 out="$(check)"; rc=$?
 assert_eq "--check fails on a merged ~/.ssh/config with no source left" "1" "$rc"
 install
 assert_eq "install removes the file it wrote" "n" "$(exists "$ssh_config")"
+ln -s "$work/gone/ssh_config" "$ssh_config"
+install
+assert_eq "with no source, a dangling link at ~/.ssh/config stays, since dotfiles never makes one" \
+    "$work/gone/ssh_config" "$(readlink "$ssh_config")"
+rm "$ssh_config"
 install
 
 # --- reading machine.local.psd1 --------------------------------------------------------------
