@@ -1,13 +1,13 @@
 #!/bin/sh
 
-# The overlay rules in sh: which overlays a machine lists, where each path an overlay may ship
+# The overlay table in sh: which overlays a machine lists, where each path an overlay may ship
 # comes from, and the skill registries they merge. Sourced by ai/install.sh and macos/. Its
 # PowerShell twin is powershell/overlays.ps1; the two agree on the rules, not the code
 # (docs/adr/0007-a-parallel-macos-entry-point.md), and tests/overlays-parity.test.sh holds them to it.
 #
 #   overlays_load <repo> [overlay...]  read the list; sets OVERLAYS, OVERLAY_KEY, OVERLAY_REPOS
-#   overlay_sources <path>             the sources of a path in OVERLAY_RULES
-#   overlay_entries <dir> [claimant...] the entries under a directory in OVERLAY_RULES
+#   overlay_sources <path>             the sources of a path in OVERLAY_TABLE
+#   overlay_entries <pattern> [claimant...]  the entries an entries row in OVERLAY_TABLE matches
 #   merged_skill_registry              every skill the registries list
 #
 # POSIX sh has no local, so every name these functions use is prefixed _ov.
@@ -16,10 +16,12 @@
 # have, and the roots it is read from. README's "Private configuration: overlays" says what each is.
 #   one      at most one source; two is an error naming both
 #   all      every source, in order
-#   entries  a directory whose entries are linked by name; the first to ship a name keeps it
+#   entries  a pattern in one folder (*/ its folders, *.md its .md files) whose matches are linked by
+#            name; the first to ship a name keeps it
 #   overlays the listed overlays, in order; repo+overlays puts the repo first
-# {KEY} in a path is the machine key, and with no key the path matches nothing.
-OVERLAY_RULES='aws/config one repo+overlays
+# {KEY} in a path is the machine key, and with no key the path matches nothing. A path ending in /
+# is a folder; every other is a file.
+OVERLAY_TABLE='aws/config one repo+overlays
 ssh/authorized_keys one overlays
 machines/{KEY}.psd1 one overlays
 machines/{KEY}.Brewfile one overlays
@@ -28,10 +30,13 @@ macos/Brewfile all overlays
 macos/bootstrap.sh all overlays
 ai/claude/config-dirs all overlays
 machines/{KEY}.config-dirs all overlays
+machines/ all overlays
 powershell/tools.psd1 all repo+overlays
 ai/secrets/registry.psd1 all repo+overlays
-ai/skills entries overlays
-bruno entries overlays'
+ai/skills/*/ entries overlays
+bruno/*/ entries overlays
+ai/rules/*.md entries overlays
+ai/agents/*.md entries overlays'
 
 # The field separator of a merged_skill_registry line: ASCII unit separator. Not a tab: read
 # collapses runs of a whitespace IFS, which would shift a shipped skill's empty Marker out of place.
@@ -103,13 +108,13 @@ EOF
     OVERLAYS_LOADED=1
 }
 
-# _overlay_rule <path> <count...>: look a path up in OVERLAY_RULES, setting _ov_count to its count
+# _overlay_row <path> <count...>: look a path up in OVERLAY_TABLE, setting _ov_count to its count
 # and _ov_roots to the roots it is read from, one per line. Returns 1 for a path not in the table
 # or with a count not among those given, and 2 before overlays_load.
-_overlay_rule() {
+_overlay_row() {
     [ -n "${OVERLAYS_LOADED:-}" ] || { printf '%s: run overlays_load first\n' "$1" >&2; return 2; }
-    _ov_rule="$(printf '%s\n' "$OVERLAY_RULES" | awk -v p="$1" '$1 == p { print $2, $3 }')"
-    [ -n "$_ov_rule" ] || { printf '%s is not a path an overlay may ship (OVERLAY_RULES)\n' "$1" >&2; return 1; }
+    _ov_rule="$(printf '%s\n' "$OVERLAY_TABLE" | awk -v p="$1" '$1 == p { print $2, $3 }')"
+    [ -n "$_ov_rule" ] || { printf '%s is not a path an overlay may ship (OVERLAY_TABLE)\n' "$1" >&2; return 1; }
     _ov_count="${_ov_rule% *}"
     _ov_want="$1"; shift
     case " $* " in
@@ -126,16 +131,18 @@ $OVERLAYS}"
 # so it may be piped. A path not in the table returns 1, and before overlays_load, 2.
 #   x="$(overlay_sources aws/config)" || exit 1
 overlay_sources() {
-    _overlay_rule "$1" one all || return $?
+    _overlay_row "$1" one all || return $?
     _ov_rel="$1"
     case "$_ov_rel" in
         *'{KEY}'*)
             [ -n "$OVERLAY_KEY" ] || return 0
             _ov_rel="${_ov_rel%%'{KEY}'*}$OVERLAY_KEY${_ov_rel#*'{KEY}'}" ;;
     esac
+    _ov_kind=-f
+    case "$_ov_rel" in */) _ov_kind=-d; _ov_rel="${_ov_rel%/}" ;; esac
     _ov_found=""
     while IFS= read -r _ov_root; do
-        [ -n "$_ov_root" ] && [ -f "$_ov_root/$_ov_rel" ] || continue
+        [ -n "$_ov_root" ] && [ "$_ov_kind" "$_ov_root/$_ov_rel" ] || continue
         if [ "$_ov_count" = "all" ]; then
             printf '%s\n' "$_ov_root/$_ov_rel"
         elif [ -n "$_ov_found" ]; then
@@ -150,26 +157,30 @@ EOF
     [ -z "$_ov_found" ] || printf '%s\n' "$_ov_found"
 }
 
-# overlay_entries <dir> [claimant...]: one line per directory under an entries path in each
-# overlay, in overlay order: its path, a tab, and what already ships that name, or nothing when it
-# is free. A claimant is a directory whose own entries claim their names before any overlay's.
-# Names compare without case, as they do on the NTFS the links live on. A clash is data, never a
-# failure.
+# overlay_entries <pattern> [claimant...]: one line per match of an entries row in each overlay, in
+# overlay order: its path, a tab, and what already ships that name, or nothing when it is free. A
+# claimant is a folder whose own entry of the same name claims it before any overlay's. Names
+# compare without case, as they do on the NTFS the links live on. A clash is data, never a failure.
 overlay_entries() {
-    _overlay_rule "$1" entries || return $?
-    _ov_dir="$1"; shift
+    _overlay_row "$1" entries || return $?
+    _ov_kind=-f
+    _ov_pattern="$1"
+    case "$_ov_pattern" in */) _ov_kind=-d; _ov_pattern="${_ov_pattern%/}" ;; esac
+    _ov_dir="${_ov_pattern%/*}"
+    _ov_leaf="${_ov_pattern##*/}"
+    shift
     _ov_seen=""
     _ov_tab="$(printf '\t')"
     while IFS= read -r _ov_root; do
         [ -n "$_ov_root" ] || continue
-        for _ov_entry in "$_ov_root/$_ov_dir"/*/; do
-            _ov_entry="${_ov_entry%/}"
-            [ -d "$_ov_entry" ] || continue
+        # The leaf unquoted, so it globs.
+        for _ov_entry in "$_ov_root/$_ov_dir"/$_ov_leaf; do
+            [ "$_ov_kind" "$_ov_entry" ] || continue
             _ov_name="${_ov_entry##*/}"
             _ov_key="$(printf '%s' "$_ov_name" | tr '[:upper:]' '[:lower:]')"
             _ov_clash=""
             for _ov_claimant in "$@"; do
-                [ -d "$_ov_claimant/$_ov_name" ] && { _ov_clash="$_ov_claimant/$_ov_name"; break; }
+                [ "$_ov_kind" "$_ov_claimant/$_ov_name" ] && { _ov_clash="$_ov_claimant/$_ov_name"; break; }
             done
             # "/" cannot appear in a name, so it ends the key unambiguously.
             [ -n "$_ov_clash" ] || case "$_ov_seen" in

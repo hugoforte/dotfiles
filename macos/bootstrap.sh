@@ -159,7 +159,7 @@ while IFS= read -r o; do set -- "$@" "$o"; done <<EOF
 $overlays
 EOF
 overlays_load "$DOTFILES" "$@" || exit 1
-for path in $(printf '%s\n' "$OVERLAY_RULES" | awk '$2 == "one" { print $1 }'); do
+for path in $(printf '%s\n' "$OVERLAY_TABLE" | awk '$2 == "one" { print $1 }'); do
     overlay_sources "$path" > /dev/null || die "nothing was written; if dotfiles still carries what the overlay now holds, pull it"
 done
 merged_skill_registry > /dev/null || die "nothing was written"

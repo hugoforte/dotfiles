@@ -24,7 +24,7 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
 | Tools and programs a machine needs | `powershell/tools.psd1`, here or in an overlay | installed via winget, npm, uv and GitHub releases | `powershell/install-tools.ps1` |
 | Default markdownlint rules | `powershell/markdownlint.jsonc` | passed to `markdownlint-cli2` by `bin/md-lint` | none (used in place) |
 | Automatic pull-and-relink | `powershell/sync.ps1` | Windows scheduled task "Dotfiles Sync" | `powershell/install-sync-task.ps1` |
-| Automatic pull-and-relink on a Mac | `macos/sync.sh` | LaunchAgent `com.hugoforte.dotfiles-sync`, logging to `~/Library/Logs/dotfiles-sync.log` | `macos/install-sync-agent.sh` |
+| Automatic pull-and-relink on a Mac | `macos/sync.sh` | LaunchAgent `local.dotfiles.sync`, logging to `~/Library/Logs/dotfiles-sync.log` | `macos/install-sync-agent.sh` |
 | Claude account rotation (`cswap auto`), on machines with the `claude-swap` option | none | Windows scheduled task "Claude Swap Auto", at sign-in | `powershell/install-cswap-task.ps1` |
 | Copilot repo instructions and prompts | `.github/` | used in place by GitHub Copilot | none |
 | Engineering-skill config for this repo | `AGENTS.md`, `docs/agents/` | used in place by Claude Code | none |
@@ -116,19 +116,22 @@ What an overlay can supply, and how:
 
 - `ai/secrets/registry.psd1` and `ai/secrets/<skill>/`: merged with every other registry; a skill id may be registered only once.
 - `ai/skills/<name>/`: linked beside this repo's skills by `ai/install.sh`, for a skill whose text names something private; a skill name may be shipped from only one place.
+- `ai/rules/<name>.md`: guidance beside this repo's `CLAUDE.md`, linked by `ai/install.sh` into `~/.claude/rules/` and every extra Claude config folder's `rules/`, which Claude Code reads with `CLAUDE.md`; a rule name may be shipped from only one place. Only the folder's own `.md` files are rules, not its subfolders', and every one is loaded, so keep notes about them elsewhere. This is where one person's or one employer's working rules go.
+- `ai/agents/<name>.md`: agents linked beside this repo's agents; a name this repo or an earlier overlay already ships is not linked.
 - `bruno/<collection>/`: linked into `~/bruno` by `ai/install.sh`, so Bruno opens every overlay's collections from one home; a collection name may be shipped from only one place.
 - `ai/claude/config-dirs`: extra Claude config folders, one absolute or `~/…` path per line (`#` starts a comment). `ai/install.sh` gives each the same as `~/.claude`; see [Claude accounts](#claude-accounts).
 - `machines/<KEY>.config-dirs`: the same, for one machine only, found by its Windows computer name, or on a Mac by its `HostName` (else its `LocalHostName`), uppercased.
 - `aws/config`: linked to `~/.aws/config`; only one source across this repo and all overlays.
 - `ssh/authorized_keys`: the public keys that may log in to the machine over SSH, put at `~/.ssh/authorized_keys` by setup and every sync; only one overlay may ship it, and this repo never does. A Mac links it. Windows gets a copy headed by a comment naming its source, which the unelevated sync rewrites whenever the source changes; a file it did not write is backed up first. Once no listed overlay ships it, setup and the sync remove the link or copy they made, so the keys stop working; `--check`/`-Check` report it until then. On a Mac, sshd follows the link and refuses the keys unless the overlay checkout and every directory above it up to your home are yours and not group- or world-writable. An administrator's account reads that file only once `sshd_config`'s `Match Group administrators` block is gone; turning the SSH server on is the overlay's to do.
-- `git/gitconfig`: included, in overlay order, by the generated `~/.gitconfig-overlays`.
+- `git/gitconfig`: included, in overlay order, by the generated `~/.gitconfig-overlays`. This repo ships no name or email, so the git identity comes from here, and until one does git refuses to commit (`user.useConfigOnly`). The last setting git reads wins, so list an overlay that sets a default `[user]` before one whose `includeIf` sets another for its remotes.
 - `powershell/tools.psd1`: merged with this repo's manifest by `install-tools.ps1`; a tool id may be declared only once. Its entries may be optional, so an overlay can declare its own options.
 - `machines/<KEY>.psd1`: the machine's `OptionalTools`, found by its Windows computer name, uppercased, and added to those in `machine.local.psd1`, so a machine's options are tracked and survive the machine. Only one source across all overlays. The overlays themselves stay in `machine.local.psd1`, since this file is found through them.
 - `macos/Brewfile`: applied on every Mac that lists the overlay, with `brew bundle`, in overlay order ([ADR 0008](docs/adr/0008-a-brewfile-per-overlay.md)).
 - `machines/<KEY>.Brewfile`: one Mac's own tools, found by its `HostName` (else its `LocalHostName`) uppercased and applied after the overlays' Brewfiles. Only one source across all overlays.
 - `macos/bootstrap.sh`: run by `macos/bootstrap.sh` here, after setup and the sync agent, for the steps of a new Mac that are the overlay's to know. It must be safe to re-run; the sync never runs it.
+- `machines/`: the files above that belong to one machine each, named by its key. `install-tools.ps1` warns when an overlay has this folder and no `<KEY>.psd1` in it, so a misnamed file is not silent.
 
-The sync task pulls each overlay repo and re-applies all of these, so a change pushed to an overlay reaches every machine that lists it. Skills are linked by `ai/install.sh`, which the sync runs before it pulls the overlays, so an overlay's skill change lands one sync later. Tools are installed after the pull, so an overlay's tool lands on the same sync. `install-overlays.ps1` is idempotent; re-run it when an overlay repo gains an overlay.
+The sync task pulls each overlay repo and re-applies all of these, so a change pushed to an overlay reaches every machine that lists it. Skills, rules, agents and Bruno collections are linked by `ai/install.sh`, which the sync runs before it pulls the overlays, so an overlay's change to them lands one sync later. Tools are installed after the pull, so an overlay's tool lands on the same sync. `install-overlays.ps1` is idempotent; re-run it when an overlay repo gains an overlay.
 
 ## Claude accounts
 

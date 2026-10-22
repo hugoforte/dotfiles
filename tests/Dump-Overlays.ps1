@@ -1,5 +1,5 @@
 # Dump-Overlays.ps1 -RepoPath <repo>: everything powershell/overlays.ps1 reads for the repo, one
-# fact per line, tab-separated, walking $OverlayRules in order. tests/overlays-dump.sh prints the
+# fact per line, tab-separated, walking $OverlayTable in order. tests/overlays-dump.sh prints the
 # same for ai/helpers/overlays.sh, and tests/overlays-parity.test.sh diffs the two. Test-only; the
 # format is described there.
 
@@ -13,9 +13,9 @@ $set = Get-Overlays -RepoPath $RepoPath
 foreach ($overlay in $set.Overlays) { "overlay`t$overlay" }
 foreach ($root in $set.RepoRoots) { "repo`t$root" }
 
-foreach ($rule in $OverlayRules) {
+foreach ($rule in $OverlayTable) {
     if ($rule.Count -eq 'entries') {
-        $claimant = Join-Path $RepoPath ($rule.Path -replace '/', '\')
+        $claimant = Join-Path $RepoPath ((Split-Path $rule.Path.TrimEnd('/') -Parent) -replace '/', '\')
         foreach ($entry in (Get-OverlayEntry -Set $set -Path $rule.Path -ClaimedBy $claimant)) {
             "$($rule.Path)`t$($entry.Path)`t$($entry.ClashesWith)"
         }
