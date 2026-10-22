@@ -33,6 +33,7 @@ machines/{KEY}.config-dirs all overlays
 machines/ all overlays
 powershell/tools.psd1 all repo+overlays
 ai/secrets/registry.psd1 all repo+overlays
+leak-check/terms.txt all overlays
 ai/skills/*/ entries overlays
 bruno/*/ entries overlays
 ai/rules/*.md entries overlays

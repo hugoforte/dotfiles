@@ -128,10 +128,23 @@ What an overlay can supply, and how:
 - `machines/<KEY>.psd1`: the machine's `OptionalTools`, found by its Windows computer name, uppercased, and added to those in `machine.local.psd1`, so a machine's options are tracked and survive the machine. Only one source across all overlays. The overlays themselves stay in `machine.local.psd1`, since this file is found through them.
 - `macos/Brewfile`: applied on every Mac that lists the overlay, with `brew bundle`, in overlay order ([ADR 0008](docs/adr/0008-a-brewfile-per-overlay.md)).
 - `machines/<KEY>.Brewfile`: one Mac's own tools, found by its `HostName` (else its `LocalHostName`) uppercased and applied after the overlays' Brewfiles. Only one source across all overlays.
+- `leak-check/terms.txt`: what must never reach this public repo, one case-insensitive regular expression per line; every overlay's merge, and `leak-check` fails on a match without printing it. See [Leak check](#leak-check).
 - `macos/bootstrap.sh`: run by `macos/bootstrap.sh` here, after setup and the sync agent, for the steps of a new Mac that are the overlay's to know. It must be safe to re-run; the sync never runs it.
 - `machines/`: the files above that belong to one machine each, named by its key. `install-tools.ps1` warns when an overlay has this folder and no `<KEY>.psd1` in it, so a misnamed file is not silent.
 
 The sync task pulls each overlay repo and re-applies all of these, so a change pushed to an overlay reaches every machine that lists it. Skills, rules, agents and Bruno collections are linked by `ai/install.sh`, which the sync runs before it pulls the overlays, so an overlay's change to them lands one sync later. Tools are installed after the pull, so an overlay's tool lands on the same sync. `install-overlays.ps1` is idempotent; re-run it when an overlay repo gains an overlay.
+
+## Leak check
+
+This repo is public, so nothing private may merge into it. `leak-check` (in `bin/`, on PATH like `check-encrypted`) fails when the tracked files hold an email address outside the domains kept for examples and tests, a private key, a token, a real SSH public key, or a private term. With `--pr <n>` it also checks that pull request's title, body and commit messages, which are public too. A finding names the file and line and which rule, never what matched.
+
+The private terms never live here. Locally they are every overlay's `leak-check/terms.txt`; in CI they are the `LEAK_CHECK_TERMS` repository secret, which `check.yml` gives the check on every pull request. A fork's pull request gets no secret, so there the check runs the generic rules alone. Run `leak-check` before pushing; after an overlay's terms change, refresh the secret from them:
+
+```sh
+leak-check --terms | gh secret set LEAK_CHECK_TERMS -R hugoforte/dotfiles
+```
+
+`--terms` prints the terms, so pipe it straight into `gh` and never into a log. The overlay repo's own daily scan stays: it also covers this repo's history, every branch, and issue and pull request comments and their edit history, which a check on one pull request never sees.
 
 ## Claude accounts
 

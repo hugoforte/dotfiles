@@ -32,6 +32,7 @@ $OverlayTable = @(
     [pscustomobject]@{ Path = 'machines/';                  Count = 'all';     Roots = 'overlays' }
     [pscustomobject]@{ Path = 'powershell/tools.psd1';      Count = 'all';     Roots = 'repo+overlays' }
     [pscustomobject]@{ Path = 'ai/secrets/registry.psd1';   Count = 'all';     Roots = 'repo+overlays' }
+    [pscustomobject]@{ Path = 'leak-check/terms.txt';       Count = 'all';     Roots = 'overlays' }
     [pscustomobject]@{ Path = 'ai/skills/*/';               Count = 'entries'; Roots = 'overlays' }
     [pscustomobject]@{ Path = 'bruno/*/';                   Count = 'entries'; Roots = 'overlays' }
     [pscustomobject]@{ Path = 'ai/rules/*.md';              Count = 'entries'; Roots = 'overlays' }

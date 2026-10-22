@@ -64,6 +64,8 @@ file "$second/macos/bootstrap.sh"
 file "$second/ai/claude/config-dirs"
 file "$first/machines/BOX.config-dirs"
 file "$second/machines/BOX.config-dirs"
+file "$first/leak-check/terms.txt"
+file "$repo/leak-check/terms.txt"
 file "$repo/powershell/tools.psd1"
 file "$first/powershell/tools.psd1"
 registry "$repo" alpha
