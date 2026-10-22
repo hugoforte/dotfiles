@@ -7,7 +7,8 @@
 #   install-tools.ps1 -PassThru    also return the result object, for a caller that reads it
 #
 # Idempotent: entries install only when missing. Nothing is ever upgraded or uninstalled -
-# a program on the machine and not in the manifest was installed on purpose.
+# a program on the machine and not in the manifest was installed on purpose. An entry with a
+# Configure script has it run once the program is present, on every run that is not skipped.
 #
 # Optional entries install only on a machine that opts into them, in machine.local.psd1 or in an
 # overlay's machines/<KEY>.psd1: see tool-selection.ps1.
@@ -132,7 +133,7 @@ function Get-InstalledProgramNames {
     return $script:installedPrograms
 }
 
-function Test-GitHubRelease {
+function Test-InstalledProgram {
     param([hashtable]$Tool)
     return (Test-ProgramListed -DisplayName $Tool.Present -Listed @(Get-InstalledProgramNames))
 }
@@ -163,20 +164,28 @@ function Install-UvTool {
     return $install.Ok
 }
 
-# Downloads the latest release's installer asset and runs it with the entry's InstallArgs. The
-# reason for a failure is printed; the caller records the one outcome.
-function Install-GitHubRelease {
+# Downloads an installer and runs it with the entry's InstallArgs: for a github-release entry, the
+# latest release's asset; for a download entry, its Url. The reason for a failure is printed; the
+# caller records the one outcome.
+function Install-Downloaded {
     param([hashtable]$Tool)
     # 5.1 redraws its progress bar per chunk, which makes a large download crawl.
     $ProgressPreference = 'SilentlyContinue'
     $installer = $null
     try {
-        $release = Invoke-RestMethod "https://api.github.com/repos/$($Tool.Id)/releases/latest" -UseBasicParsing
-        $asset = Select-ReleaseAsset -Assets @($release.assets) -Pattern $Tool.Asset
+        if ($Tool.Source -eq 'download') {
+            $name = [IO.Path]::GetFileName(([Uri]$Tool.Url).AbsolutePath)
+            $url = $Tool.Url
+        } else {
+            $release = Invoke-RestMethod "https://api.github.com/repos/$($Tool.Id)/releases/latest" -UseBasicParsing
+            $asset = Select-ReleaseAsset -Assets @($release.assets) -Pattern $Tool.Asset
+            $name = $asset.name
+            $url = $asset.browser_download_url
+        }
         $downloadDir = Join-Path $env:TEMP "dotfiles-tools"
         if (-not (Test-Path $downloadDir)) { New-Item -ItemType Directory -Path $downloadDir | Out-Null }
-        $installer = Join-Path $downloadDir $asset.name
-        Invoke-WebRequest $asset.browser_download_url -OutFile $installer -UseBasicParsing
+        $installer = Join-Path $downloadDir $name
+        Invoke-WebRequest $url -OutFile $installer -UseBasicParsing
         # Not -Wait: in 5.1 that also waits for every process the installer starts, such as the app.
         $process = Start-Process -FilePath $installer -ArgumentList @($Tool.InstallArgs) -PassThru
         $process.WaitForExit()
@@ -190,6 +199,17 @@ function Install-GitHubRelease {
             Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
         }
     }
+}
+
+# Runs an entry's Configure script in its own process, with -Check when this run only reports.
+# The script sets the program up as the declaring repo wants it, changing only what has drifted,
+# and exits non-zero when it failed or, under -Check, when something has drifted.
+function Invoke-Configure {
+    param([hashtable]$Tool)
+    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $Tool.Configure)
+    if ($Check) { $arguments += '-Check' }
+    & powershell @arguments | ForEach-Object { Say "  $_" }
+    return ($LASTEXITCODE -eq 0)
 }
 
 # --- Apply -------------------------------------------------------------------------------------
@@ -246,8 +266,8 @@ foreach ($tool in $tools) {
         if (-not $Check) { $failed++ }
         continue
     }
-    if ($source -eq 'github-release') {
-        $problem = Test-GitHubReleaseEntry -Tool $tool
+    if ($source -in 'github-release', 'download') {
+        $problem = Test-InstallerEntry -Tool $tool
         if ($problem) { Warn $problem; $missing++; if (-not $Check) { $failed++ }; continue }
     }
 
@@ -256,36 +276,50 @@ foreach ($tool in $tools) {
         'winget' { $present = Test-WingetPackage $id }
         'npm'    { $present = Test-NpmPackage $id }
         'uv'     { $present = Test-UvTool $id }
-        'github-release' { $present = Test-GitHubRelease $tool }
+        { $_ -in 'github-release', 'download' } { $present = Test-InstalledProgram $tool }
         default  { Warn "$id has unknown Source '$source'"; continue }
     }
 
-    if ($present) { Ok "$id"; continue }
-
-    $missing++
-
-    if ($Check) { Warn "$id missing ($source)"; continue }
-
-    if ($Unattended -and -not $unattendedOk) {
-        $deferred++
-        Warn "$id missing ($source) - not installed here: run install-tools.ps1 yourself when convenient"
-        continue
-    }
-
-    Change "installing $id ($source)"
-    $installed = $false
-    switch ($source) {
-        'winget' { $installed = Install-WingetPackage $id }
-        'npm'    { $installed = Install-NpmPackage $id }
-        'uv'     { $installed = Install-UvTool $id }
-        'github-release' { $installed = Install-GitHubRelease $tool }
-    }
-
-    if ($installed) {
-        Ok "$id installed"
+    if ($present) {
+        Ok "$id"
     } else {
-        $failed++
-        Warn "$id failed to install ($source)"
+        $missing++
+
+        if ($Check) { Warn "$id missing ($source)"; continue }
+
+        if ($Unattended -and -not $unattendedOk) {
+            $deferred++
+            Warn "$id missing ($source) - not installed here: run install-tools.ps1 yourself when convenient"
+            continue
+        }
+
+        Change "installing $id ($source)"
+        $installed = $false
+        switch ($source) {
+            'winget' { $installed = Install-WingetPackage $id }
+            'npm'    { $installed = Install-NpmPackage $id }
+            'uv'     { $installed = Install-UvTool $id }
+            { $_ -in 'github-release', 'download' } { $installed = Install-Downloaded $tool }
+        }
+
+        if (-not $installed) {
+            $failed++
+            Warn "$id failed to install ($source)"
+            continue
+        }
+        Ok "$id installed"
+    }
+
+    if ($tool.Configure) {
+        if (Invoke-Configure $tool) {
+            Ok "$id configured"
+        } elseif ($Check) {
+            $missing++
+            Warn "$id not configured as declared: run $($tool.Configure)"
+        } else {
+            $failed++
+            Warn "$id failed to configure: $($tool.Configure)"
+        }
     }
 }
 

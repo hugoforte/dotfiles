@@ -1,5 +1,5 @@
-# Which manifest entries a machine gets, and the pure parts of the github-release and uv install
-# methods.
+# Which manifest entries a machine gets, and the pure parts of the github-release, download and uv
+# install methods.
 # Dot-sourced by install-tools.ps1.
 #
 # An entry with Optional = '<name>' belongs to that option. A machine opts into it by listing the
@@ -24,7 +24,9 @@ function Get-OptedInOptionList {
 
 # Every entry of the given tools.psd1 files, in order: dotfiles' own, then each overlay's. A file
 # that does not exist contributes nothing. The same Id twice is an error naming where each was
-# declared, because installing either would be a guess.
+# declared, because installing either would be a guess. An entry's Configure is written relative
+# to the root of the repo that declares it (the folder holding its powershell/), and comes back
+# as a full path; a script that is not there is an error naming the manifest.
 function Get-MergedToolManifest {
     param([Parameter(Mandatory)][string[]]$Path)
 
@@ -37,6 +39,13 @@ function Get-MergedToolManifest {
                 throw "tool '$($tool.Id)' is declared in both $($seen[$tool.Id]) and $file"
             }
             $seen[$tool.Id] = $file
+            if ($tool.Configure) {
+                $root = Split-Path (Split-Path $file -Parent) -Parent
+                $tool.Configure = Join-Path $root $tool.Configure
+                if (-not (Test-Path -LiteralPath $tool.Configure)) {
+                    throw "tool '$($tool.Id)': Configure script $($tool.Configure) not found, declared in $file"
+                }
+            }
             $tool
         }
     }
@@ -88,13 +97,15 @@ function Select-ReleaseAsset {
     return $found[0]
 }
 
-# What is wrong with a github-release entry, or nothing when it has every field the install
-# method needs. A missing field would otherwise stop the whole run partway through the manifest.
-function Test-GitHubReleaseEntry {
+# What is wrong with a github-release or download entry, or nothing when it has every field its
+# install method needs. A missing field would otherwise stop the whole run partway through the
+# manifest.
+function Test-InstallerEntry {
     param([Parameter(Mandatory)][hashtable]$Tool)
 
-    $missing = @('Asset', 'InstallArgs', 'Present' | Where-Object { -not $Tool[$_] })
-    if ($missing.Count -gt 0) { return "$($Tool.Id): a github-release entry needs $($missing -join ', ')" }
+    $needs = if ($Tool.Source -eq 'download') { 'Url', 'InstallArgs', 'Present' } else { 'Asset', 'InstallArgs', 'Present' }
+    $missing = @($needs | Where-Object { -not $Tool[$_] })
+    if ($missing.Count -gt 0) { return "$($Tool.Id): a $($Tool.Source) entry needs $($missing -join ', ')" }
 }
 
 # The tools `uv tool list` reports installed. It prints each tool as "<name> v<version>", followed

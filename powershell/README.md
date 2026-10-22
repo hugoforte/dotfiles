@@ -18,8 +18,8 @@ Once `setup.ps1` has run, every PowerShell host loads `profile.ps1`, which in tu
 - `generated-file.ps1`: a managed path that holds content dotfiles writes, under a header that says so; `aws-config.ps1` and `authorized-keys.ps1` use it
 - `native.ps1`: `Invoke-Native`, which runs a native command and judges it by its exit code, because Windows PowerShell 5.1 under `$ErrorActionPreference = "Stop"` turns any line it writes to stderr — git's progress, say — into a terminating error
 - `tools.psd1`: the tools and programs a machine needs, declared
-- `install-tools.ps1`: installs what `tools.psd1` and each overlay's `powershell/tools.psd1` declare (`-Check` reports only)
-- `tool-selection.ps1`: which manifest entries a machine gets (an optional entry only where `machine.local.psd1` or an overlay's `machines/<KEY>.psd1` lists its option under `OptionalTools`), how the manifests merge, and the pure parts of the `github-release` and `uv` install methods
+- `install-tools.ps1`: installs what `tools.psd1` and each overlay's `powershell/tools.psd1` declare, then runs the `Configure` script of each entry that has one (`-Check` reports only)
+- `tool-selection.ps1`: which manifest entries a machine gets (an optional entry only where `machine.local.psd1` or an overlay's `machines/<KEY>.psd1` lists its option under `OptionalTools`), how the manifests merge, and the pure parts of the `github-release`, `download` and `uv` install methods
 - `markdownlint.jsonc`: default markdownlint rules, used by `bin/md-lint` when a repo has none of its own
 - `user-path.ps1`: `Add-UserPathEntry`, which puts the repo's `bin/` on the user PATH for `setup.ps1` and `sync.ps1`
 - `setup.ps1`: symlink/setup automation (`-Check` reports the managed links and changes nothing)

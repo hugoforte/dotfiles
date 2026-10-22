@@ -3,18 +3,25 @@
 # Every entry is a hashtable:
 #
 #   Id          winget package id, npm package name, uv tool (PyPI) name, GitHub owner/repo, or a
-#               slug for a manual step
-#   Source      'winget' | 'npm' | 'uv' | 'github-release' | 'manual'
+#               slug for a download or a manual step
+#   Source      'winget' | 'npm' | 'uv' | 'github-release' | 'download' | 'manual'
 #   Unattended  $false to keep sync.ps1 from installing it behind your back (default $true)
 #   Optional    the name of the option this entry belongs to; omit for every machine
 #   Note        what it is, or - for manual entries - what you have to do
 #   Url         optional, for manual entries that need a page
+#   Configure   optional: a script, relative to the root of the repo whose manifest declares it,
+#               run once the program is present to set it up. It takes -Check, changes only what
+#               has drifted, and exits non-zero on failure, or under -Check on drift
 #
 # A 'github-release' entry installs its repo's latest release, and also needs:
 #   Asset        -like pattern naming the installer among the release's assets
 #   InstallArgs  arguments for a silent install
 #   Present      -like pattern for its display name under Installed apps, which is how it is found;
 #                make it tell this build from any other of the same app
+#
+# A 'download' entry installs the installer at a fixed address, for a program with neither a
+# winget package nor GitHub releases, and needs Url (here, the installer's), InstallArgs and
+# Present as above.
 #
 # Entries install only when missing; nothing here is ever upgraded or uninstalled by the
 # installer. Add a tool, push, and every machine picks it up on its next sync.
