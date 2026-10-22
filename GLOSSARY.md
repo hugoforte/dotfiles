@@ -143,7 +143,7 @@ A named group of manifest entries (`Optional = '<name>'`) that only machines opt
 _Avoid_: profile, feature flag, extra
 
 **Install method**:
-What an entry's `Source` field names: `winget`, `npm`, `uv` (a Python tool, `uv tool install`), `github-release` (a repo's latest release asset, run silently) or `manual`. The field is called `Source` for history; in prose it is the install method, because a source is a file in this repo.
+What an entry's `Source` field names: `winget`, `npm`, `uv` (a Python tool, `uv tool install`), `github-release` (a repo's latest release asset, run silently), `download` (an installer at a fixed `Url`, run silently) or `manual`. The field is called `Source` for history; in prose it is the install method, because a source is a file in this repo.
 _Avoid_: source (that is the repo file a managed path points at), provider, package manager
 
 **Overlay Brewfile**:

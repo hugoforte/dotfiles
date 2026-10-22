@@ -1,8 +1,9 @@
 # Which manifest entries a machine gets (optional tools are opted into per machine, by name, in
 # machine.local.psd1 or an overlay's machines/<KEY>.psd1), how the manifests of dotfiles
-# and its overlays merge, the pure parts of the github-release install method (picking the
-# installer asset and recognising the installed program) and of the uv one (reading what uv has
-# installed). Everything happens under TestDrive:.
+# and its overlays merge (an entry's Configure script resolved against its own repo), the pure
+# parts of the github-release and download install methods (checking an entry's fields, picking
+# the installer asset and recognising the installed program) and of the uv one (reading what uv
+# has installed). Everything happens under TestDrive:.
 
 BeforeAll {
     . (Join-Path (Split-Path $PSScriptRoot -Parent) 'powershell\tool-selection.ps1')
@@ -122,6 +123,41 @@ Describe 'Get-MergedToolManifest' {
 
         { Get-MergedToolManifest -Path $overlay } | Should -Throw "*$overlay*"
     }
+
+    Context 'an entry with Configure' {
+
+        BeforeAll {
+            # An overlay as it is on disk: its manifest in powershell/, its script beside it.
+            function New-Overlay {
+                param([string]$Configure, [switch]$WithScript, [string]$Source = 'winget')
+                $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N').Substring(0, 8))
+                New-Item -ItemType Directory -Path (Join-Path $root 'powershell') -Force | Out-Null
+                if ($WithScript) { Set-Content -LiteralPath (Join-Path $root $Configure) -Value 'exit 0' }
+                $manifest = Join-Path $root 'powershell\tools.psd1'
+                Set-Content -LiteralPath $manifest -Value "@{ Tools = @( @{ Id = 'a'; Source = '$Source'; Configure = '$Configure' } ) }"
+                return [pscustomobject]@{ Root = $root; Manifest = $manifest }
+            }
+        }
+
+        It 'refuses Configure on a manual entry, which is never installed for it to run after' {
+            $overlay = New-Overlay -Configure 'powershell\configure-a.ps1' -WithScript -Source 'manual'
+
+            { Get-MergedToolManifest -Path $overlay.Manifest } | Should -Throw "*'a'*manual*$($overlay.Manifest)*"
+        }
+
+        It 'resolves the script against the root of the repo whose manifest declares it' {
+            $overlay = New-Overlay -Configure 'powershell\configure-a.ps1' -WithScript
+
+            (Get-MergedToolManifest -Path $overlay.Manifest).Configure |
+                Should -Be (Join-Path $overlay.Root 'powershell\configure-a.ps1')
+        }
+
+        It 'refuses a script that does not exist, naming the manifest' {
+            $overlay = New-Overlay -Configure 'powershell\absent.ps1'
+
+            { Get-MergedToolManifest -Path $overlay.Manifest } | Should -Throw "*absent.ps1*$($overlay.Manifest)*"
+        }
+    }
 }
 
 Describe 'Get-ToolStateHash' {
@@ -154,16 +190,36 @@ Describe 'Get-ToolStateHash' {
     }
 }
 
-Describe 'Test-GitHubReleaseEntry' {
+Describe 'Test-InstallerEntry' {
 
-    It 'accepts an entry with Asset, InstallArgs and Present' {
-        Test-GitHubReleaseEntry -Tool @{ Id = 'o/r'; Source = 'github-release'; Asset = 'x-*.exe'; InstallArgs = @('/S'); Present = 'X *' } |
+    It 'accepts a github-release entry with Asset, InstallArgs and Present' {
+        Test-InstallerEntry -Tool @{ Id = 'o/r'; Source = 'github-release'; Asset = 'x-*.exe'; InstallArgs = @('/S'); Present = 'X *' } |
             Should -BeNullOrEmpty
     }
 
-    It 'names the fields an entry is missing' {
-        Test-GitHubReleaseEntry -Tool @{ Id = 'o/r'; Source = 'github-release'; Asset = 'x-*.exe' } |
+    It 'names the fields a github-release entry is missing' {
+        Test-InstallerEntry -Tool @{ Id = 'o/r'; Source = 'github-release'; Asset = 'x-*.exe' } |
             Should -Be 'o/r: a github-release entry needs InstallArgs, Present'
+    }
+
+    It 'accepts a download entry with Url, Sha256, InstallArgs and Present' {
+        Test-InstallerEntry -Tool @{ Id = 'x'; Source = 'download'; Url = 'https://example.com/x.exe'; Sha256 = 'AB12'; InstallArgs = @('/S'); Present = 'X' } |
+            Should -BeNullOrEmpty
+    }
+
+    It 'names the fields a download entry is missing' {
+        Test-InstallerEntry -Tool @{ Id = 'x'; Source = 'download'; Present = 'X' } |
+            Should -Be 'x: a download entry needs Url, Sha256, InstallArgs'
+    }
+
+    It 'refuses a download Url that is not https' {
+        Test-InstallerEntry -Tool @{ Id = 'x'; Source = 'download'; Url = 'http://example.com/x.exe'; Sha256 = 'AB12'; InstallArgs = @('/S'); Present = 'X' } |
+            Should -BeLike 'x: *https*'
+    }
+
+    It 'refuses a download Url whose path names no installer file, which would be saved with no extension' {
+        Test-InstallerEntry -Tool @{ Id = 'x'; Source = 'download'; Url = 'https://example.com/get?f=x.exe'; Sha256 = 'AB12'; InstallArgs = @('/S'); Present = 'X' } |
+            Should -BeLike 'x: *file*'
     }
 }
 

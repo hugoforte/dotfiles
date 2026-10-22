@@ -120,8 +120,9 @@ try {
     Write-Log "~/.gitconfig-overlays: $(Update-GitOverlayInclude -Fragments (Get-OverlaySource -Set $overlaySet -Path 'git/gitconfig'))"
 
     # Tools: after the overlay pull, so a tool an overlay adds lands on this sync rather than the
-    # next. Only when a manifest or the options changed since the last successful run, and only the
-    # entries marked safe to install unwatched - this task must never raise a UAC prompt.
+    # next. Installs only when a manifest or the options changed since the last successful run, and
+    # only the entries marked safe to install unwatched - this task must never raise a UAC prompt.
+    # Configure scripts run every time.
     # A failure is logged and the run carries on, like a failed overlay pull: an overlay's manifest
     # can now fail this step, and stopping here would leave the links and secrets below stale.
     $toolsResult = & (Join-Path $PSScriptRoot "install-tools.ps1") -IfChanged -Unattended -Quiet -PassThru
