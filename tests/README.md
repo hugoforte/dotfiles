@@ -50,6 +50,8 @@ testable yet:
 | `bin/md-lint.mjs`'s `markdownlintArguments` and `hasOwnConfig` | exported, and the script only acts when run directly | this change |
 | `powershell/user-path.ps1`'s `Add-PathEntry` | the PATH list is an argument; `Add-UserPathEntry` applies it and is not run | this change |
 | `powershell/tool-selection.ps1` | which entries a machine gets, the release asset, the installed-program match and the reading of `uv tool list` are functions of their arguments; `install-tools.ps1` reads the registry, runs uv and downloads | this change |
+| `ai/helpers/overlays.sh` and `powershell/overlays.ps1` | the machine.local.psd1, the overlays and the computer name are fixtures; each rule is asked through the interface, and `overlays-parity.test.sh` diffs what both languages read of one fixture, on Windows only | hugoforte/dotfiles#67 |
+| `ai/helpers/leak-check.sh` | the repo is a fixture git repo, the terms are fake (from `LEAK_CHECK_TERMS` or a fixture overlay), and `gh` is a stub that prints a pull request's text | hugoforte/dotfiles#70 |
 | `ai/install.sh`'s extra Claude config folders | `HOME` and the overlay list are fixtures, so the folders it fills are temp directories | this change |
 | `macos/setup.sh` | `HOME` and the overlay list are fixtures, and `uname`, `scutil` and `brew` are stubs on `PATH`, so it runs on any OS and installs nothing | this change |
 | `macos/zshrc` | sourced by `zsh -f` through a fixture `~/.zshrc` link; skipped where zsh is missing | this change |

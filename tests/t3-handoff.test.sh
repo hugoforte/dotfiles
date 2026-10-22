@@ -198,7 +198,7 @@ this_computer="$(call "t3.reachableName((await import('node:os')).hostname())")"
 
 # to_mac <this project> <the mac's projects>: prints "<projectId>|<place>" for --to the mac, or the error.
 to_mac() {
-    call "(({ projectId, place }) => projectId + '|' + place)(await t3.destination({ get: async () => ({ projects: [$1] }) }, $current, { name: 'hugos-macbook-pro', server: {}, projects: $2 }))"
+    call "(({ projectId, place }) => projectId + '|' + place)(await t3.destination({ get: async () => ({ projects: [$1] }) }, $current, { name: 'a-macbook-pro', server: {}, projects: $2 }))"
 }
 
 # Through variables, as $copy above.
@@ -208,13 +208,13 @@ mac_clone="{id:'mac',title:'dotfiles-private',workspaceRoot:'/Users/me/dotfiles-
 mac_unresolved="{id:'pending',title:'dotfiles-private',workspaceRoot:'/Users/me/dotfiles-private',repositoryIdentity:null}"
 
 assert_eq "--to finds the project by this checkout's origin when T3 has not said its repository" \
-    "mac|hugos-macbook-pro, /Users/me/dotfiles-private" \
+    "mac|a-macbook-pro, /Users/me/dotfiles-private" \
     "$(to_mac "$unresolved_here" "[$mac_clone]")"
 assert_eq "--to for a project with no remote names this computer, not the destination" \
     "error: project \"scratch\" has no git remote on $this_computer to find it by: $no_remote has neither an upstream nor an origin" \
     "$(to_mac "$no_remote_here" "[$mac_clone]")"
 assert_eq "--to with no match names the projects there whose repository T3 did not say" \
-    "error: hugos-macbook-pro has no one project for github.com/hugoforte/dotfiles-private, the repository of \"dotfiles-private\"; T3 Code there did not say the repository of \"dotfiles-private\"" \
+    "error: a-macbook-pro has no one project for github.com/hugoforte/dotfiles-private, the repository of \"dotfiles-private\"; T3 Code there did not say the repository of \"dotfiles-private\"" \
     "$(to_mac "$unresolved_here" "[$mac_unresolved]")"
 
 # Reads the shell twice: T3 says the repository only on the second read, as when its cache was cold.
@@ -350,23 +350,23 @@ assert_eq "a run that failed stops the handoff" \
 
 # protocol <environment>: prints what the environment's protocol comes to, or the error.
 protocol() {
-    call "t3.speaksProtocol('http://zenbook:3773', $1)"
+    call "t3.speaksProtocol('http://workpc:3773', $1)"
 }
 
 assert_eq "a server on protocol 2 is spoken to" "true" "$(protocol "{orchestrationProtocolVersion:2}")"
 assert_eq "a server that names no protocol is from before protocol 2" \
-    "error: T3 Code at http://zenbook:3773 speaks orchestration protocol 1, and this script speaks 2" \
+    "error: T3 Code at http://workpc:3773 speaks orchestration protocol 1, and this script speaks 2" \
     "$(protocol "{serverVersion:'0.0.45'}")"
 assert_eq "a newer protocol is refused too" \
-    "error: T3 Code at http://zenbook:3773 speaks orchestration protocol 3, and this script speaks 2" \
+    "error: T3 Code at http://workpc:3773 speaks orchestration protocol 3, and this script speaks 2" \
     "$(protocol "{orchestrationProtocolVersion:3}")"
 
 assert_eq "a Mac's .local host name is reached without it" \
-    "Hugos-MacBook-Pro" \
-    "$(call "t3.reachableName('Hugos-MacBook-Pro.local')")"
+    "A-MacBook-Pro" \
+    "$(call "t3.reachableName('A-MacBook-Pro.local')")"
 assert_eq "a host name without .local is reached as it is" \
-    "ZENBOOK" \
-    "$(call "t3.reachableName('ZENBOOK')")"
+    "WORKPC" \
+    "$(call "t3.reachableName('WORKPC')")"
 
 # cli <args...>: runs t3.mjs and prints the first line it wrote to stderr. Each case
 # here is refused while the arguments are read, before anything reaches T3 Code.

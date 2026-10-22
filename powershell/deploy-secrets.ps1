@@ -48,8 +48,8 @@ if (-not (Test-Path $localPath)) {
 }
 
 try {
-    $overlays = Get-OverlayList -LocalPath $localPath
-    $skills = @(Get-MergedSkillRegistry -Roots (@($repoRoot) + $overlays))
+    $registries = Get-OverlaySource -Set (Get-Overlays -RepoPath $repoRoot) -Path "ai/secrets/registry.psd1"
+    $skills = @(Get-MergedSkillRegistry -Path $registries)
 } catch {
     Fail $_.Exception.Message
     Exit-WithResult $result 1

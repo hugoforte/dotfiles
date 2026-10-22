@@ -70,11 +70,15 @@ else
     log "updated $(printf '%.7s' "$before") -> $(printf '%.7s' "$after")"
 fi
 
+# A listed overlay that is gone stops the run: everything below would drop what it carries. Loaded
+# in this shell, so OVERLAY_REPOS survives; a failure is loaded again in a subshell to log why.
+if ! overlays_load "$REPO" 2> /dev/null; then
+    log "$( (overlays_load "$REPO") 2>&1)"
+    exit 1
+fi
+
 # Each overlay repo once, however many overlays it holds. A failed pull leaves that overlay as it
 # was, which the steps below still apply; the run carries on and exits 1.
-overlay_repos="$(psd1_paths "$LOCAL_PSD1" Overlays | while IFS= read -r overlay; do
-    git -C "$overlay" rev-parse --show-toplevel 2>/dev/null
-done | awk '!seen[$0]++')"
 while IFS= read -r overlay_repo; do
     [ -n "$overlay_repo" ] || continue
     if out="$(git -C "$overlay_repo" pull --ff-only 2>&1)"; then
@@ -84,7 +88,7 @@ while IFS= read -r overlay_repo; do
         failed=1
     fi
 done <<EOF
-$overlay_repos
+$OVERLAY_REPOS
 EOF
 
 if out="$(sh "$REPO/macos/setup.sh" --brew-if-changed 2>&1)"; then

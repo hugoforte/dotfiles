@@ -15,7 +15,7 @@
 #
 # The registries are read by awk, so an entry must put each key on a line of its own with a
 # quoted value, Files as one @(...) on one line, as every registry here does, and a Remote beside
-# every Marker. An entry it cannot read is an error.
+# every Marker. An entry it cannot read is an error. ai/helpers/overlays.sh reads them.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -37,9 +37,8 @@ umask 077
 
 LOCAL_PSD1="$REPO/ai/secrets/machine.local.psd1"
 SECRETS_HOME="$HOME/.agent-secrets"
-# The field separator of a skill line: ASCII unit separator. Not a tab: read collapses runs of a
-# whitespace IFS, which would shift a shipped skill's empty Marker and Remote out of place.
-FS="$(printf '\037')"
+# The field separator of a skill line; see merged_skill_registry.
+FS="$REGISTRY_FS"
 
 # What --check found out of place, counted where it means "this would change". A failed decrypt
 # or an origin mismatch is a warning too, but not one a deploy would fix.
@@ -52,83 +51,8 @@ warn() { warning "$1"; WARNED=$((WARNED + 1)); }
 command -v sops > /dev/null 2>&1 || die "sops not found. Install with: brew install sops"
 [ -f "$LOCAL_PSD1" ] || die "$LOCAL_PSD1 not found. Copy machine.local.psd1.example to machine.local.psd1 and set SearchRoots."
 
-OVERLAYS="$(psd1_paths "$LOCAL_PSD1" Overlays)"
-while IFS= read -r overlay; do
-    [ -z "$overlay" ] || [ -d "$overlay" ] || die "overlay $overlay listed in ai/secrets/machine.local.psd1 does not exist"
-done <<EOF
-$OVERLAYS
-EOF
-
-# registry_entries <registry.psd1>: one line per skill, its fields separated by $FS:
-#   <id> <marker> <remote> <files, space-separated> <registry path>
-# Keys are read without case and values in either quote, as PowerShell reads them. An entry it
-# cannot read prints "!" and the registry path instead: no Id, no one-line Files, a key whose
-# value is not a quoted string, or a Marker with no Remote, which would match every origin.
-registry_entries() {
-    awk -v registry="$1" -v fs="$FS" -v sq="'" '
-        # every quoted string in text, space-separated
-        function quoted(text,    out) {
-            out = ""
-            while (match(text, sq "[^" sq "]*" sq "|\"[^\"]*\"")) {
-                out = out (out == "" ? "" : " ") substr(text, RSTART + 1, RLENGTH - 2)
-                text = substr(text, RSTART + RLENGTH)
-            }
-            return out
-        }
-        # what follows "<key> =" on this line, or "" when the key is not on it
-        function after(key,    lower) {
-            lower = tolower($0)
-            if (!match(lower, "(^|[^a-z])" key "[[:space:]]*=")) return ""
-            return substr($0, RSTART + RLENGTH) "\n"
-        }
-        # the quoted value of key on this line; a key whose value is not one marks the entry bad
-        function value(key, current,    rest) {
-            if ((rest = after(key)) == "") return current
-            if (match(rest, "^[[:space:]]*(" sq "[^" sq "]*" sq "|\"[^\"]*\")")) return quoted(substr(rest, RSTART, RLENGTH))
-            bad = 1
-            return current
-        }
-        function emit() {
-            if (!open) return
-            if (bad || id == "" || files == "" || (marker != "" && remote == "")) print "!" fs registry
-            else print id fs marker fs remote fs files fs registry
-            open = 0
-        }
-        /^[[:space:]]*#/ { next }
-        tolower($0) ~ /skills[[:space:]]*=/ { skills = 1 }
-        skills && /@\{/ { emit(); open = 1; bad = 0; id = marker = remote = files = "" }
-        open {
-            id = value("id", id)
-            marker = value("marker", marker)
-            remote = value("remote", remote)
-            if ((rest = after("files")) != "") {
-                if (match(rest, /^[[:space:]]*@\([^)]*\)/)) files = quoted(substr(rest, RSTART, RLENGTH))
-                else bad = 1
-            }
-        }
-        END { emit() }
-    ' "$1"
-}
-
-SKILLS=""
-while IFS= read -r root; do
-    registry="$root/ai/secrets/registry.psd1"
-    [ -n "$root" ] && [ -f "$registry" ] || continue
-    entries="$(registry_entries "$registry")"
-    case "$entries" in
-        '!'*|*"
-!"*) die "$registry has an entry this cannot read: each key on a line of its own with a quoted value, an Id, Files as one @(...) on one line, and a Remote beside every Marker" ;;
-    esac
-    [ -n "$entries" ] && SKILLS="${SKILLS:+$SKILLS
-}$entries"
-done <<EOF
-$REPO
-$OVERLAYS
-EOF
-
-# The same Id in two registries is an error naming both, because either answer would be a guess.
-twice="$(printf '%s\n' "$SKILLS" | awk -F "$FS" 'NF { if ($1 in seen) print $1 " is registered in both " seen[$1] " and " $5; seen[$1] = $5 }')"
-[ -z "$twice" ] || die "skill $(printf '%s' "$twice" | head -n 1)"
+overlays_load "$REPO" || exit 1
+SKILLS="$(merged_skill_registry)" || exit 1
 
 SEARCH_ROOTS=""
 while IFS= read -r search_root; do

@@ -1,5 +1,5 @@
 # Which manifest entries a machine gets (optional tools are opted into per machine, by name, in
-# machine.local.psd1 or an overlay's machines/<COMPUTERNAME>.psd1), how the manifests of dotfiles
+# machine.local.psd1 or an overlay's machines/<KEY>.psd1), how the manifests of dotfiles
 # and its overlays merge, the pure parts of the github-release install method (picking the
 # installer asset and recognising the installed program) and of the uv one (reading what uv has
 # installed). Everything happens under TestDrive:.

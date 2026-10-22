@@ -150,10 +150,26 @@ if [ -n "$ONLY" ]; then
 fi
 [ -n "$overlays" ] || die "$OVERLAY_DIR has no overlay directories"
 
+# The overlays found in the clone, checked as a machine would read them before anything is written:
+# none may clash with this repo or with another found here. Overlays a machine.local.psd1 already
+# lists from elsewhere are setup.sh's to check, below.
+. "$DOTFILES/ai/helpers/overlays.sh"
+set --
+while IFS= read -r o; do set -- "$@" "$o"; done <<EOF
+$overlays
+EOF
+overlays_load "$DOTFILES" "$@" || exit 1
+for path in $(printf '%s\n' "$OVERLAY_TABLE" | awk '$2 == "one" { print $1 }'); do
+    overlay_sources "$path" > /dev/null || die "nothing was written; if dotfiles still carries what the overlay now holds, pull it"
+done
+merged_skill_registry > /dev/null || die "nothing was written"
+. "$DOTFILES/ai/helpers/aws-config.sh"
+aws_problem="$(aws_config_problem "$(aws_config_sources "$(overlay_sources aws/config)")")"
+[ -z "$aws_problem" ] || die "$aws_problem; nothing was written"
+
 local_psd1="$DOTFILES/ai/secrets/machine.local.psd1"
 if [ -f "$local_psd1" ]; then
-    . "$DOTFILES/ai/helpers/overlays.sh"
-    listed="$(psd1_paths "$local_psd1" Overlays)"
+    listed="$(overlays_load "$DOTFILES" && printf '%s\n' "$OVERLAYS")" || exit 1
     missing="$(printf '%s\n' "$overlays" | while IFS= read -r o; do
         printf '%s\n' "$listed" | grep -Fqx "$o" || printf '%s\n' "$o"
     done)"
@@ -180,12 +196,12 @@ sh "$DOTFILES/macos/setup.sh" || FAILED=1
 sh "$DOTFILES/macos/install-sync-agent.sh" || FAILED=1
 
 # Each overlay's own steps: what is one person's or one employer's, so dotfiles cannot name it.
-while IFS= read -r o; do
-    [ -f "$o/macos/bootstrap.sh" ] || continue
-    say "Running $o/macos/bootstrap.sh…"
-    sh "$o/macos/bootstrap.sh" || FAILED=1
+while IFS= read -r script; do
+    [ -n "$script" ] || continue
+    say "Running ${script}…"
+    sh "$script" || FAILED=1
 done <<EOF
-$overlays
+$(overlay_sources macos/bootstrap.sh)
 EOF
 
 if sh "$DOTFILES/macos/deploy-secrets.sh" > /dev/null 2>&1; then

@@ -2,23 +2,16 @@
 
 ## Environment
 
-- Machines run Windows, macOS or Linux. Check which before reaching for a shell-specific command; on macOS and Linux the shell is zsh or bash.
-- Prefer `gh` for GitHub operations; never the GitHub MCP tools.
 - Global agent config lives in `~/.claude`, symlinked from the `dotfiles` repo. Edit the repo, not the symlink target.
 - Rules that hold in every repo belong here, not in a project's auto-memory: memory is kept per starting folder, so a rule saved from one folder is missing in a session started in another.
 - Write files and scripts with Write and edit them with Edit, then run them. Never write a file or a script through a heredoc, or edit one in place with `perl -i` or `sed -i`: quotes and backslashes break on the way through the shell, and Write and Edit leave a change that can be reviewed. The `agent-guard` hook refuses those commands in the Bash tool on every machine.
-- Wait for CI with `gh pr checks <n> --watch` run in the background, never `sleep`.
 - "Continue from where you left off" after a crash, a usage limit or an API error means resume the unfinished task.
-
-### On Windows
-
-- Windows 11. PowerShell 5.1 is the primary shell; Git Bash is available for POSIX scripts.
-- Git Bash's `/tmp` is not the `/tmp` that Windows-native node, python and gh see. Hand them Windows paths (`cygpath -w`).
+- An overlay's `ai/rules/` add to these rules: they are linked into `~/.claude/rules/`, which Claude Code reads beside this file.
 
 ## Acting outside the work
 
 - Inside the work and reversible: take the obvious next step and say so. Do not ask a question that has one answer.
-- Never merge, close, delete or transition a PR, issue, ticket, branch or rig work unless the user named that item for that act. "Check" or "see which can" means report only. The one exception is rig's own: `rig stage --land` merges reviewed stages into the work branch, never further. The `agent-guard` hook asks before `gh pr merge`, `gh stack merge` and merges through `gh api`.
+- Never merge, close, delete or transition a PR, issue, ticket, branch or rig work unless the user named that item for that act. "Check" or "see which can" means report only. The `agent-guard` hook asks before `gh pr merge`, `gh stack merge` and merges through `gh api`.
 - Delete a branch, on the remote and locally, once its PR has merged and every commit on it is on the base, without asking. A branch with commits the base lacks stays; say which commits.
 - When asked to look, check or explain, change nothing on disk; propose instead.
 - Send no request to a production host unless asked. Read-only database queries are fine through a skill that says so.
@@ -50,12 +43,6 @@ Code added on the current branch is not legacy. Change it freely instead of addi
 | Unsure which agents to use | `task-orchestrator` |
 
 **Maximum 2 attempts per issue**, then stop and use `bug-root-cause-analyzer`. It documents what failed, researches alternatives, questions the abstraction, and investigates systematically.
-
-Notes, plans and reviews written by agents go under `~/ai-notes/`:
-
-- `~/ai-notes/plans/{org}/{repo}/{issue-or-branch-or-slug}.md`
-- `~/ai-notes/notes/{org}/{repo}/{area}.md`
-- `~/ai-notes/reviews/{org}/{repo}/{issue-or-branch-or-slug}.md`
 
 Project-local scratch goes in `.notes/` or `notes/`, never the repo root.
 
@@ -95,19 +82,12 @@ Project-local scratch goes in `.notes/` or `notes/`, never the repo root.
 
 ## Git
 
-- Make every change in a rig work's worktree: `rig new` with the repo, even for a one-line follow-up to a work that has closed. Never branch, commit in or edit a repo's own checkout. Setup and the sync run dotfiles and its overlays from theirs, so a branch there runs unmerged code on the machine. A PR opened outside rig gets a worktree of its own, outside rig's work root: `gh pr checkout <n> --worktree <path>`.
 - Commit messages: present tense, imperative ("Add", "Fix", "Remove"). One-line summary, blank line, optional body explaining why.
 - When a commit fixes an issue, add `Fixes #123` on its own line.
 - Keep commits clean. Squash when appropriate; no "WIP" commits unless spiking.
 - Never bypass commit hooks with `--no-verify`. Never commit code that does not compile.
 
 ## GitHub
-
-Use the `gh` CLI for everything GitHub: issues, PRs, checks, releases, and `gh api` for anything else. WebFetch is only for public documentation pages.
-
-Write a PR body with the `matt-pr` skill, unless the repo has a PR template; then fill that in. In a rig work, write it into the context doc's `## Pull request` section with its headings at `###` (`rig pr` raises them to `##`; a `##` would end the section), and let `rig pr` lift it; never edit a rig PR's body on GitHub.
-
-Finished rig work ends in a pushed PR. In what you write to the user, every PR, issue, comment or run you create or mention gets its full URL, never a bare `#123`; a commit's `Fixes #123` line stays as it is.
 
 Never post PR review comments without explicit approval. When replying to an existing review thread, reply in-thread rather than creating a root-level comment.
 

@@ -31,7 +31,7 @@ git_repo() {
 # The dotfiles to clone: the real overlay reader, and macos/ scripts that log their own name.
 fixture_dotfiles="$work/fixture-dotfiles"
 mkdir -p "$fixture_dotfiles/macos" "$fixture_dotfiles/ai/helpers" "$fixture_dotfiles/ai/secrets"
-cp "$REPO_ROOT/ai/helpers/overlays.sh" "$fixture_dotfiles/ai/helpers/"
+cp "$REPO_ROOT/ai/helpers/overlays.sh" "$REPO_ROOT/ai/helpers/aws-config.sh" "$fixture_dotfiles/ai/helpers/"
 for script in setup.sh install-sync-agent.sh deploy-secrets.sh; do
     printf 'echo "%s $*" >> "%s"\n' "$script" "$log" > "$fixture_dotfiles/macos/$script"
 done
@@ -127,6 +127,33 @@ rm -rf "$src"
 out="$(run --overlays "$fixture_overlays" --dir "$src")"; rc=$?
 assert_eq "passwordless sudo, where sudo -v would still ask, does not stop it" "0" "$rc"
 rm "$work/nopasswd"
+
+# Two overlays whose aws/config both declare one section, which the merged ~/.aws/config cannot hold.
+mkdir -p "$fixture_overlays/personal/aws" "$fixture_overlays/company/aws"
+printf '[default]\n' > "$fixture_overlays/personal/aws/config"
+printf '[default]\n' > "$fixture_overlays/company/aws/config"
+git -C "$fixture_overlays" add -A
+git -C "$fixture_overlays" -c user.name=t -c user.email=t@example.com commit --quiet -m "clash"
+rm -rf "$src"
+out="$(run --overlays "$fixture_overlays" --dir "$src")"; rc=$?
+assert_eq "overlays that clash fail the run" "1" "$rc"
+assert_eq "... naming the section both declare" "y" "$(says "$out" "aws/config section [profile default] is in both")"
+assert_eq "... before machine.local.psd1 is written" "n" "$([ -f "$src/dotfiles/ai/secrets/machine.local.psd1" ] && echo y || echo n)"
+git -C "$fixture_overlays" rm --quiet -r personal/aws
+
+# Two overlays that register the same skill.
+mkdir -p "$fixture_overlays/personal/ai/secrets" "$fixture_overlays/company/ai/secrets"
+for o in personal company; do
+    printf "@{\n    Skills = @(\n        @{\n            Id    = 'tool'\n            Files = @('.env')\n        }\n    )\n}\n" > "$fixture_overlays/$o/ai/secrets/registry.psd1"
+done
+git -C "$fixture_overlays" add -A
+git -C "$fixture_overlays" -c user.name=t -c user.email=t@example.com commit --quiet -m "same skill"
+rm -rf "$src"
+out="$(run --overlays "$fixture_overlays" --dir "$src")"; rc=$?
+assert_eq "overlays that register the same skill fail the run" "1" "$rc"
+assert_eq "... before machine.local.psd1 is written" "n" "$([ -f "$src/dotfiles/ai/secrets/machine.local.psd1" ] && echo y || echo n)"
+git -C "$fixture_overlays" rm --quiet -r personal/ai
+git -C "$fixture_overlays" -c user.name=t -c user.email=t@example.com commit --quiet -m "no clash"
 
 printf 'exit 3\n' >> "$fixture_overlays/personal/macos/bootstrap.sh"
 git -C "$fixture_overlays" -c user.name=t -c user.email=t@example.com commit --quiet -am "fail"

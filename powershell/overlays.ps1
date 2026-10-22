@@ -1,18 +1,43 @@
-# Overlays: private directories laid out like this repo's root, which this repo's tooling reads
-# from as well as from itself. A machine lists its overlays in ai/secrets/machine.local.psd1
-# (git-ignored), so no tracked file here ever names one. See ai/secrets/README.md.
+# The overlay table in PowerShell: which overlays a machine lists, where each path an overlay may
+# ship comes from, and the skill registries they merge. Overlays are private directories laid out
+# like this repo's root; a machine lists them in ai/secrets/machine.local.psd1 (git-ignored), so no
+# tracked file here ever names one. What each path is for is README's "Private configuration:
+# overlays". The sh twin is ai/helpers/overlays.sh; the two agree on the rules, not the code
+# (docs/adr/0007-a-parallel-macos-entry-point.md), and tests/overlays-parity.test.sh holds them to it.
 #
-# What an overlay may carry, each at the same path as in this repo:
-#   ai/secrets/registry.psd1 + ai/secrets/<Id>/   skill secrets; registries merge
-#   aws/config                                    AWS CLI profiles; every source merges (aws-config.ps1)
-#   git/gitconfig                                 a fragment; every overlay's is included
-#   ssh/authorized_keys                           the keys that may log in; at most one overlay, never this repo
-#   ai/skills/<name>/                             skills, linked by ai/install.sh; a name ships from one place
-#   bruno/<collection>/                           Bruno collections, linked into ~/bruno by ai/install.sh; a name ships from one place
-#   ai/claude/config-dirs                         extra Claude config folders, one per line; ai/install.sh gives each what ~/.claude gets
-#   machines/<COMPUTERNAME>.config-dirs           the same, for that machine only
-#   powershell/tools.psd1                         tools, merged by install-tools.ps1; an id is declared in one place
-#   machines/<COMPUTERNAME>.psd1                  the machine's OptionalTools, read by install-tools.ps1; one source
+#   Get-Overlays          read the list: the overlays, the machine key, the overlay repositories
+#   Get-OverlaySource     the sources of a path in $OverlayTable
+#   Get-OverlayEntry      the entries under a directory in $OverlayTable
+#   Get-MergedSkillRegistry  every skill the registries list
+
+# What an overlay may ship, one row per path: the path relative to a root, how many sources it may
+# have, and the roots it is read from.
+#   one      at most one source; two is an error naming both
+#   all      every source, in order
+#   entries  a pattern in one folder (*/ its folders, *.md its .md files) whose matches are linked by
+#            name; the first to ship a name keeps it
+#   overlays the listed overlays, in order; repo+overlays puts the repo first
+# {KEY} in a path is the machine key, and with no key the path matches nothing. A path ending in /
+# is a folder; every other is a file.
+$OverlayTable = @(
+    [pscustomobject]@{ Path = 'aws/config';                 Count = 'all';     Roots = 'repo+overlays' }
+    [pscustomobject]@{ Path = 'ssh/authorized_keys';        Count = 'one';     Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'machines/{KEY}.psd1';        Count = 'one';     Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'machines/{KEY}.Brewfile';    Count = 'one';     Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'git/gitconfig';              Count = 'all';     Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'macos/Brewfile';             Count = 'all';     Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'macos/bootstrap.sh';         Count = 'all';     Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'ai/claude/config-dirs';      Count = 'all';     Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'machines/{KEY}.config-dirs'; Count = 'all';     Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'machines/';                  Count = 'all';     Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'powershell/tools.psd1';      Count = 'all';     Roots = 'repo+overlays' }
+    [pscustomobject]@{ Path = 'ai/secrets/registry.psd1';   Count = 'all';     Roots = 'repo+overlays' }
+    [pscustomobject]@{ Path = 'leak-check/terms.txt';       Count = 'all';     Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'ai/skills/*/';               Count = 'entries'; Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'bruno/*/';                   Count = 'entries'; Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'ai/rules/*.md';              Count = 'entries'; Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'ai/agents/*.md';             Count = 'entries'; Roots = 'overlays' }
+)
 
 # Whether a machine.local.psd1 opts the machine into skill secrets: it must declare SearchRoots,
 # which deploy-secrets.ps1 cannot run without. The file alone is not enough, because a machine
@@ -25,109 +50,36 @@ function Test-SkillSecretsOptIn {
     return (Import-PowerShellDataFile $LocalPath).ContainsKey('SearchRoots')
 }
 
-# The overlay directories listed in a machine.local.psd1. No file, or no Overlays key, is no
-# overlays. A listed directory that does not exist is an error: silently skipping it would
-# quietly drop every secret and setting it carries.
-function Get-OverlayList {
-    param([Parameter(Mandatory)][string]$LocalPath)
-
-    if (-not (Test-Path -LiteralPath $LocalPath)) { return @() }
-    $local = Import-PowerShellDataFile $LocalPath
-    if (-not $local.Overlays) { return @() }
-
-    foreach ($dir in $local.Overlays) {
-        if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
-            throw "overlay '$dir' listed in $LocalPath does not exist"
-        }
-    }
-    return @($local.Overlays)
-}
-
-# Every skill in the ai/secrets/registry.psd1 of each root, in order, each with the SecretsDir its
-# encrypted files live in. A root without a registry contributes nothing. The same Id in two
-# roots is an error naming both, because either answer would be a guess.
-function Get-MergedSkillRegistry {
-    param([Parameter(Mandatory)][string[]]$Roots)
-
-    $seen = @{}
-    foreach ($root in $Roots) {
-        $registryPath = Join-Path $root "ai\secrets\registry.psd1"
-        if (-not (Test-Path -LiteralPath $registryPath)) { continue }
-
-        foreach ($skill in (Import-PowerShellDataFile $registryPath).Skills) {
-            if ($seen.ContainsKey($skill.Id)) {
-                throw "skill '$($skill.Id)' is registered in both $($seen[$skill.Id]) and $registryPath"
-            }
-            $seen[$skill.Id] = $registryPath
-
-            $entry = $skill.Clone()
-            $entry.SecretsDir = Join-Path $root "ai\secrets\$($skill.Id)"
-            $entry
-        }
-    }
-}
-
-# The one root that provides RelativePath, or $null when none does. More than one is an error
-# naming them all: a file that stands for one thing, such as the keys that may log in or one
-# machine's options, cannot come from two places.
-function Find-OverlayFile {
+# The overlays RepoPath's ai/secrets/machine.local.psd1 lists, or those passed as -Overlays instead,
+# so a writer can check a list before writing it. No file, or no Overlays key, is no overlays.
+# Returns:
+#   Repo        RepoPath, the root read first by a repo+overlays path
+#   Overlays    the overlays, in order
+#   MachineKey  the computer's name as machines/ files are named: up to its first dot, uppercased;
+#               empty for a computer with no name
+#   RepoRoots   the git repositories the overlays are in, each once, in the order first listed, so
+#               each is pulled once however many overlays it holds
+# An overlay that does not exist is an error naming it: skipping it would drop everything it carries.
+function Get-Overlays {
     param(
-        [Parameter(Mandatory)][string[]]$Roots,
-        [Parameter(Mandatory)][string]$RelativePath
+        [Parameter(Mandatory)][string]$RepoPath,
+        [string[]]$Overlays,
+        [AllowEmptyString()][string]$ComputerName = $env:COMPUTERNAME
     )
 
-    $found = @($Roots |
-        ForEach-Object { Join-Path $_ $RelativePath } |
-        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
-    if ($found.Count -gt 1) {
-        throw "$RelativePath is provided by more than one source: $($found -join ', ')"
-    }
-    if ($found.Count -eq 1) { return $found[0] }
-    return $null
-}
-
-# What the overlays give install-tools.ps1 on the computer named ComputerName:
-#   Manifests    each overlay's powershell/tools.psd1 that exists, in overlay order
-#   MachineFile  the one machines/<ComputerName>.psd1, or $null; two overlays shipping it is an error
-#   MachineDirs  the overlays' machines/ directories when none holds this computer's file, so a
-#                misnamed file can be reported rather than its options dropped in silence
-function Get-OverlayToolSource {
-    param(
-        [AllowEmptyCollection()][string[]]$Overlays = @(),
-        [Parameter(Mandatory)][string]$ComputerName
-    )
-
-    $machineFile = if ($Overlays.Count) { Find-OverlayFile -Roots $Overlays -RelativePath "machines\$ComputerName.psd1" }
-    [pscustomobject]@{
-        Manifests   = @($Overlays | ForEach-Object { Join-Path $_ "powershell\tools.psd1" } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
-        MachineFile = $machineFile
-        MachineDirs = @(if (-not $machineFile) {
-                $Overlays | ForEach-Object { Join-Path $_ "machines" } | Where-Object { Test-Path -LiteralPath $_ -PathType Container }
-            })
-    }
-}
-
-# The contents of ~/.gitconfig-overlays: one include per overlay that ships git/gitconfig, in
-# overlay order, so a later overlay overrides an earlier one.
-function Get-GitOverlayIncludeContent {
-    param([string[]]$Overlays = @())
-
-    $lines = @("# Generated by powershell/setup.ps1 from the Overlays in ai/secrets/machine.local.psd1. Do not edit.")
-    foreach ($overlay in $Overlays) {
-        $fragment = Join-Path $overlay "git\gitconfig"
-        if (Test-Path -LiteralPath $fragment -PathType Leaf) {
-            $lines += "[include]"
-            $lines += "`tpath = $($fragment -replace '\\', '/')"
+    $localPath = Join-Path $RepoPath "ai\secrets\machine.local.psd1"
+    $from = ""
+    if (-not $PSBoundParameters.ContainsKey('Overlays')) {
+        $Overlays = @()
+        if (Test-Path -LiteralPath $localPath) {
+            $listed = (Import-PowerShellDataFile $localPath).Overlays
+            if ($listed) { $Overlays = @($listed) }
         }
+        $from = " listed in $localPath"
     }
-    return ($lines -join "`n") + "`n"
-}
-
-# The distinct git repositories the overlays live in, in the order first listed, so each is
-# pulled once however many overlays it holds. An overlay outside any repository has nothing to
-# pull and is left out.
-function Get-OverlayRepoRoots {
-    param([string[]]$Overlays = @())
+    foreach ($dir in $Overlays) {
+        if (-not (Test-Path -LiteralPath $dir -PathType Container)) { throw "overlay $dir$from does not exist" }
+    }
 
     $roots = [ordered]@{}
     foreach ($overlay in $Overlays) {
@@ -138,7 +90,123 @@ function Get-OverlayRepoRoots {
         $top = [IO.Path]::GetFullPath($top)
         if (-not $roots.Contains($top)) { $roots[$top] = $true }
     }
-    return @($roots.Keys)
+
+    [pscustomobject]@{
+        Repo       = $RepoPath
+        Overlays   = @($Overlays)
+        MachineKey = ($ComputerName -replace '\..*', '').ToUpperInvariant()
+        RepoRoots  = @($roots.Keys)
+    }
+}
+
+# The row of $OverlayTable for Path, with the roots it is read from in Set. A path not in the table,
+# or with a count not among Counts, is an error.
+function Get-OverlayRow {
+    param(
+        [Parameter(Mandatory)]$Set,
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string[]]$Counts
+    )
+
+    $rule = $OverlayTable | Where-Object { $_.Path -ceq $Path }
+    if (-not $rule) { throw "$Path is not a path an overlay may ship (`$OverlayTable)" }
+    if ($Counts -notcontains $rule.Count) { throw "$Path is a $($rule.Count) path, not $($Counts -join ' ')" }
+    $roots = if ($rule.Roots -eq 'repo+overlays') { @($Set.Repo) + $Set.Overlays } else { $Set.Overlays }
+    [pscustomobject]@{ Count = $rule.Count; Roots = @($roots) }
+}
+
+# The sources of a one or all path, given the set Get-Overlays returned. A one path has none or one,
+# and two are an error naming both: a link has one target. An all path never fails.
+function Get-OverlaySource {
+    param(
+        [Parameter(Mandatory)]$Set,
+        [Parameter(Mandatory)][string]$Path
+    )
+
+    $rule = Get-OverlayRow -Set $Set -Path $Path -Counts 'one', 'all'
+    $relative = $Path
+    if ($relative.Contains('{KEY}')) {
+        if (-not $Set.MachineKey) { return }
+        $relative = $relative.Replace('{KEY}', $Set.MachineKey)
+    }
+    $kind = if ($relative.EndsWith('/')) { 'Container' } else { 'Leaf' }
+    $found = @($rule.Roots |
+        ForEach-Object { Join-Path $_ ($relative.TrimEnd('/') -replace '/', '\') } |
+        Where-Object { Test-Path -LiteralPath $_ -PathType $kind })
+    if ($rule.Count -eq 'one' -and $found.Count -gt 1) {
+        throw "$relative is provided by more than one source: $($found -join ', ')"
+    }
+    $found
+}
+
+# One { Name; Path; ClashesWith } per match of an entries row (*/ its folders, *.md its .md files)
+# in each overlay of Set, in overlay order. ClashesWith is what already ships that name, or $null
+# when it is free. A ClaimedBy folder's own entry of the same name claims it before any overlay's.
+# Names compare without case, as they do on NTFS. A clash is data, never a failure.
+function Get-OverlayEntry {
+    param(
+        [Parameter(Mandatory)]$Set,
+        [Parameter(Mandatory)][string]$Path,
+        [string[]]$ClaimedBy = @()
+    )
+
+    $rule = Get-OverlayRow -Set $Set -Path $Path -Counts 'entries'
+    $kind = if ($Path.EndsWith('/')) { 'Container' } else { 'Leaf' }
+    $pattern = $Path.TrimEnd('/')
+    $leaf = Split-Path $pattern -Leaf
+    $seen = @{}
+    foreach ($root in $rule.Roots) {
+        $dir = Join-Path $root ((Split-Path $pattern -Parent) -replace '/', '\')
+        if (-not (Test-Path -LiteralPath $dir -PathType Container)) { continue }
+        # -clike as well as -Filter: sh's glob is case-sensitive, and -Filter is not. A name starting
+        # with a dot is left out, as sh's * leaves it out.
+        $names = (Get-ChildItem -LiteralPath $dir -Filter $leaf -Force |
+            Where-Object { $_.Name -clike $leaf -and -not $_.Name.StartsWith('.') -and (Test-Path -LiteralPath $_.FullName -PathType $kind) } |
+            Sort-Object Name).Name
+        foreach ($name in $names) {
+            # Joined, not FullName, which expands a short (8.3) name the overlay was listed by.
+            $entryPath = Join-Path $dir $name
+            $clash = $ClaimedBy | ForEach-Object { Join-Path $_ $name } |
+                Where-Object { Test-Path -LiteralPath $_ -PathType $kind } | Select-Object -First 1
+            if (-not $clash) { $clash = $seen[$name.ToLowerInvariant()] }
+            if (-not $clash) { $seen[$name.ToLowerInvariant()] = $entryPath }
+            [pscustomobject]@{ Name = $name; Path = $entryPath; ClashesWith = $clash }
+        }
+    }
+}
+
+# Every skill in the registries at Path, in order, each with the SecretsDir beside its registry that
+# its encrypted files live in. The same Id in two registries is an error naming both, because
+# either answer would be a guess.
+function Get-MergedSkillRegistry {
+    param([AllowEmptyCollection()][string[]]$Path = @())
+
+    $seen = @{}
+    foreach ($registryPath in $Path) {
+        foreach ($skill in (Import-PowerShellDataFile $registryPath).Skills) {
+            if ($seen.ContainsKey($skill.Id)) {
+                throw "skill '$($skill.Id)' is registered in both $($seen[$skill.Id]) and $registryPath"
+            }
+            $seen[$skill.Id] = $registryPath
+
+            $entry = $skill.Clone()
+            $entry.SecretsDir = Join-Path (Split-Path $registryPath -Parent) $skill.Id
+            $entry
+        }
+    }
+}
+
+# The contents of ~/.gitconfig-overlays: one include per git/gitconfig fragment, in overlay order,
+# so a later overlay overrides an earlier one.
+function Get-GitOverlayIncludeContent {
+    param([string[]]$Fragments = @())
+
+    $lines = @("# Generated by powershell/setup.ps1 from the Overlays in ai/secrets/machine.local.psd1. Do not edit.")
+    foreach ($fragment in $Fragments) {
+        $lines += "[include]"
+        $lines += "`tpath = $($fragment -replace '\\', '/')"
+    }
+    return ($lines -join "`n") + "`n"
 }
 
 # Creates a machine.local.psd1 from the example, searching $SearchRoot for checkouts in place of
@@ -192,16 +260,16 @@ function Set-OverlayListInFile {
     [IO.File]::WriteAllText($LocalPath, $text)
 }
 
-# Brings ~/.gitconfig-overlays in line with the overlays. Returns 'AlreadyCorrect', 'Written', or
-# with -Check 'WouldWrite' and changes nothing.
+# Brings ~/.gitconfig-overlays in line with the git/gitconfig fragments. Returns 'AlreadyCorrect',
+# 'Written', or with -Check 'WouldWrite' and changes nothing.
 function Update-GitOverlayInclude {
     param(
-        [string[]]$Overlays = @(),
+        [string[]]$Fragments = @(),
         [string]$Path = "$env:USERPROFILE\.gitconfig-overlays",
         [switch]$Check
     )
 
-    $content = Get-GitOverlayIncludeContent -Overlays $Overlays
+    $content = Get-GitOverlayIncludeContent -Fragments $Fragments
     if ((Test-Path -LiteralPath $Path) -and ([IO.File]::ReadAllText($Path) -eq $content)) { return 'AlreadyCorrect' }
     if ($Check) { return 'WouldWrite' }
     # WriteAllText writes UTF-8 without a BOM; Set-Content in PowerShell 5.1 cannot.

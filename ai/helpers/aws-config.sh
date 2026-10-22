@@ -5,8 +5,9 @@
 # the same file in PowerShell (docs/adr/0010-aws-config-is-generated.md).
 #
 # The AWS CLI reads one config file and has no include, so several sources cannot be one link. Each
-# source goes in under a line naming it, in the order of the roots, the repo first and then the
-# overlays as machine.local.psd1 lists them; a root listed twice goes in once. The same section in
+# source goes in under a line naming it, in the order given, which overlay_sources aws/config gives
+# as the repo first and then the overlays as machine.local.psd1 lists them; a file given twice goes
+# in once. The same section in
 # two sources, as the AWS CLI names sections, is an error naming both, and nothing is written.
 #
 # The file opens with a header, then a checksum of what follows it. A file with both, still
@@ -22,12 +23,12 @@ AWS_CONFIG_HEADER_PREFIX='# Written by dotfiles from '
 AWS_CONFIG_CHECKSUM_PREFIX='# dotfiles-cksum: '
 AWS_CONFIG_BOM="$(printf '\357\273\277')"
 
-# aws_config_sources <roots, one per line>: each root's aws/config that exists, one per line, each
-# file once however its root was spelled.
+# aws_config_sources <aws/config files, one per line>: each that exists, one per line, each file
+# once however it was spelled.
 aws_config_sources() {
-    while IFS= read -r root; do
-        [ -n "$root" ] && [ -f "$root/aws/config" ] || continue
-        printf '%s/config\n' "$(cd "$root/aws" && pwd -P)"
+    while IFS= read -r file; do
+        [ -n "$file" ] && [ -f "$file" ] || continue
+        printf '%s/%s\n' "$(cd "$(dirname "$file")" && pwd -P)" "${file##*/}"
     done <<EOF | awk '!seen[$0]++'
 $1
 EOF
@@ -134,7 +135,7 @@ aws_config_problem() {
     [ -z "$clash" ] || printf 'aws/config section %s\n' "$clash"
 }
 
-# aws_config_apply <dst> <roots>: bring dst in line with the sources; report what it did. Returns 1
+# aws_config_apply <dst> <aws/config files>: bring dst in line with them; report what it did. Returns 1
 # when it could not, writing nothing.
 aws_config_apply() {
     sources="$(aws_config_sources "$2")"
@@ -172,7 +173,7 @@ aws_config_apply() {
     success "~/.aws/config written from $(printf '%s\n' "$sources" | grep -c .) aws/config file(s); run 'aws sso login' to authenticate"
 }
 
-# aws_config_check <dst> <roots>: report the state of dst and change nothing
+# aws_config_check <dst> <aws/config files>: report the state of dst and change nothing
 aws_config_check() {
     sources="$(aws_config_sources "$2")"
     if [ -z "$sources" ]; then

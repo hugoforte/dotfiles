@@ -2,7 +2,7 @@
 
 A Mac keeps itself in line with the repo the way a Windows machine does, through a job that runs
 `macos/sync.sh` at login and every 4 hours: a launchd **LaunchAgent**,
-`com.hugoforte.dotfiles-sync`, installed by `macos/install-sync-agent.sh` into
+`local.dotfiles.sync` (until #68, labelled after the owner), installed by `macos/install-sync-agent.sh` into
 `~/Library/LaunchAgents/`. It logs to `~/Library/Logs/dotfiles-sync.log`, where Console finds it.
 
 A run pulls this repo and every overlay repo fast-forward only, then runs `macos/setup.sh`, so

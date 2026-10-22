@@ -98,7 +98,7 @@ try {
     . (Join-Path $PSScriptRoot "managed-link.ps1")
     . (Join-Path $PSScriptRoot "overlays.ps1")
     try {
-        $overlays = Get-OverlayList -LocalPath (Join-Path $repoRoot "ai\secrets\machine.local.psd1")
+        $overlaySet = Get-Overlays -RepoPath $repoRoot
     } catch {
         Write-Log $_.Exception.Message
         exit 1
@@ -106,7 +106,7 @@ try {
     # A failed overlay pull leaves that overlay as it was, which the steps below can still apply;
     # stopping here would leave the links and secrets stale until someone read this log.
     $overlayPullFailed = $false
-    foreach ($overlayRepo in (Get-OverlayRepoRoots -Overlays $overlays)) {
+    foreach ($overlayRepo in $overlaySet.RepoRoots) {
         $overlayPull = Invoke-Native git -C $overlayRepo pull --ff-only
         if (-not $overlayPull.Ok) {
             Write-Log "git pull failed in $overlayRepo`: $($overlayPull.Output)"
@@ -115,7 +115,7 @@ try {
         }
         Write-Log "pulled $overlayRepo"
     }
-    Write-Log "~/.gitconfig-overlays: $(Update-GitOverlayInclude -Overlays $overlays)"
+    Write-Log "~/.gitconfig-overlays: $(Update-GitOverlayInclude -Fragments (Get-OverlaySource -Set $overlaySet -Path 'git/gitconfig'))"
 
     # Tools: after the overlay pull, so a tool an overlay adds lands on this sync rather than the
     # next. Only when a manifest or the options changed since the last successful run, and only the
@@ -143,7 +143,7 @@ try {
     $awsConfigPath = "$env:USERPROFILE\.aws\config"
     $awsFailed = $false
     try {
-        $awsConfig = Set-AwsConfig -Path $awsConfigPath -Roots (@($repoRoot) + $overlays)
+        $awsConfig = Set-AwsConfig -Path $awsConfigPath -Sources (Get-OverlaySource -Set $overlaySet -Path "aws/config")
     } catch {
         Write-Log "~/.aws/config left as it was: $($_.Exception.Message)"
         $awsFailed = $true
@@ -164,7 +164,7 @@ try {
     # The keys that may log in over SSH: overlays only, since the public repo never ships them.
     . (Join-Path $PSScriptRoot "authorized-keys.ps1")
     try {
-        $sshKeysSource = if ($overlays.Count) { Find-OverlayFile -Roots $overlays -RelativePath "ssh\authorized_keys" }
+        $sshKeysSource = Get-OverlaySource -Set $overlaySet -Path "ssh/authorized_keys"
     } catch {
         Write-Log $_.Exception.Message
         exit 1
