@@ -75,15 +75,25 @@ generated_file_is_ours() {
 }
 
 # generated_file_apply <dst> <label> <relative path> <body function> <sources> <written message>
-# <links>: bring dst in line with the sources; report what it did. Returns 1 when it could not.
+# <links> [mode]: bring dst in line with the sources, with that mode when one is given, set before
+# the file is swapped in; report what it did. Returns 1 when it could not.
 # <links> is replace-links where a link at dst can only be one an earlier setup made, which is
 # removed, or back-up-links where it can only be someone's own, which is moved aside like a file.
 generated_file_apply() {
     mkdir -p "$(dirname "$1")" || return 1
     staged="$1.dotfiles-new"
     generated_file_write "$3" "$4" "$5" "$staged" || { rm -f "$staged"; return 1; }
+    if [ -n "$8" ] && ! chmod "$8" "$staged"; then
+        rm -f "$staged"
+        error "could not set $2 to mode $8"
+        return 1
+    fi
     if [ -f "$1" ] && [ ! -L "$1" ] && cmp -s "$staged" "$1"; then
         rm -f "$staged"
+        if [ -n "$8" ] && ! chmod "$8" "$1"; then
+            error "could not set $2 to mode $8"
+            return 1
+        fi
         success "$2 already current"
         return 0
     fi

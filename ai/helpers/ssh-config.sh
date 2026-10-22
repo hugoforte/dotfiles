@@ -47,11 +47,14 @@ ssh_config_apply() {
         return 1
     fi
 
-    mkdir -p "$(dirname "$1")" && chmod 700 "$(dirname "$1")" || return 1
+    mkdir -p "$(dirname "$1")" || return 1
+    if ! chmod 700 "$(dirname "$1")"; then
+        error "could not set ~/.ssh to mode 700"
+        return 1
+    fi
     generated_file_apply "$1" "~/.ssh/config" ssh/config ssh_config_body "$sources" \
         "~/.ssh/config written from $(printf '%s\n' "$sources" | grep -c .) ssh/config file(s)" \
-        back-up-links || return 1
-    chmod 600 "$1"
+        back-up-links 600
 }
 
 # ssh_config_check <dst> <roots>: report the state of dst and change nothing

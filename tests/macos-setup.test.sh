@@ -396,6 +396,20 @@ if [ "$holds_modes" = "true" ]; then
     assert_eq "and ~/.ssh back to 700" "drwx------" "$(mode "$home/.ssh")"
 fi
 
+# A chmod that fails for one mode, and does the rest.
+mkdir -p "$work/failing-chmod"
+printf '#!/bin/sh\n[ "$1" = "$FAIL_MODE" ] && exit 1\nexec /bin/chmod "$@"\n' > "$work/failing-chmod/chmod"
+/bin/chmod +x "$work/failing-chmod/chmod"
+out="$(FAIL_MODE=700 PATH="$work/failing-chmod:$PATH" run)"; rc=$?
+assert_eq "a ~/.ssh whose mode cannot be set fails install" "1" "$rc"
+assert_eq "and says so" "y" "$(says "$out" "could not set ~/.ssh to mode 700")"
+printf 'ForwardAgent no\n' >> "$second/ssh/config"
+out="$(FAIL_MODE=600 PATH="$work/failing-chmod:$PATH" run)"; rc=$?
+assert_eq "a ~/.ssh/config whose mode cannot be set fails install" "1" "$rc"
+assert_eq "and says so" "y" "$(says "$out" "could not set ~/.ssh/config to mode 600")"
+assert_eq "and does not say it was written" "n" "$(says "$out" "~/.ssh/config written")"
+install
+
 rm -r "$personal/ssh/config" "$second/ssh"
 out="$(check)"; rc=$?
 assert_eq "--check fails on a merged ~/.ssh/config with no source left" "1" "$rc"
