@@ -1,6 +1,6 @@
 # ~/.ssh/config is generated from every overlay's ssh/config
 
-An overlay may need to add to the ssh client's configuration: Kealu's SSH installer puts its host
+An overlay may need to add to the ssh client's configuration: an employer's SSH installer puts its host
 config in `~/.ssh/config.d/` and relies on `~/.ssh/config` holding `Include ~/.ssh/config.d/*`.
 Finding no `~/.ssh/config`, it leaves a `~/.ssh/config.new` beside it, which ssh never reads. More
 than one overlay may ship such a line, so `~/.ssh/config` is written the way `~/.aws/config` is
@@ -13,7 +13,7 @@ the precedence. A few keywords add up instead, as ssh_config(5) notes for each: 
 `CertificateFile`, `LocalForward`, `RemoteForward`, `DynamicForward` and `SendEnv`. Two overlays'
 `IdentityFile` for one host are both tried, in overlay order. The first-value rule holds however
 broad the earlier block is: a `Host *` with `User hugo` in the personal overlay,
-listed first, gives Kealu's `Host kealu-box` with `User ubuntu`, listed after it, the user `hugo`.
+listed first, gives an employer overlay's `Host work-box` with `User ubuntu`, listed after it, the user `hugo`.
 So `Host *` defaults belong in the last-listed overlay, or under a `Match` that leaves the other
 overlays' hosts out. The generator does not reorder blocks to fix this, since which block is the
 default is the overlays' to say.
