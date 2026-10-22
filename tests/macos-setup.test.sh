@@ -376,6 +376,18 @@ assert_eq "--check leaves it as it was" "$before" "$(cat "$ssh_config")"
 install
 assert_eq "install rewrites it" "y" "$(says "$(cat "$ssh_config")" "Compression yes")"
 
+mkdir -p "$work/mysync"
+printf 'Host mine\n' > "$work/mysync/ssh_config"
+rm "$ssh_config"
+ln -s "$work/mysync/ssh_config" "$ssh_config"
+out="$(run)"
+set -- "$home"/.ssh/config.backup.*
+assert_eq "install moves a link at ~/.ssh/config aside, since dotfiles never makes one" "$work/mysync/ssh_config" "$(readlink "$1")"
+assert_eq "and names where it pointed" "y" "$(says "$out" "~/.ssh/config was a link to $work/mysync/ssh_config")"
+assert_eq "and writes the merged file in its place" "n" "$([ -L "$ssh_config" ] && echo y || echo n)"
+assert_eq "and leaves the link's target untouched" "Host mine" "$(cat "$work/mysync/ssh_config")"
+rm "$1"
+
 if [ "$holds_modes" = "true" ]; then
     chmod 644 "$ssh_config"
     chmod 755 "$home/.ssh"

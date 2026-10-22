@@ -9,7 +9,8 @@
 # matching, is this one's own and is replaced freely; anything else is someone's, and is backed up
 # first (docs/adr/0003-back-up-then-link.md). The checksum is there because another program may
 # edit the file by appending, as aws configure sso does, which leaves the header as it was. A link
-# holds no content of its own, so it is replaced without a backup.
+# that setup used to make holds no content of its own, so it is replaced without a backup; one
+# only its owner can have made is backed up.
 #
 # POSIX sh has no `local`: these assign in the caller's shell. generated_file_check sets
 # CHECK_FAILED=1 on drift.
@@ -73,8 +74,10 @@ generated_file_is_ours() {
     [ -n "$recorded" ] && [ "$recorded" = "$(tail -n +3 "$1" | generated_file_checksum)" ]
 }
 
-# generated_file_apply <dst> <label> <relative path> <body function> <sources> <written message>:
-# bring dst in line with the sources; report what it did. Returns 1 when it could not.
+# generated_file_apply <dst> <label> <relative path> <body function> <sources> <written message>
+# <links>: bring dst in line with the sources; report what it did. Returns 1 when it could not.
+# <links> is replace-links where a link at dst can only be one an earlier setup made, which is
+# removed, or back-up-links where it can only be someone's own, which is moved aside like a file.
 generated_file_apply() {
     mkdir -p "$(dirname "$1")" || return 1
     staged="$1.dotfiles-new"
@@ -85,7 +88,11 @@ generated_file_apply() {
         return 0
     fi
 
-    if [ -L "$1" ]; then
+    if [ -L "$1" ] && [ "$7" = "back-up-links" ]; then
+        link_target="$(readlink "$1")"
+        move_aside "$1" || { rm -f "$staged"; return 1; }
+        warning "$2 was a link to $link_target - moved it aside to $backup"
+    elif [ -L "$1" ]; then
         rm -f "$1"
     elif [ -e "$1" ] && ! generated_file_is_ours "$1"; then
         move_aside "$1" || { rm -f "$staged"; return 1; }

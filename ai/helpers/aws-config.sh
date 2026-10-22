@@ -96,7 +96,8 @@ aws_config_apply() {
     fi
 
     generated_file_apply "$1" "~/.aws/config" aws/config aws_config_body "$sources" \
-        "~/.aws/config written from $(printf '%s\n' "$sources" | grep -c .) aws/config file(s); run 'aws sso login' to authenticate"
+        "~/.aws/config written from $(printf '%s\n' "$sources" | grep -c .) aws/config file(s); run 'aws sso login' to authenticate" \
+        replace-links
 }
 
 # aws_config_check <dst> <roots>: report the state of dst and change nothing
