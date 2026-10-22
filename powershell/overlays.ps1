@@ -22,6 +22,7 @@
 $OverlayTable = @(
     [pscustomobject]@{ Path = 'aws/config';                 Count = 'all';     Roots = 'repo+overlays' }
     [pscustomobject]@{ Path = 'ssh/authorized_keys';        Count = 'one';     Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'ssh/config';                 Count = 'all';     Roots = 'repo+overlays' }
     [pscustomobject]@{ Path = 'machines/{KEY}.psd1';        Count = 'one';     Roots = 'overlays' }
     [pscustomobject]@{ Path = 'machines/{KEY}.Brewfile';    Count = 'one';     Roots = 'overlays' }
     [pscustomobject]@{ Path = 'git/gitconfig';              Count = 'all';     Roots = 'overlays' }

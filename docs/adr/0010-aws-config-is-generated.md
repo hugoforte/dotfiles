@@ -32,7 +32,7 @@ dotfiles' own, as it does for `ssh/authorized_keys`' copy on Windows, because th
 and leaves the header as it was. So a second line holds a checksum of the rest, and the file is
 dotfiles' own only while that still matches: SHA-256 on Windows, `cksum` on a Mac, each read only
 by the platform that wrote it. That rule lives once per language, in
-`powershell/generated-file.ps1` and `ai/helpers/aws-config.sh` with `move_aside` in
+`powershell/generated-file.ps1` and `ai/helpers/generated-file.sh` with `move_aside` in
 `ai/helpers/managed-link.sh`.
 
 A link at `~/.aws/config` is what every machine had before this, and holds no content of its own,
