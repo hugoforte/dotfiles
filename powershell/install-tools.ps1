@@ -3,11 +3,13 @@
 #   install-tools.ps1              install everything missing; report manual steps
 #   install-tools.ps1 -Check       report only; exit 1 if anything is missing
 #   install-tools.ps1 -Unattended  install only entries safe to install unwatched
-#   install-tools.ps1 -IfChanged   do nothing unless a manifest or the options have changed since the last run
+#   install-tools.ps1 -IfChanged   install nothing unless a manifest or the options have changed since the last run;
+#                                  Configure scripts still run
 #   install-tools.ps1 -PassThru    also return the result object, for a caller that reads it
 #
 # Idempotent: entries install only when missing. Nothing is ever upgraded or uninstalled -
-# a program on the machine and not in the manifest was installed on purpose.
+# a program on the machine and not in the manifest was installed on purpose. An entry with a
+# Configure script has it run once the program is present, on every run.
 #
 # Optional entries install only on a machine that opts into them, in machine.local.psd1 or in an
 # overlay's machines/<KEY>.psd1: see tool-selection.ps1.
@@ -67,12 +69,20 @@ $tools = $selection.Selected
 
 $manifestHash = Get-ToolStateHash -ManifestPath $manifestPaths -OptedIn $optedIn
 
+# Unchanged since the last successful run: nothing to install, but a Configure script still runs,
+# because what it applies lives outside the manifests and can change, or drift, on its own.
+$configureOnly = $false
 if ($IfChanged) {
     $applied = $null
     if (Test-Path $statePath) { $applied = (Get-Content $statePath -Raw).Trim() }
     if ($applied -eq $manifestHash) {
-        Ok "manifests and options unchanged since the last successful run; nothing to do"
-        Exit-WithResult $result 0
+        $tools = @($tools | Where-Object { $_.Configure })
+        if ($tools.Count -eq 0) {
+            Ok "manifests and options unchanged since the last successful run; nothing to do"
+            Exit-WithResult $result 0
+        }
+        Ok "manifests and options unchanged since the last successful run; only configuring"
+        $configureOnly = $true
     }
 }
 
@@ -132,7 +142,7 @@ function Get-InstalledProgramNames {
     return $script:installedPrograms
 }
 
-function Test-GitHubRelease {
+function Test-InstalledProgram {
     param([hashtable]$Tool)
     return (Test-ProgramListed -DisplayName $Tool.Present -Listed @(Get-InstalledProgramNames))
 }
@@ -163,20 +173,36 @@ function Install-UvTool {
     return $install.Ok
 }
 
-# Downloads the latest release's installer asset and runs it with the entry's InstallArgs. The
-# reason for a failure is printed; the caller records the one outcome.
-function Install-GitHubRelease {
+# Downloads an installer and runs it with the entry's InstallArgs: for a github-release entry, the
+# latest release's asset; for a download entry, its Url. The reason for a failure is printed; the
+# caller records the one outcome.
+function Install-Downloaded {
     param([hashtable]$Tool)
     # 5.1 redraws its progress bar per chunk, which makes a large download crawl.
     $ProgressPreference = 'SilentlyContinue'
     $installer = $null
     try {
-        $release = Invoke-RestMethod "https://api.github.com/repos/$($Tool.Id)/releases/latest" -UseBasicParsing
-        $asset = Select-ReleaseAsset -Assets @($release.assets) -Pattern $Tool.Asset
+        if ($Tool.Source -eq 'download') {
+            $name = [IO.Path]::GetFileName(([Uri]$Tool.Url).AbsolutePath)
+            $url = $Tool.Url
+        } else {
+            $release = Invoke-RestMethod "https://api.github.com/repos/$($Tool.Id)/releases/latest" -UseBasicParsing
+            $asset = Select-ReleaseAsset -Assets @($release.assets) -Pattern $Tool.Asset
+            $name = $asset.name
+            $url = $asset.browser_download_url
+        }
         $downloadDir = Join-Path $env:TEMP "dotfiles-tools"
         if (-not (Test-Path $downloadDir)) { New-Item -ItemType Directory -Path $downloadDir | Out-Null }
-        $installer = Join-Path $downloadDir $asset.name
-        Invoke-WebRequest $asset.browser_download_url -OutFile $installer -UseBasicParsing
+        $installer = Join-Path $downloadDir $name
+        Invoke-WebRequest $url -OutFile $installer -UseBasicParsing
+        # A fixed address can start serving something else; only the installer the entry names runs.
+        if ($Tool.Sha256) {
+            $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
+            if ($actual -ne $Tool.Sha256) {
+                Say "  $($Tool.Id): $url has SHA-256 $actual, not the entry's $($Tool.Sha256); not run" Yellow
+                return $false
+            }
+        }
         # Not -Wait: in 5.1 that also waits for every process the installer starts, such as the app.
         $process = Start-Process -FilePath $installer -ArgumentList @($Tool.InstallArgs) -PassThru
         $process.WaitForExit()
@@ -190,6 +216,21 @@ function Install-GitHubRelease {
             Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
         }
     }
+}
+
+# Runs an entry's Configure script in its own process, with -Check when this run only reports.
+# The script sets the program up as the declaring repo wants it, changing only what has drifted,
+# and exits non-zero when it failed or, under -Check, when something has drifted. Through
+# Invoke-Native, so a script's stderr cannot end this run. Its output is printed; on failure its
+# last lines go into the warning too, since -Quiet keeps printed lines out of the sync's log.
+function Invoke-Configure {
+    param([hashtable]$Tool)
+    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $Tool.Configure)
+    if ($Check) { $arguments += '-Check' }
+    $run = Invoke-Native powershell @arguments
+    foreach ($line in ($run.Output -split "`r?`n" | Where-Object { $_ })) { Say "  $line" }
+    $tail = (@($run.Output -split "`r?`n" | Where-Object { $_ }) | Select-Object -Last 3) -join ' | '
+    return [pscustomobject]@{ Ok = $run.Ok; Tail = $tail }
 }
 
 # --- Apply -------------------------------------------------------------------------------------
@@ -214,15 +255,17 @@ if (-not $machinePath) {
 }
 
 # An unknown name is a missing tool in every mode: it fails -Check and holds back the hash, so a
-# typo is reported on every run rather than once.
-foreach ($name in $selection.Unknown) {
-    Warn "this machine opts into '$name', which no tools.psd1 entry declares as Optional"
-    $missing++
-    if (-not $Check) { $failed++ }
-}
-$optInPath = if ($machinePath) { $machinePath } else { $localPath }
-foreach ($name in $selection.Available) {
-    Say "optional, not on this machine: $name - add it to OptionalTools in $optInPath to install it" DarkGray
+# typo is reported on every run rather than once. A configure-only run is past that point.
+if (-not $configureOnly) {
+    foreach ($name in $selection.Unknown) {
+        Warn "this machine opts into '$name', which no tools.psd1 entry declares as Optional"
+        $missing++
+        if (-not $Check) { $failed++ }
+    }
+    $optInPath = if ($machinePath) { $machinePath } else { $localPath }
+    foreach ($name in $selection.Available) {
+        Say "optional, not on this machine: $name - add it to OptionalTools in $optInPath to install it" DarkGray
+    }
 }
 
 $manualSteps = @()
@@ -246,8 +289,14 @@ foreach ($tool in $tools) {
         if (-not $Check) { $failed++ }
         continue
     }
-    if ($source -eq 'github-release') {
-        $problem = Test-GitHubReleaseEntry -Tool $tool
+    # Here rather than as the switch's default, whose `continue` would leave only the switch and
+    # count the entry as a failed install.
+    if ($source -notin 'winget', 'npm', 'uv', 'github-release', 'download') {
+        Warn "$id has unknown Source '$source'; skipped"
+        continue
+    }
+    if ($source -in 'github-release', 'download') {
+        $problem = Test-InstallerEntry -Tool $tool
         if ($problem) { Warn $problem; $missing++; if (-not $Check) { $failed++ }; continue }
     }
 
@@ -256,36 +305,53 @@ foreach ($tool in $tools) {
         'winget' { $present = Test-WingetPackage $id }
         'npm'    { $present = Test-NpmPackage $id }
         'uv'     { $present = Test-UvTool $id }
-        'github-release' { $present = Test-GitHubRelease $tool }
-        default  { Warn "$id has unknown Source '$source'"; continue }
+        { $_ -in 'github-release', 'download' } { $present = Test-InstalledProgram $tool }
     }
 
-    if ($present) { Ok "$id"; continue }
-
-    $missing++
-
-    if ($Check) { Warn "$id missing ($source)"; continue }
-
-    if ($Unattended -and -not $unattendedOk) {
-        $deferred++
-        Warn "$id missing ($source) - not installed here: run install-tools.ps1 yourself when convenient"
+    if ($present) {
+        Ok "$id"
+    } elseif ($configureOnly) {
+        # Deferred, or not installed for a reason the run that recorded the hash already reported.
         continue
-    }
-
-    Change "installing $id ($source)"
-    $installed = $false
-    switch ($source) {
-        'winget' { $installed = Install-WingetPackage $id }
-        'npm'    { $installed = Install-NpmPackage $id }
-        'uv'     { $installed = Install-UvTool $id }
-        'github-release' { $installed = Install-GitHubRelease $tool }
-    }
-
-    if ($installed) {
-        Ok "$id installed"
     } else {
-        $failed++
-        Warn "$id failed to install ($source)"
+        $missing++
+
+        if ($Check) { Warn "$id missing ($source)"; continue }
+
+        if ($Unattended -and -not $unattendedOk) {
+            $deferred++
+            Warn "$id missing ($source) - not installed here: run install-tools.ps1 yourself when convenient"
+            continue
+        }
+
+        Change "installing $id ($source)"
+        $installed = $false
+        switch ($source) {
+            'winget' { $installed = Install-WingetPackage $id }
+            'npm'    { $installed = Install-NpmPackage $id }
+            'uv'     { $installed = Install-UvTool $id }
+            { $_ -in 'github-release', 'download' } { $installed = Install-Downloaded $tool }
+        }
+
+        if (-not $installed) {
+            $failed++
+            Warn "$id failed to install ($source)"
+            continue
+        }
+        Ok "$id installed"
+    }
+
+    if ($tool.Configure) {
+        $configured = Invoke-Configure $tool
+        if ($configured.Ok) {
+            Ok "$id configured"
+        } elseif ($Check) {
+            $missing++
+            Warn "$id not configured as declared ($($configured.Tail)): run $($tool.Configure)"
+        } else {
+            $failed++
+            Warn "$id failed to configure ($($configured.Tail)): $($tool.Configure)"
+        }
     }
 }
 
@@ -309,7 +375,7 @@ if ($manualSteps.Count -gt 0) {
 # are setup.ps1's job and a deliberate run's job, and they would otherwise re-probe on every sync
 # forever, which is the cost the gate exists to avoid.
 
-if (-not $Check -and $failed -eq 0) {
+if (-not $Check -and -not $configureOnly -and $failed -eq 0) {
     if (-not (Test-Path $stateDir)) { New-Item -ItemType Directory -Path $stateDir | Out-Null }
     Set-Content -Path $statePath -Value $manifestHash -Encoding utf8
 }
@@ -318,12 +384,12 @@ if (-not $Check -and $failed -eq 0) {
 # not recorded a second time.
 Say ""
 if ($Check) {
-    if ($missing -gt 0) { Summary Warn "$missing tool(s) missing"; Exit-WithResult $result 1 }
-    Summary Ok "every declared tool is installed"
+    if ($missing -gt 0) { Summary Warn "$missing tool(s) missing or not configured as declared"; Exit-WithResult $result 1 }
+    Summary Ok "every declared tool is installed and configured"
     Exit-WithResult $result 0
 }
 
 if ($deferred -gt 0) { Summary Warn "$deferred tool(s) skipped as not safe to install unwatched - run powershell\install-tools.ps1 when convenient" }
-if ($failed -gt 0) { Summary Warn "$failed tool(s) failed to install"; Exit-WithResult $result 1 }
+if ($failed -gt 0) { Summary Warn "$failed tool(s) failed to install or configure"; Exit-WithResult $result 1 }
 Summary Ok "tools up to date"
 Exit-WithResult $result 0
