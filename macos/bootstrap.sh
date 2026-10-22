@@ -163,6 +163,9 @@ for path in $(printf '%s\n' "$OVERLAY_TABLE" | awk '$2 == "one" { print $1 }'); 
     overlay_sources "$path" > /dev/null || die "nothing was written; if dotfiles still carries what the overlay now holds, pull it"
 done
 merged_skill_registry > /dev/null || die "nothing was written"
+. "$DOTFILES/ai/helpers/aws-config.sh"
+aws_problem="$(aws_config_problem "$(aws_config_sources "$(overlay_sources aws/config)")")"
+[ -z "$aws_problem" ] || die "$aws_problem; nothing was written"
 
 local_psd1="$DOTFILES/ai/secrets/machine.local.psd1"
 if [ -f "$local_psd1" ]; then
