@@ -24,7 +24,9 @@ import { fileURLToPath } from 'node:url';
 const heredocOpener = /(?<!<)<<(?!<)-?\s*(['"]?)([\w.-]+)\1/g;
 const interpreter = /^(\S*\/)?(python3?|py|node|perl|ruby|bash|sh)\b/;
 const fileRedirect = /(^|\s)\d?>{1,2}\s*(?!&|\/dev\/null\b)\S/;
-const inPlaceEdit = /^(sed\b.*\s(-[a-zA-Z]*i|--in-place)|perl\b.*\s-[a-zA-Z]*i)/;
+// perl's -i counts only among perl's own switches, which run until the script or the first word
+// that is not one; an -e or -E takes the next word as its code, and switches may follow it.
+const inPlaceEdit = /^(sed\b.*\s(-[a-zA-Z]*i|--in-place)|perl(\s+(-[a-zA-Z]*[eE]\s+\S+|-\S+))*?\s+-[a-zA-Z]*i)/;
 const ghMerge = /^gh\s+(pr|stack)\s+merge\b/;
 const ghApiMerge = /^gh\s+api\b(?=.*\/pulls\/[^/\s]+\/merge\b)(?=.*(-X\s*|--method[\s=]+)PUT\b)/;
 const ghGraphqlMerge = /^gh\s+api\s+graphql\b.*\b(mergePullRequest|enablePullRequestAutoMerge)\b/;
