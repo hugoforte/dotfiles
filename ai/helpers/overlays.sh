@@ -23,6 +23,7 @@
 # is a folder; every other is a file.
 OVERLAY_TABLE='aws/config all repo+overlays
 ssh/authorized_keys one overlays
+ssh/config all repo+overlays
 machines/{KEY}.psd1 one overlays
 machines/{KEY}.Brewfile one overlays
 git/gitconfig all overlays

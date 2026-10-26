@@ -31,7 +31,7 @@ git_repo() {
 # The dotfiles to clone: the real overlay reader, and macos/ scripts that log their own name.
 fixture_dotfiles="$work/fixture-dotfiles"
 mkdir -p "$fixture_dotfiles/macos" "$fixture_dotfiles/ai/helpers" "$fixture_dotfiles/ai/secrets"
-cp "$REPO_ROOT/ai/helpers/overlays.sh" "$REPO_ROOT/ai/helpers/aws-config.sh" "$fixture_dotfiles/ai/helpers/"
+cp "$REPO_ROOT/ai/helpers/overlays.sh" "$REPO_ROOT/ai/helpers/generated-file.sh" "$REPO_ROOT/ai/helpers/aws-config.sh" "$fixture_dotfiles/ai/helpers/"
 for script in setup.sh install-sync-agent.sh deploy-secrets.sh; do
     printf 'echo "%s $*" >> "%s"\n' "$script" "$log" > "$fixture_dotfiles/macos/$script"
 done
