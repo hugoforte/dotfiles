@@ -132,9 +132,13 @@ generated_file_check() {
         warning "$2 was not written by dotfiles, or was edited; setup backs it up and replaces it"
         CHECK_FAILED=1
     else
-        expected="$(mktemp)" || return 1
-        generated_file_write "$3" "$4" "$5" "$expected"
-        if cmp -s "$expected" "$1"; then
+        if ! expected="$(mktemp)"; then
+            warning "could not make a copy to compare $2 with"
+            CHECK_FAILED=1
+        elif ! generated_file_write "$3" "$4" "$5" "$expected"; then
+            warning "could not merge the $3 files to compare $2 with"
+            CHECK_FAILED=1
+        elif cmp -s "$expected" "$1"; then
             success "$2"
         else
             warning "$2 is behind the $3 files it merges"

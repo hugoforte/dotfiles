@@ -449,6 +449,15 @@ assert_eq "install backs up the edit" "y" "$(says "$(cat "$1")" "Host added-by-h
 assert_eq "and writes the merged file without it" "n" "$(says "$(cat "$ssh_config")" "added-by-hand")"
 rm "$1"
 
+# A mktemp that fails for the copy --check compares against, and makes the rest.
+real_mktemp="$(command -v mktemp)"
+mkdir -p "$work/failing-mktemp"
+printf '#!/bin/sh\n[ $# -eq 0 ] && exit 1\nexec "%s" "$@"\n' "$real_mktemp" > "$work/failing-mktemp/mktemp"
+chmod +x "$work/failing-mktemp/mktemp"
+out="$(PATH="$work/failing-mktemp:$PATH" check)"; rc=$?
+assert_eq "--check fails when it cannot make the copy to compare ~/.ssh/config with" "1" "$rc"
+assert_eq "and says so" "y" "$(says "$out" "could not make a copy to compare ~/.ssh/config with")"
+
 if chmod 000 "$second/ssh/config" 2> /dev/null && [ ! -r "$second/ssh/config" ]; then
     before="$(cat "$ssh_config")"
     out="$(run)"; rc=$?
