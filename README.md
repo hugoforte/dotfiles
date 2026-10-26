@@ -18,7 +18,7 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
 | Bruno API collections | an overlay's `bruno/<collection>/` | `~/bruno/<collection>` (symlinks) | `ai/install.sh` |
 | Claude Code global instructions | `ai/CLAUDE.md` | `~/.claude/CLAUDE.md` and each extra Claude config folder's (symlinks) | `ai/install.sh` |
 | Claude Code sub-agents | `ai/agents/*.md` | `~/.claude/agents/` and each extra Claude config folder's (symlinks) | `ai/install.sh` |
-| Claude Code settings (model, plugins, allowlist) | `ai/claude/settings.json` | merged into `~/.claude/settings.json` and each extra Claude config folder's | `ai/install.sh` |
+| Claude Code settings (model, plugins, skill listing, allowlist) | `ai/claude/settings.json` | merged into `~/.claude/settings.json` and each extra Claude config folder's | `ai/install.sh` |
 | Extra Claude config folders, one login each | an overlay's `ai/claude/config-dirs`, and `machines/<KEY>.config-dirs` for one machine | the folders it names get the same as `~/.claude` | `ai/install.sh` |
 | Skill secrets (encrypted with SOPS + age) | `ai/secrets/<skill>/`, here or in an overlay | `%USERPROFILE%\.agent-secrets\` (`~/.agent-secrets/` on a Mac), then symlinked into every checkout that has the skill (shipped skills read them in place) | `powershell/deploy-secrets.ps1`, `macos/deploy-secrets.sh` |
 | Commands for every shell, agents' included (`md-lint`, `check-encrypted`, `leak-check`) | `bin/` | the user PATH | `powershell/setup.ps1`, `powershell/sync.ps1` |
