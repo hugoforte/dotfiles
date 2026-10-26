@@ -27,6 +27,7 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
 | Automatic pull-and-relink | `powershell/sync.ps1` | Windows scheduled task "Dotfiles Sync" | `powershell/install-sync-task.ps1` |
 | Automatic pull-and-relink on a Mac | `macos/sync.sh` | LaunchAgent `local.dotfiles.sync`, logging to `~/Library/Logs/dotfiles-sync.log` | `macos/install-sync-agent.sh` |
 | Claude account rotation (`cswap auto`), on machines with the `claude-swap` option | none | Windows scheduled task "Claude Swap Auto", at sign-in | `powershell/install-cswap-task.ps1` |
+| Claude account rotation (`cswap auto`) on a Mac that installs claude-swap | none | LaunchAgent `local.dotfiles.cswap-auto`, at login and every minute, logging to `~/Library/Logs/cswap-auto.log` | `macos/install-cswap-agent.sh` |
 | Copilot repo instructions and prompts | `.github/` | used in place by GitHub Copilot | none |
 | Engineering-skill config for this repo | `AGENTS.md`, `docs/agents/` | used in place by Claude Code | none |
 
@@ -191,6 +192,8 @@ Outside T3 Code, a session uses `~/.claude` unless it is started with `CLAUDE_CO
 1. Sign each account into `~/.claude` in turn (`claude auth login`) and run `cswap add` after each. Do not `/logout` between them: that can revoke the login just added.
 2. Run `.\powershell\install-cswap-task.ps1`. It registers the "Claude Swap Auto" scheduled task, which runs `cswap auto` hidden at every sign-in, restarts it a minute after it exits, logs to `%LOCALAPPDATA%\dotfiles\cswap-auto.log`, and starts it now. Re-running it is safe; `-Uninstall` stops and removes it.
 3. `cswap list` shows every account's usage and which one is active.
+
+On a Mac, claude-swap is not an option but a Brewfile line: `uv "claude-swap"`, beside `brew "uv"`, in an overlay's `macos/Brewfile` or `machines/<KEY>.Brewfile`, and `brew bundle` installs it. Add the accounts as in step 1 and run `sh macos/install-cswap-agent.sh`, in either order: before any account is added, each run logs that the login is not one it manages. The script installs the LaunchAgent `local.dotfiles.cswap-auto`, which runs one `cswap auto --once` at login, now and every minute, and logs to `~/Library/Logs/cswap-auto.log`. Each run first moves a log over 1 MB to `cswap-auto.log.1`, and an upgraded claude-swap is picked up by the next run. Re-running the script with nothing changed leaves the agent alone; `--check` reports drift, and `--uninstall` removes it, which comes before uninstalling claude-swap, or the agent goes on trying to run it every minute. Keep the auto-switch in claude-swap's menu bar off: with both on, two engines poll the usage API. The Mac keeps the login in the Keychain, which Claude Code caches for about 30 seconds, so a running session moves to the new account within half a minute of a switch.
 
 claude.ai connectors (Atlassian, Microsoft 365 and the like) belong to a claude.ai account, not to a machine, so after a switch new sessions get the other account's connectors. Set up the connectors you need on every account in the rotation.
 

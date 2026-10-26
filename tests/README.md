@@ -59,6 +59,7 @@ testable yet:
 | `macos/deploy-secrets.sh` | `HOME`, the registries and the checkouts are fixtures, and `sops` is a stub that "decrypts" by dropping a prefix | this change |
 | `macos/sync.sh` | the repo and the overlay repo are clones of fixture origins, so its pulls are real; `brew` and `sops` are stubs | this change |
 | `macos/install-sync-agent.sh` | `HOME` is a fixture and `launchctl` a stub; where `plutil` exists the plist must pass its lint | this change |
+| `macos/install-cswap-agent.sh` | `HOME` is a fixture, `launchctl` (which remembers what it loaded) and `cswap` are stubs, and `PATH` holds only them and the system's tools; the agent's command is run through `/bin/sh` against the stub; where `plutil` exists the plist must pass its lint | this change |
 
 **Everything else is untestable on purpose, not by oversight.** `setup.ps1`, `sync.ps1`,
 `install-sync-task.ps1`, `install-cswap-task.ps1`, and `install-tools.ps1` / `deploy-secrets.ps1` without `-Check` read
