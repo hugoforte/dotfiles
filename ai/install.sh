@@ -2,7 +2,7 @@
 
 # Installs the AI tooling in this repo into the agents' home directories by symlink.
 # Components: CLAUDE.md, agents (this repo's and the overlays'), rules, skills, rig skills, overlay
-# skills, Bruno collections, settings.
+# skills, Bruno collections, settings, MCP servers.
 # The Claude ones apply to ~/.claude and to every extra Claude config folder (see CLAUDE_DIRS).
 # See --help.
 
@@ -36,9 +36,9 @@ BRUNO_DIR="$HOME/bruno"
 TAB="$(printf '\t')"
 
 # The Claude config folders, one per line: ~/.claude, then each extra folder the overlays name in
-# their ai/claude/config-dirs, or in this machine's machines/<KEY>.config-dirs. Each gets exactly what ~/.claude gets: CLAUDE.md, agents, skills and
-# the managed settings. Nothing else in a folder is touched, so its login (.credentials.json),
-# .claude.json, history and projects stay Claude Code's. Set by resolve_claude_dirs; a path may
+# their ai/claude/config-dirs, or in this machine's machines/<KEY>.config-dirs. Each gets exactly what ~/.claude gets: CLAUDE.md, agents, skills,
+# the managed settings and the overlays' MCP servers. Nothing else in a folder is touched, so its
+# login (.credentials.json), the rest of its .claude.json, history and projects stay Claude Code's. Set by resolve_claude_dirs; a path may
 # hold spaces, so loop over it line by line, never with `for`.
 CLAUDE_DIRS="$CLAUDE_DIR"
 
@@ -464,6 +464,90 @@ $hook_argvs
 EOF
 }
 
+# MCP servers are merged, not linked, into each folder's user scope: .claude.json is Claude Code's
+# own file, holding the login's state and every server added with `claude mcp add`. An overlay
+# declares servers in ai/claude/mcp.json, shaped like a project's .mcp.json
+# ({"mcpServers": {"<name>": {...}}}). Each is set by name, so a server added by hand stays; the
+# first overlay to declare a name keeps it. A server no overlay declares any more is left in
+# place, since a hand-added one looks the same: `claude mcp remove -s user <name>` takes it out.
+# No server ships from this repo: which a machine has is the overlays' choice.
+
+# claude_json <dir>: the file Claude Code keeps a config folder's user scope in. ~/.claude's is
+# beside it, not in it; a folder named by CLAUDE_CONFIG_DIR keeps it inside.
+claude_json() {
+    if same_path "$1" "$CLAUDE_DIR"; then echo "$HOME/.claude.json"; else echo "$1/.claude.json"; fi
+}
+
+# load_mcp_servers: set MCP_SERVERS to every overlay's servers as one JSON object. A name an
+# earlier overlay declared, or a file that is not an object of objects, is warned about and fails
+# --check. Sets globals rather than printing, so the warnings and CHECK_FAILED reach this shell.
+load_mcp_servers() {
+    MCP_SERVERS='{}'
+    while IFS= read -r mcp_file; do
+        [ -n "$mcp_file" ] || continue
+        if ! mcp_these="$(jq -ce '.mcpServers | objects | select(all(.[]; type == "object"))' "$mcp_file" 2> /dev/null)"; then
+            warning "$mcp_file: mcpServers is not an object of server objects - skipped"
+            CHECK_FAILED=1
+            continue
+        fi
+        while IFS= read -r mcp_name; do
+            [ -n "$mcp_name" ] || continue
+            warning "$mcp_file: MCP server $mcp_name not set: an earlier overlay declares that name"
+            [ "$MODE" = "install" ] || CHECK_FAILED=1
+        done <<EOF
+$(jq -rn --argjson have "$MCP_SERVERS" --argjson these "$mcp_these" '$these | keys[] | select(in($have))')
+EOF
+        MCP_SERVERS="$(jq -cn --argjson have "$MCP_SERVERS" --argjson these "$mcp_these" '$these + $have')"
+    done <<EOF
+$(overlay_sources ai/claude/mcp.json)
+EOF
+}
+
+# MCP_DRIFT_JQ: the names of the servers in $servers that the file's user scope lacks or holds
+# differently.
+MCP_DRIFT_JQ='(.mcpServers // {}) as $live | $servers | to_entries[] | select($live[.key] != .value) | .key'
+
+install_mcp() {
+    command -v jq > /dev/null 2>&1 || return 0
+    load_mcp_servers
+    [ "$MCP_SERVERS" != '{}' ] || return 0
+    while IFS= read -r dir; do
+        file="$(claude_json "$dir")"
+        mkdir -p "$dir"
+        [ -s "$file" ] || printf '{}\n' > "$file"
+        # Written through a temporary file beside it and moved over, so Claude Code never reads half
+        # a file.
+        if jq --argjson servers "$MCP_SERVERS" '.mcpServers = ((.mcpServers // {}) + $servers)' "$file" > "$file.tmp" &&
+           mv "$file.tmp" "$file"; then
+            success "Set MCP servers $(jq -rn --argjson s "$MCP_SERVERS" '$s | keys | join(", ")') in $file"
+        else
+            rm -f "$file.tmp"
+            error "Could not set MCP servers in $file"
+        fi
+    done <<EOF
+$CLAUDE_DIRS
+EOF
+}
+uninstall_mcp() {
+    info "MCP servers are merged, not linked; remove one with: claude mcp remove -s user <name>"
+}
+check_mcp() {
+    command -v jq > /dev/null 2>&1 || { warning "jq not found - MCP servers not checked"; return 0; }
+    load_mcp_servers
+    [ "$MCP_SERVERS" != '{}' ] || return 0
+    while IFS= read -r dir; do
+        file="$(claude_json "$dir")"
+        drift="$(jq -r --argjson servers "$MCP_SERVERS" "$MCP_DRIFT_JQ" "$file" 2> /dev/null)" ||
+            drift="$(jq -rn --argjson servers "$MCP_SERVERS" '$servers | keys[]')"
+        if [ -n "$drift" ]; then
+            warning "$file lacks or differs on MCP servers: $(printf '%s' "$drift" | tr '\n' ' ')"
+            CHECK_FAILED=1
+        fi
+    done <<EOF
+$CLAUDE_DIRS
+EOF
+}
+
 # Copy the managed keys from ~/.claude's live file back into the repo fragment. Only ~/.claude:
 # the extra folders get the same keys from the fragment, so they are not a second source.
 export_settings() {
@@ -484,6 +568,7 @@ INSTALL_RIG_SKILLS=true
 INSTALL_OVERLAY_SKILLS=true
 INSTALL_BRUNO=true
 INSTALL_SETTINGS=true
+INSTALL_MCP=true
 
 disable_all() {
     INSTALL_CLAUDE_MD=false
@@ -494,6 +579,7 @@ disable_all() {
     INSTALL_OVERLAY_SKILLS=false
     INSTALL_BRUNO=false
     INSTALL_SETTINGS=false
+    INSTALL_MCP=false
 }
 
 show_help() {
@@ -504,8 +590,10 @@ show_help() {
     echo "ships and the skills each overlay in ai/secrets/machine.local.psd1 ships the same way,"
     echo "links each overlay's agents beside this repo's and its rules (<overlay>/ai/rules/*.md)"
     echo "into ~/.claude/rules, links each overlay's Bruno collections (<overlay>/bruno/) into ~/bruno, and merges"
-    echo "ai/claude/settings.json into ~/.claude/settings.json. Every extra Claude config folder"
-    echo "an overlay names in <overlay>/ai/claude/config-dirs gets the same as ~/.claude."
+    echo "ai/claude/settings.json into ~/.claude/settings.json, and sets the MCP servers each"
+    echo "overlay declares in <overlay>/ai/claude/mcp.json in ~/.claude.json's user scope. Every"
+    echo "extra Claude config folder an overlay names in <overlay>/ai/claude/config-dirs gets the"
+    echo "same as ~/.claude."
     echo ""
     echo "Modes:"
     echo "  (default)              Install"
@@ -523,6 +611,7 @@ show_help() {
     echo "  --overlay-skills-only  Only the skills overlays ship (<overlay>/ai/skills/)"
     echo "  --bruno-only           Only the Bruno collections overlays ship (<overlay>/bruno/)"
     echo "  --settings-only        Only settings merge"
+    echo "  --mcp-only             Only the MCP servers overlays declare (<overlay>/ai/claude/mcp.json)"
     echo "  --no-claude-md         Skip CLAUDE.md"
     echo "  --no-agents            Skip agents"
     echo "  --no-rules             Skip the rules overlays ship"
@@ -531,6 +620,7 @@ show_help() {
     echo "  --no-overlay-skills    Skip the skills overlays ship"
     echo "  --no-bruno             Skip the Bruno collections overlays ship"
     echo "  --no-settings          Skip settings merge"
+    echo "  --no-mcp               Skip the MCP servers overlays declare"
     echo "  -h, --help             Show this help"
     echo ""
     echo "Needs: Windows Developer Mode or an elevated shell for symlinks; jq for settings."
@@ -549,6 +639,7 @@ while [ $# -gt 0 ]; do
         --overlay-skills-only) disable_all; INSTALL_OVERLAY_SKILLS=true ;;
         --bruno-only)          disable_all; INSTALL_BRUNO=true ;;
         --settings-only)       disable_all; INSTALL_SETTINGS=true ;;
+        --mcp-only)            disable_all; INSTALL_MCP=true ;;
         --no-claude-md)        INSTALL_CLAUDE_MD=false ;;
         --no-agents)           INSTALL_AGENTS=false ;;
         --no-rules)            INSTALL_RULES=false ;;
@@ -557,14 +648,15 @@ while [ $# -gt 0 ]; do
         --no-overlay-skills)   INSTALL_OVERLAY_SKILLS=false ;;
         --no-bruno)            INSTALL_BRUNO=false ;;
         --no-settings)         INSTALL_SETTINGS=false ;;
+        --no-mcp)              INSTALL_MCP=false ;;
         -h|--help)             show_help; exit 0 ;;
         *)                     echo "Unknown option: $1"; show_help; exit 1 ;;
     esac
     shift
 done
 
-if [ "$MODE" = "install" ] && [ "$INSTALL_SETTINGS" = "true" ] && ! command -v jq > /dev/null 2>&1; then
-    warning "jq not found - settings merge will be skipped (winget install jqlang.jq)"
+if [ "$MODE" = "install" ] && { [ "$INSTALL_SETTINGS" = "true" ] || [ "$INSTALL_MCP" = "true" ]; } && ! command -v jq > /dev/null 2>&1; then
+    warning "jq not found - settings merge and MCP servers will be skipped (winget install jqlang.jq)"
 fi
 
 # A listed overlay that is gone fails an install or a check rather than dropping all it carries.
@@ -597,6 +689,7 @@ esac
 [ "$INSTALL_OVERLAY_SKILLS" = "true" ] && ${MODE}_overlay_skills
 [ "$INSTALL_BRUNO" = "true" ]     && ${MODE}_bruno
 [ "$INSTALL_SETTINGS" = "true" ]  && ${MODE}_settings
+[ "$INSTALL_MCP" = "true" ]       && ${MODE}_mcp
 
 # Secrets under ai/secrets/, here and in every overlay, must never be committed in plaintext;
 # verify on every check.
