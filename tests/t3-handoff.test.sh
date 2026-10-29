@@ -285,6 +285,9 @@ assert_eq "--key without --description is refused" \
 assert_eq "title prints the rename and the next title as JSON" \
     '{"rename":"RIG - [dotfiles#94] Handoff over MCP","next":"RIG - [dotfiles#94] Handoff over MCP 1"}' \
     "$(node "$module" title --current 'Move the handoff' --key 'dotfiles#94' --description 'Handoff over MCP')"
+assert_eq "a title may start with a dash, as one T3 drew from a message can" \
+    '{"next":"- fix the build 2"}' \
+    "$(node "$module" title --current '- fix the build')"
 assert_eq "title prints no rename for a standard title" \
     '{"next":"RIG - [dotfiles#94] Handoff over MCP 2"}' \
     "$(node "$module" title --current 'RIG - [dotfiles#94] Handoff over MCP 1')"
@@ -301,6 +304,22 @@ assert_eq "--from reads the project and configuration the MCP tools gave" \
 assert_eq "--from names every field it lacks" \
     "error: --from $(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json has no project.workspaceRoot, configuration.runtimeMode, configuration.interactionMode" \
     "$(from '{"project":{"title":"dotfiles-private"},"configuration":{"modelSelection":{"model":"m"}}}')"
+assert_eq "--from needs a model in the model selection" \
+    "error: --from $(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json has no configuration.modelSelection.model" \
+    "$(from '{"project":{"title":"t","workspaceRoot":"/w"},"configuration":{"modelSelection":{"instanceId":"claudeAgent"},"runtimeMode":"full-access","interactionMode":"default"}}')"
+
+configuration="{modelSelection:{instanceId:'claudeAgent_work',model:'m',options:[{id:'effort',value:'max'}]},runtimeMode:'auto',interactionMode:'plan'}"
+launch="t3.launchCommand($configuration, 'mac', 'Next 2', 'Read the handoff.')"
+
+assert_eq "the launch there carries this thread's model selection, options and instance included" \
+    '{"instanceId":"claudeAgent_work","model":"m","options":[{"id":"effort","value":"max"}]}' \
+    "$(call "JSON.stringify(($launch).modelSelection)")"
+assert_eq "the launch there keeps this thread's modes" \
+    "auto|plan" \
+    "$(call "((l) => l.runtimeMode + '|' + l.interactionMode)($launch)")"
+assert_eq "the launch there starts in the project's checkout with the prompt, under the next title" \
+    'mac|Next 2|{"type":"root"}|Read the handoff.' \
+    "$(call "((l) => [l.projectId, l.title, JSON.stringify(l.workspaceStrategy), l.initialMessage.text].join('|'))($launch)")"
 # Node words the parse error itself differently from version to version, so only what t3.mjs says is compared.
 assert_eq "--from that is not JSON says so" \
     "error: --from $(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json cannot be read as JSON" \

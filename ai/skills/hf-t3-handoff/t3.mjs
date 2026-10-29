@@ -188,13 +188,15 @@ export function parseArgs(argv) {
     const [command, ...rest] = argv;
     const flags = { dryRun: false };
     const named = { '--to': 'to', '--ttl': 'ttl', '--from': 'from', '--title': 'title', '--current': 'current', '--prompt-file': 'promptFile' };
+    // A title is free text and may start with a dash; a computer or a file named so is a flag left without its value.
+    const freeText = ['--title', '--current'];
     for (let i = 0; i < rest.length; i++) {
         const arg = rest[i];
         if (arg === '--dry-run') flags.dryRun = true;
         else if (named[arg]) {
             // A missing value must not fall back to this computer, or an empty title, without a word.
             const value = rest[++i]?.trim();
-            if (!value || value.startsWith('-')) throw new Problem(`${arg} needs a value`, USAGE);
+            if (!value || (value.startsWith('-') && !freeText.includes(arg))) throw new Problem(`${arg} needs a value`, USAGE);
             // T3's command line runs through cmd on Windows, so the ttl is kept to what cannot be a command.
             if (arg === '--ttl' && !/^[1-9]\d*\s*[a-z]+$/i.test(value)) throw new Problem(`--ttl must be a count and a unit such as 365d, not ${value}`, USAGE);
             flags[named[arg]] = value;
@@ -224,7 +226,7 @@ export function readFrom(path) {
     const missing = [
         ['project.title', project?.title],
         ['project.workspaceRoot', project?.workspaceRoot],
-        ['configuration.modelSelection', configuration?.modelSelection],
+        ['configuration.modelSelection.model', configuration?.modelSelection?.model],
         ['configuration.runtimeMode', configuration?.runtimeMode],
         ['configuration.interactionMode', configuration?.interactionMode],
     ].filter(([, value]) => !value).map(([name]) => name);
@@ -240,6 +242,13 @@ async function serverOrigin() {
     const { origin } = JSON.parse(readFileSync(runtimePath, 'utf8'));
     await probe(origin, `T3 Code is not running: nothing answers at ${origin}`, fix);
     return origin;
+}
+
+/** Commanding another computer's T3 Code goes over a WebSocket, which Node has built in from 22.4. */
+function checkWebSocket() {
+    if (typeof WebSocket === 'undefined') {
+        throw new Problem(`commanding T3 Code needs Node 22.4 or later, and this is ${process.version}`, 'Install Node 22.4 or later (`nvm install 22`).');
+    }
 }
 
 /** Checks that a T3 Code server answers at `origin` and speaks this script's protocol. */
@@ -378,9 +387,7 @@ function api(origin, token, refusedFix) {
     };
 
     const rpc = async (method, payload) => {
-        if (typeof WebSocket === 'undefined') {
-            throw new Problem(`commanding T3 Code needs Node 22.13 or later, and this is ${process.version}`, 'Install Node 22.13 or later (`nvm install 22`).');
-        }
+        checkWebSocket();
         const { ticket } = await request('POST', '/api/auth/websocket-ticket');
         const url = new URL(`/ws?orchestrationProtocol=${PROTOCOL}&wsTicket=${encodeURIComponent(ticket)}`, origin);
         url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -487,6 +494,7 @@ async function check(flags) {
     await run('rig is installed', checkRig);
     await run('the rig-handoff skill is linked', checkRigHandoffSkill);
     if (flags.to) {
+        await run('Node can command another computer', checkWebSocket);
         const from = await run(`--from ${flags.from} holds this thread's project and configuration`, () => readFrom(flags.from));
         const there = await run(`T3 Code on ${flags.to} answers and takes its token`, () => otherComputer(flags.to));
         if (from && there) await run(`${there.name} has this thread's project`, () => destination(from.project, there));
@@ -508,6 +516,27 @@ function printTitles(flags) {
     console.log(JSON.stringify(handoffTitles(flags.current, flags.key && { key: flags.key, description: flags.description })));
 }
 
+/**
+ * The `orchestration.launchThread` that starts the next thread in `projectId`
+ * on another computer, with this thread's model selection and modes. A branch
+ * or worktree of this computer says nothing about the checkout there, so it
+ * starts in the project's checkout. One call creates the thread there and
+ * starts its first run with the prompt.
+ */
+export function launchCommand(configuration, projectId, title, prompt) {
+    return {
+        commandId: randomUUID(),
+        threadId: randomUUID(),
+        projectId,
+        title,
+        modelSelection: configuration.modelSelection,
+        runtimeMode: configuration.runtimeMode,
+        interactionMode: configuration.interactionMode,
+        workspaceStrategy: { type: 'root' },
+        initialMessage: { messageId: randomUUID(), text: prompt, attachments: [] },
+    };
+}
+
 /** Starts the next thread on another computer and waits for its run to start; this thread is the agent's to close. */
 async function continueThread(flags) {
     if (!flags.to) throw new Problem('continue starts a thread on another computer: --to <computer> is required. On this computer, the agent hands off with its t3-code MCP tools.', USAGE);
@@ -519,20 +548,8 @@ async function continueThread(flags) {
     const { project, configuration } = readFrom(flags.from);
     const next = destination(project, await otherComputer(flags.to));
     const { title } = flags;
-    const newId = randomUUID();
-    // A branch or worktree of this computer says nothing about the checkout there, so it starts
-    // in the project's checkout. One call creates the thread there and starts its first run.
-    const launch = {
-        commandId: randomUUID(),
-        threadId: newId,
-        projectId: next.projectId,
-        title,
-        modelSelection: configuration.modelSelection,
-        runtimeMode: configuration.runtimeMode,
-        interactionMode: configuration.interactionMode,
-        workspaceStrategy: { type: 'root' },
-        initialMessage: { messageId: randomUUID(), text: prompt, attachments: [] },
-    };
+    const launch = launchCommand(configuration, next.projectId, title, prompt);
+    const newId = launch.threadId;
 
     if (flags.dryRun) {
         console.log(`Would start "${title}" (${next.place}, ${configuration.modelSelection.model}).`);
