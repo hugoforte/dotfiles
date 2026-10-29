@@ -36,9 +36,9 @@ BRUNO_DIR="$HOME/bruno"
 TAB="$(printf '\t')"
 
 # The Claude config folders, one per line: ~/.claude, then each extra folder the overlays name in
-# their ai/claude/config-dirs, or in this machine's machines/<KEY>.config-dirs. Each gets exactly what ~/.claude gets: CLAUDE.md, agents, skills,
-# the managed settings and the overlays' MCP servers. Nothing else in a folder is touched, so its
-# login (.credentials.json), the rest of its .claude.json, history and projects stay Claude Code's. Set by resolve_claude_dirs; a path may
+# their ai/claude/config-dirs, or in this machine's machines/<KEY>.config-dirs. Each gets exactly what ~/.claude gets: CLAUDE.md, agents, skills and
+# the managed settings, but not the overlays' MCP servers (see MCP_FILE). Nothing else in a folder
+# is touched, so its login (.credentials.json), .claude.json, history and projects stay Claude Code's. Set by resolve_claude_dirs; a path may
 # hold spaces, so loop over it line by line, never with `for`.
 CLAUDE_DIRS="$CLAUDE_DIR"
 
@@ -464,19 +464,17 @@ $hook_argvs
 EOF
 }
 
-# MCP servers are merged, not linked, into each folder's user scope: .claude.json is Claude Code's
-# own file, holding the login's state and every server added with `claude mcp add`. An overlay
-# declares servers in ai/claude/mcp.json, shaped like a project's .mcp.json
+# MCP servers are merged, not linked, into ~/.claude's user scope, MCP_FILE: .claude.json is
+# Claude Code's own file, holding the login's state and every server added with `claude mcp add`.
+# An overlay declares servers in ai/claude/mcp.json, shaped like a project's .mcp.json
 # ({"mcpServers": {"<name>": {...}}}). Each is set by name, so a server added by hand stays; the
 # first overlay to declare a name keeps it. A server no overlay declares any more is left in
 # place, since a hand-added one looks the same: `claude mcp remove -s user <name>` takes it out.
 # No server ships from this repo: which a machine has is the overlays' choice.
-
-# claude_json <dir>: the file Claude Code keeps a config folder's user scope in. ~/.claude's is
-# beside it, not in it; a folder named by CLAUDE_CONFIG_DIR keeps it inside.
-claude_json() {
-    if same_path "$1" "$CLAUDE_DIR"; then echo "$HOME/.claude.json"; else echo "$1/.claude.json"; fi
-}
+#
+# The extra Claude config folders get none. A server signs in as someone, and each extra folder is
+# another account, kept for other work; one it needs is added there by hand, under its own login.
+MCP_FILE="$HOME/.claude.json"
 
 # load_mcp_servers: set MCP_SERVERS to every overlay's servers as one JSON object. A name an
 # earlier overlay declared, or a file that is not an object of objects, is warned about and fails
@@ -510,13 +508,7 @@ MCP_DRIFT_JQ='(.mcpServers // {}) as $live | $servers | to_entries[] | select($l
 install_mcp() {
     command -v jq > /dev/null 2>&1 || return 0
     load_mcp_servers
-    [ "$MCP_SERVERS" != '{}' ] || return 0
-    while IFS= read -r dir; do
-        mkdir -p "$dir"
-        set_mcp_servers "$(claude_json "$dir")"
-    done <<EOF
-$CLAUDE_DIRS
-EOF
+    [ "$MCP_SERVERS" = '{}' ] || set_mcp_servers "$MCP_FILE"
 }
 
 # set_mcp_servers <file>: set MCP_SERVERS in <file>, a .claude.json, when it lacks or differs on
@@ -572,17 +564,12 @@ check_mcp() {
     command -v jq > /dev/null 2>&1 || { warning "jq not found - MCP servers not checked"; CHECK_FAILED=1; return 0; }
     load_mcp_servers
     [ "$MCP_SERVERS" != '{}' ] || return 0
-    while IFS= read -r dir; do
-        file="$(claude_json "$dir")"
-        drift="$(jq -r --argjson servers "$MCP_SERVERS" "$MCP_DRIFT_JQ" "$file" 2> /dev/null)" ||
-            drift="$(jq -rn --argjson servers "$MCP_SERVERS" '$servers | keys[]')"
-        if [ -n "$drift" ]; then
-            warning "$file lacks or differs on MCP servers: $(printf '%s' "$drift" | tr '\n' ' ')"
-            CHECK_FAILED=1
-        fi
-    done <<EOF
-$CLAUDE_DIRS
-EOF
+    drift="$(jq -r --argjson servers "$MCP_SERVERS" "$MCP_DRIFT_JQ" "$MCP_FILE" 2> /dev/null)" ||
+        drift="$(jq -rn --argjson servers "$MCP_SERVERS" '$servers | keys[]')"
+    if [ -n "$drift" ]; then
+        warning "$MCP_FILE lacks or differs on MCP servers: $(printf '%s' "$drift" | tr '\n' ' ')"
+        CHECK_FAILED=1
+    fi
 }
 
 # Copy the managed keys from ~/.claude's live file back into the repo fragment. Only ~/.claude:
@@ -630,7 +617,7 @@ show_help() {
     echo "ai/claude/settings.json into ~/.claude/settings.json, and sets the MCP servers each"
     echo "overlay declares in <overlay>/ai/claude/mcp.json in ~/.claude.json's user scope. Every"
     echo "extra Claude config folder an overlay names in <overlay>/ai/claude/config-dirs gets the"
-    echo "same as ~/.claude."
+    echo "same as ~/.claude, but for the MCP servers."
     echo ""
     echo "Modes:"
     echo "  (default)              Install"
