@@ -75,6 +75,19 @@ assert_eq "--check fails on a folder with no .claude.json yet" "1" "$rc"
 run > /dev/null
 assert_eq "install creates it" '{"type":"http","url":"https://mcp.apify.com"}' "$(server "$extra/.claude.json" apify)"
 
+# Modes mean nothing to Windows' ACLs, so these hold on a Mac or Linux only.
+case "$(uname -s)" in
+    MINGW*|MSYS*) ;;
+    *)
+        mode() { ls -l "$1" | cut -c1-10; }
+        assert_eq "a .claude.json install creates is private" "-rw-------" "$(mode "$extra/.claude.json")"
+        chmod 600 "$home/.claude.json"
+        jq 'del(.mcpServers.apify)' "$home/.claude.json" > "$work/changed" && cat "$work/changed" > "$home/.claude.json"
+        (umask 022; run > /dev/null)
+        assert_eq "rewriting .claude.json keeps its mode" "-rw-------" "$(mode "$home/.claude.json")"
+        ;;
+esac
+
 printf '{ "mcpServers": [] }\n' > "$second/ai/claude/mcp.json"
 out="$(run --check)"; rc=$?
 assert_eq "--check fails on an mcp.json that is not an object of servers" "1" "$rc"

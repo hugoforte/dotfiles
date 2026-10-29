@@ -514,10 +514,13 @@ install_mcp() {
     while IFS= read -r dir; do
         file="$(claude_json "$dir")"
         mkdir -p "$dir"
-        [ -s "$file" ] || printf '{}\n' > "$file"
+        # Private, as Claude Code makes it: it holds the account's state.
+        [ -s "$file" ] || (umask 077; printf '{}\n' > "$file")
         # Written through a temporary file beside it and moved over, so Claude Code never reads half
-        # a file.
-        if jq --argjson servers "$MCP_SERVERS" '.mcpServers = ((.mcpServers // {}) + $servers)' "$file" > "$file.tmp" &&
+        # a file. The copy gives the temporary file the original's mode, which the write into it
+        # keeps.
+        if cp -p "$file" "$file.tmp" &&
+           jq --argjson servers "$MCP_SERVERS" '.mcpServers = ((.mcpServers // {}) + $servers)' "$file" > "$file.tmp" &&
            mv "$file.tmp" "$file"; then
             success "Set MCP servers $(jq -rn --argjson s "$MCP_SERVERS" '$s | keys | join(", ")') in $file"
         else
