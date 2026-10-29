@@ -76,7 +76,7 @@ if command -v jq > /dev/null 2>&1; then
     assert_eq "and keeps its own" "dark" "$(jq -r .theme "$extra/settings.json")"
 fi
 assert_eq "its login is left alone" '{ "token": "kept" }' "$(cat "$extra/.credentials.json")"
-assert_eq "its .claude.json is left alone" '{ "userID": "kept" }' "$(cat "$extra/.claude.json")"
+assert_eq "its .claude.json is left alone when no overlay declares an MCP server" '{ "userID": "kept" }' "$(cat "$extra/.claude.json")"
 assert_eq "its history is left alone" '{ "display": "kept" }' "$(cat "$extra/history.jsonl")"
 assert_eq "its projects are left alone" '{ "type": "kept" }' "$(cat "$extra/projects/some-project/session.jsonl")"
 assert_eq "a space in HOME does not split it: nothing beside it" "n" "$(exists "$work/home")"

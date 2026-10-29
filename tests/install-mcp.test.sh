@@ -59,8 +59,11 @@ assert_eq "and the rest of the file" "kept" "$(jq -r .userID "$home/.claude.json
 assert_eq "an extra folder gets the servers in its own .claude.json" '{"type":"http","url":"https://mcp.example.com"}' "$(server "$extra/.claude.json" search)"
 assert_eq "nothing is put inside ~/.claude" "n" "$(if [ -e "$home/.claude/.claude.json" ]; then echo y; else echo n; fi)"
 assert_eq "install warns that a later overlay's clashing name is not set" "y" "$(says "$out" "MCP server search not set")"
+assert_eq "and backs up the file it changed" "y" "$(if ls "$home"/.claude.json.backup.* > /dev/null 2>&1; then echo y; else echo n; fi)"
+out="$(run --check)"; rc=$?
+assert_eq "--check fails while two overlays declare one name" "1" "$rc"
 
-printf '{ "mcpServers": { "docs": { "type": "http", "url": "https://docs" } } }\n' > "$second/ai/claude/mcp.json"
+printf '{ "mcpServers": { "docs": { "type": "http", "url": "https://docs.example.com" } } }\n' > "$second/ai/claude/mcp.json"
 out="$(run --check)"; rc=$?
 assert_eq "--check is clean once set" "0" "$rc"
 
@@ -87,6 +90,44 @@ case "$(uname -s)" in
         assert_eq "rewriting .claude.json keeps its mode" "-rw-------" "$(mode "$home/.claude.json")"
         ;;
 esac
+
+# fingerprint <file>: its inode and contents, so a rewrite with the same contents still shows.
+fingerprint() { printf '%s %s' "$(ls -i "$1" | awk '{print $1}')" "$(cksum < "$1")"; }
+
+before="$(fingerprint "$home/.claude.json")"
+out="$(run)"
+assert_eq "install leaves a file with nothing to change unwritten" "$before" "$(fingerprint "$home/.claude.json")"
+assert_eq "and does not say it set anything" "n" "$(says "$out" "Set MCP servers")"
+
+for broken in '' '\n\n' 'not json' '[]'; do
+    printf "$broken" > "$extra/.claude.json"
+    before="$(cksum < "$extra/.claude.json")"
+    out="$(run)"
+    assert_eq "install leaves a .claude.json of '$broken' as it was" "$before" "$(cksum < "$extra/.claude.json")"
+    assert_eq "and says why" "y" "$(says "$out" "is not a JSON object - MCP servers not set")"
+done
+
+printf '{}\n' > "$work/elsewhere.json"
+rm "$extra/.claude.json" && ln -s "$work/elsewhere.json" "$extra/.claude.json"
+out="$(run)"
+assert_eq "install leaves a linked .claude.json a link" "$work/elsewhere.json" "$(readlink "$extra/.claude.json")"
+assert_eq "and does not write through it" '{}' "$(jq -c . "$work/elsewhere.json")"
+rm "$extra/.claude.json" && printf '{}\n' > "$extra/.claude.json"
+
+# Claude Code's lock on the file is held: the sync waits, then leaves it for the next one.
+mkdir "$extra/.claude.json.lock"
+out="$(run)"
+assert_eq "install leaves a locked .claude.json alone" '{}' "$(jq -c . "$extra/.claude.json")"
+assert_eq "and says it is locked" "y" "$(says "$out" "is locked")"
+assert_eq "and leaves Claude Code's lock in place" "y" "$(if [ -d "$extra/.claude.json.lock" ]; then echo y; else echo n; fi)"
+rmdir "$extra/.claude.json.lock"
+run > /dev/null
+assert_eq "once the lock is gone, the next install sets it" '{"type":"http","url":"https://mcp.example.com"}' "$(server "$extra/.claude.json" search)"
+assert_eq "and releases its own lock" "n" "$(if [ -e "$extra/.claude.json.lock" ]; then echo y; else echo n; fi)"
+assert_eq "and leaves no staged file behind" "" "$(ls -A "$extra" | grep '^\.claude\.json\.' | grep -v backup)"
+
+out="$(run --no-mcp --check)"; rc=$?
+assert_eq "--no-mcp skips the servers" "n" "$(says "$out" "MCP servers")"
 
 printf '{ "mcpServers": [] }\n' > "$second/ai/claude/mcp.json"
 out="$(run --check)"; rc=$?

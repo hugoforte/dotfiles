@@ -512,30 +512,64 @@ install_mcp() {
     load_mcp_servers
     [ "$MCP_SERVERS" != '{}' ] || return 0
     while IFS= read -r dir; do
-        file="$(claude_json "$dir")"
         mkdir -p "$dir"
-        # Private, as Claude Code makes it: it holds the account's state.
-        [ -s "$file" ] || (umask 077; printf '{}\n' > "$file")
-        # Written through a temporary file beside it and moved over, so Claude Code never reads half
-        # a file. The copy gives the temporary file the original's mode, which the write into it
-        # keeps.
-        if cp -p "$file" "$file.tmp" &&
-           jq --argjson servers "$MCP_SERVERS" '.mcpServers = ((.mcpServers // {}) + $servers)' "$file" > "$file.tmp" &&
-           mv "$file.tmp" "$file"; then
-            success "Set MCP servers $(jq -rn --argjson s "$MCP_SERVERS" '$s | keys | join(", ")') in $file"
-        else
-            rm -f "$file.tmp"
-            error "Could not set MCP servers in $file"
-        fi
+        set_mcp_servers "$(claude_json "$dir")"
     done <<EOF
 $CLAUDE_DIRS
 EOF
+}
+
+# set_mcp_servers <file>: set MCP_SERVERS in <file>, a .claude.json, when it lacks or differs on
+# any. One with nothing to change is not written, so the sync seldom races Claude Code for it. A
+# write happens under Claude Code's own lock on the file, a directory beside it, so neither side's
+# read-modify-write loses the other's; a lock held past ten tries is left to the next sync. A file
+# that is not a JSON object, or is a link, is someone's to look at, never replaced.
+set_mcp_servers() {
+    if [ -L "$1" ]; then
+        error "$1 is a link - MCP servers not set; set them where it points with claude mcp add -s user"
+        return 1
+    fi
+    # Private, as Claude Code makes it: it holds the account's state.
+    [ -e "$1" ] || (umask 077; printf '{}\n' > "$1")
+    if ! jq -e 'type == "object"' "$1" > /dev/null 2>&1; then
+        error "$1 is not a JSON object - MCP servers not set"
+        return 1
+    fi
+    [ -n "$(jq -r --argjson servers "$MCP_SERVERS" "$MCP_DRIFT_JQ" "$1" 2> /dev/null || echo invalid)" ] || return 0
+    tries=0
+    until mkdir "$1.lock" 2> /dev/null; do
+        tries=$((tries + 1))
+        if [ "$tries" -ge 10 ]; then
+            warning "$1 is locked ($1.lock) - MCP servers left for the next sync"
+            return 1
+        fi
+        sleep 1
+    done
+    # Staged beside it under a name of this run's own and moved over, so Claude Code never reads half
+    # a file. The copy gives the staged file the original's mode, which the write into it keeps. jq
+    # on Windows writes CRLF, so the carriage returns go.
+    staged="$(mktemp "$(dirname "$1")/.claude.json.XXXXXX")" &&
+        cp -p "$1" "$staged" &&
+        cp -p "$1" "$1.backup.$(date +%Y%m%d_%H%M%S)" &&
+        jq --argjson servers "$MCP_SERVERS" '.mcpServers = ((.mcpServers // {}) + $servers)' "$1" | tr -d '\r' > "$staged" &&
+        [ -s "$staged" ] &&
+        [ -z "$(jq -r --argjson servers "$MCP_SERVERS" "$MCP_DRIFT_JQ" "$staged" 2> /dev/null || echo invalid)" ] &&
+        mv "$staged" "$1"
+    set_rc=$?
+    rmdir "$1.lock"
+    if [ "$set_rc" -eq 0 ]; then
+        success "Set MCP servers $(jq -rn --argjson s "$MCP_SERVERS" '$s | keys | join(", ")') in $1"
+    else
+        rm -f "$staged"
+        error "Could not set MCP servers in $1"
+    fi
+    return "$set_rc"
 }
 uninstall_mcp() {
     info "MCP servers are merged, not linked; remove one with: claude mcp remove -s user <name>"
 }
 check_mcp() {
-    command -v jq > /dev/null 2>&1 || { warning "jq not found - MCP servers not checked"; return 0; }
+    command -v jq > /dev/null 2>&1 || { warning "jq not found - MCP servers not checked"; CHECK_FAILED=1; return 0; }
     load_mcp_servers
     [ "$MCP_SERVERS" != '{}' ] || return 0
     while IFS= read -r dir; do
@@ -626,7 +660,7 @@ show_help() {
     echo "  --no-mcp               Skip the MCP servers overlays declare"
     echo "  -h, --help             Show this help"
     echo ""
-    echo "Needs: Windows Developer Mode or an elevated shell for symlinks; jq for settings."
+    echo "Needs: Windows Developer Mode or an elevated shell for symlinks; jq for settings and MCP servers."
 }
 
 while [ $# -gt 0 ]; do
