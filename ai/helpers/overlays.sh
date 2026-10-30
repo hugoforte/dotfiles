@@ -30,6 +30,7 @@ git/gitconfig all overlays
 macos/Brewfile all overlays
 macos/bootstrap.sh all overlays
 ai/claude/config-dirs all overlays
+ai/claude/mcp.json all overlays
 machines/{KEY}.config-dirs all overlays
 machines/ all overlays
 powershell/tools.psd1 all repo+overlays

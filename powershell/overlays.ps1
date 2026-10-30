@@ -29,6 +29,7 @@ $OverlayTable = @(
     [pscustomobject]@{ Path = 'macos/Brewfile';             Count = 'all';     Roots = 'overlays' }
     [pscustomobject]@{ Path = 'macos/bootstrap.sh';         Count = 'all';     Roots = 'overlays' }
     [pscustomobject]@{ Path = 'ai/claude/config-dirs';      Count = 'all';     Roots = 'overlays' }
+    [pscustomobject]@{ Path = 'ai/claude/mcp.json';         Count = 'all';     Roots = 'overlays' }
     [pscustomobject]@{ Path = 'machines/{KEY}.config-dirs'; Count = 'all';     Roots = 'overlays' }
     [pscustomobject]@{ Path = 'machines/';                  Count = 'all';     Roots = 'overlays' }
     [pscustomobject]@{ Path = 'powershell/tools.psd1';      Count = 'all';     Roots = 'repo+overlays' }

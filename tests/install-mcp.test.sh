@@ -1,0 +1,144 @@
+#!/bin/sh
+
+# Fixture suite for the MCP servers in ai/install.sh: the servers the overlays declare in
+# ai/claude/mcp.json are set by name in ~/.claude.json's user scope, leaving the rest of the file and
+# every server added by hand as they were, and only when one is missing or differs, under Claude
+# Code's lock. An extra Claude config folder is another account and gets none. --check reports a
+# server missing or changed.
+#
+# Two overlays, listed by a fixture ai/secrets/machine.local.psd1, and RIG_ROOT pointing at an empty
+# directory so the real rig checkout stays out of it. HOME has a space in it.
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+. "$SCRIPT_DIR/assert.sh"
+
+command -v jq > /dev/null 2>&1 || { echo "install mcp: jq not found; skipped"; exit 0; }
+
+case "$(uname -s)" in
+    MINGW*|MSYS*) MSYS="winsymlinks:nativestrict"; export MSYS ;;
+esac
+
+work="$(mktemp -d)" || exit 1
+trap 'rm -rf "$work"' EXIT INT TERM
+
+repo="$work/repo"
+home="$work/home dir"
+cwd="$work/cwd"
+first="$work/private/first"
+second="$work/private/second"
+extra="$home/.claude-extra"
+file="$home/.claude.json"
+mkdir -p "$repo/ai/helpers" "$repo/ai/secrets" "$home" "$cwd" "$first/ai/claude" "$second/ai/claude" "$extra"
+
+cp "$REPO_ROOT/ai/install.sh" "$repo/ai/install.sh"
+cp "$REPO_ROOT"/ai/helpers/*.sh "$repo/ai/helpers/"
+printf 'exit 0\n' > "$repo/ai/secrets/check-encrypted.sh"
+printf '~/.claude-extra\n' > "$first/ai/claude/config-dirs"
+printf '{ "mcpServers": { "search": { "type": "http", "url": "https://mcp.example.com" } } }\n' > "$first/ai/claude/mcp.json"
+printf '{ "mcpServers": { "search": { "type": "http", "url": "https://elsewhere.example.com" }, "docs": { "type": "http", "url": "https://docs.example.com" } } }\n' > "$second/ai/claude/mcp.json"
+
+# A signed-in account, with a server added by hand: neither is this repo's.
+printf '{ "userID": "kept", "mcpServers": { "mine": { "type": "stdio", "command": "mine" } } }\n' > "$file"
+printf '{ "userID": "other account" }\n' > "$extra/.claude.json"
+
+win() { if command -v cygpath > /dev/null 2>&1; then cygpath -w "$1"; else echo "$1"; fi; }
+printf "@{\n    Overlays = @(\n        '%s'\n        '%s'\n    )\n}\n" "$(win "$first")" "$(win "$second")" > "$repo/ai/secrets/machine.local.psd1"
+
+HOME="$home"; export HOME
+RIG_ROOT="$work/no-rig"; export RIG_ROOT
+
+run()     { (cd "$cwd" && sh "$repo/ai/install.sh" --mcp-only "$@" 2>&1); }
+says()    { case "$1" in *"$2"*) echo y ;; *) echo n ;; esac; }
+server()  { jq -c ".mcpServers[\"$1\"]" "$file"; }
+exists()  { if [ -e "$1" ]; then echo y; else echo n; fi; }
+SEARCH='{"type":"http","url":"https://mcp.example.com"}'
+
+out="$(run)"; rc=$?
+assert_eq "install succeeds" "0" "$rc"
+assert_eq "~/.claude.json gets the first overlay's server" "$SEARCH" "$(server search)"
+assert_eq "and a later overlay's other server" '{"type":"http","url":"https://docs.example.com"}' "$(server docs)"
+assert_eq "and keeps the server added by hand" '{"type":"stdio","command":"mine"}' "$(server mine)"
+assert_eq "and the rest of the file" "kept" "$(jq -r .userID "$file")"
+assert_eq "an extra folder, another account, gets none" '{"userID":"other account"}' "$(jq -c . "$extra/.claude.json")"
+assert_eq "nothing is put inside ~/.claude" "n" "$(exists "$home/.claude/.claude.json")"
+assert_eq "install warns that a later overlay's clashing name is not set" "y" "$(says "$out" "MCP server search not set")"
+assert_eq "and backs up the file it changed" "y" "$(if ls "$home"/.claude.json.backup.* > /dev/null 2>&1; then echo y; else echo n; fi)"
+out="$(run --check)"; rc=$?
+assert_eq "--check fails while two overlays declare one name" "1" "$rc"
+
+printf '{ "mcpServers": { "docs": { "type": "http", "url": "https://docs.example.com" } } }\n' > "$second/ai/claude/mcp.json"
+out="$(run --check)"; rc=$?
+assert_eq "--check is clean once set, an extra folder without the servers included" "0" "$rc"
+
+jq '.mcpServers.search.url = "https://changed.example.com"' "$file" > "$work/changed" && cat "$work/changed" > "$file"
+out="$(run --check)"; rc=$?
+assert_eq "--check fails on a server changed by hand" "1" "$rc"
+assert_eq "--check names the file and the server" "y" "$(says "$out" "$file lacks or differs on MCP servers: search")"
+
+mv "$file" "$work/kept.json"
+out="$(run --check)"; rc=$?
+assert_eq "--check fails with no ~/.claude.json yet" "1" "$rc"
+run > /dev/null
+assert_eq "install creates it" "$SEARCH" "$(server search)"
+
+# Modes mean nothing to Windows' ACLs, so these hold on a Mac or Linux only.
+case "$(uname -s)" in
+    MINGW*|MSYS*) ;;
+    *)
+        mode() { ls -l "$1" | cut -c1-10; }
+        assert_eq "a ~/.claude.json install creates is private" "-rw-------" "$(mode "$file")"
+        cat "$work/kept.json" > "$file"
+        chmod 600 "$file"
+        (umask 022; run > /dev/null)
+        assert_eq "rewriting ~/.claude.json keeps its mode" "-rw-------" "$(mode "$file")"
+        ;;
+esac
+cat "$work/kept.json" > "$file"
+run > /dev/null
+
+# fingerprint <file>: its inode and contents, so a rewrite with the same contents still shows.
+fingerprint() { printf '%s %s' "$(ls -i "$1" | awk '{print $1}')" "$(cksum < "$1")"; }
+
+before="$(fingerprint "$file")"
+out="$(run)"
+assert_eq "install leaves a file with nothing to change unwritten" "$before" "$(fingerprint "$file")"
+assert_eq "and does not say it set anything" "n" "$(says "$out" "Set MCP servers")"
+
+for broken in '' '\n\n' 'not json' '[]'; do
+    printf "$broken" > "$file"
+    before="$(cksum < "$file")"
+    out="$(run)"
+    assert_eq "install leaves a ~/.claude.json of '$broken' as it was" "$before" "$(cksum < "$file")"
+    assert_eq "and says why" "y" "$(says "$out" "is not a JSON object - MCP servers not set")"
+done
+
+printf '{}\n' > "$work/elsewhere.json"
+rm "$file" && ln -s "$work/elsewhere.json" "$file"
+out="$(run)"
+assert_eq "install leaves a linked ~/.claude.json a link" "$work/elsewhere.json" "$(readlink "$file")"
+assert_eq "and does not write through it" '{}' "$(jq -c . "$work/elsewhere.json")"
+rm "$file" && printf '{}\n' > "$file"
+
+# Claude Code's lock on the file is held: the sync waits, then leaves it for the next one.
+mkdir "$file.lock"
+out="$(run)"
+assert_eq "install leaves a locked ~/.claude.json alone" '{}' "$(jq -c . "$file")"
+assert_eq "and says it is locked" "y" "$(says "$out" "is locked")"
+assert_eq "and leaves Claude Code's lock in place" "y" "$(if [ -d "$file.lock" ]; then echo y; else echo n; fi)"
+rmdir "$file.lock"
+run > /dev/null
+assert_eq "once the lock is gone, the next install sets it" "$SEARCH" "$(server search)"
+assert_eq "and releases its own lock" "n" "$(exists "$file.lock")"
+assert_eq "and leaves no staged file behind" "" "$(ls -A "$home" | grep '^\.claude\.json\.' | grep -v backup)"
+
+out="$(run --no-mcp --check)"
+assert_eq "--no-mcp skips the servers" "n" "$(says "$out" "MCP servers")"
+
+printf '{ "mcpServers": [] }\n' > "$second/ai/claude/mcp.json"
+out="$(run --check)"; rc=$?
+assert_eq "--check fails on an mcp.json that is not an object of servers" "1" "$rc"
+assert_eq "--check names it" "y" "$(says "$out" "second/ai/claude/mcp.json: mcpServers is not an object")"
+
+assert_summary "install.sh MCP servers"
