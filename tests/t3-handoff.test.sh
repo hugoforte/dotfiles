@@ -1,9 +1,10 @@
 #!/bin/sh
 
 # Suite for ai/skills/hf-t3-handoff/t3.mjs: the parts of the T3 handoff that are
-# functions of their arguments, such as the titles, the project matching and
-# where T3 Code's command line is on each platform. Everything
-# else in that script talks to a running T3 Code server and is not run here.
+# functions of their arguments, such as the titles, the project matching on
+# another computer, the --from file and where T3 Code's command line is on each
+# platform. Everything else in that script talks to a running T3 Code server and
+# is not run here; on this computer the agent's MCP tools do the handoff.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -88,97 +89,6 @@ call() {
     "
 }
 
-# The examples live under the temp directory, so they are absolute on every platform.
-root="$(cd "${TMPDIR:-/tmp}" && pwd -W 2>/dev/null || pwd)"
-# The separator Node reads on this platform: \ on Windows, where pwd -W answered, / elsewhere.
-case "$root" in [A-Za-z]:*) s='\' ;; *) s='/' ;; esac
-# native <part...>: a folder under the root, as Node spells it in a message.
-native() {
-    call "(await import('node:path')).resolve(String.raw\`$root\`, ...'$*'.split(' '))"
-}
-example="String.raw\`$root${s}projects${s}example\`"
-# Object literals go through variables: macOS's /bin/sh (bash 3.2) brace-expands a {a,b} written
-# inside "$( ... "..." )" when no whitespace separates the comma from the braces, which would
-# split one before Node saw it.
-projects="[{id:'example',title:'example',workspaceRoot:$example},{id:'other',title:'other',workspaceRoot:'$root/projects/other/'}]"
-copy="{id:'copy',title:'copy',workspaceRoot:$example}"
-
-assert_eq "--project finds the project whose workspace root is the folder" \
-    "example" \
-    "$(call "t3.projectForFolder($example, $projects).id")"
-assert_eq "--project matches with either slash and a trailing one" \
-    "other" \
-    "$(call "t3.projectForFolder('$root/projects/other', $projects).id")"
-if [ "$s" = '\' ]; then
-    assert_eq "--project matches without case on Windows" \
-        "example" \
-        "$(call "t3.projectForFolder(String.raw\`$root\\PROJECTS\\Example\`, $projects).id")"
-else
-    printf '  SKIP  --project matches without case on Windows: not on Windows\n'
-fi
-assert_eq "--project for a folder T3 has no project for says how to add one" \
-    "error: T3 Code has no project for $(native projects missing)" \
-    "$(call "t3.projectForFolder(String.raw\`$root${s}projects${s}missing\`, $projects)")"
-assert_eq "--project for a folder with two T3 projects names both" \
-    "error: T3 Code has 2 projects for $(native projects example): \"example\" (example), \"copy\" (copy)" \
-    "$(call "t3.projectForFolder($example, [...$projects, $copy])")"
-
-settings="{providers:{codex:{enabled:false},grok:{enabled:false}},providerInstances:{claudeAgent:{driver:'claudeAgent',displayName:'Claude'},claudeAgent_work:{driver:'claudeAgent',displayName:'Claude Work',enabled:true,config:{homePath:'~/.claude-work'}},claudeAgent_old:{driver:'claudeAgent',displayName:'Claude Old',enabled:false},codex_spare:{driver:'codex',config:{enabled:true}},codex_managed:{driver:'codex',enabled:true,config:{enabled:false}},grok_unset:{driver:'grok'}}}"
-
-# instance <id> [current instance id]: prints "<id>|<display name>|<driver>", or the error.
-instance() {
-    call "(({ id, displayName, driver }) => [id, displayName, driver].join('|'))(t3.providerInstance('$1', $settings, '${2:-}' || undefined))"
-}
-
-assert_eq "--provider finds an enabled instance and its display name" \
-    "claudeAgent_work|Claude Work|claudeAgent" \
-    "$(instance claudeAgent_work claudeAgent)"
-assert_eq "--provider names an instance with no display name by its id" \
-    "codex_spare|codex_spare|codex" \
-    "$(instance codex_spare)"
-assert_eq "--provider for an unknown instance lists the enabled ones" \
-    "error: T3 Code has no provider instance \"claudeAgent_typo\"; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
-    "$(instance claudeAgent_typo)"
-assert_eq "--provider for a disabled instance lists the enabled ones" \
-    "error: provider instance \"claudeAgent_old\" (Claude Old) is disabled in T3 Code; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
-    "$(instance claudeAgent_old)"
-assert_eq "--provider for a default instance its driver turned off says it is disabled" \
-    "error: provider instance \"codex\" (codex) is disabled in T3 Code; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
-    "$(instance codex)"
-assert_eq "--provider for an instance whose config turns it off says it is disabled" \
-    "error: provider instance \"codex_managed\" (codex_managed) is disabled in T3 Code; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
-    "$(instance codex_managed)"
-assert_eq "--provider for an instance that does not say takes its driver's setting" \
-    "error: provider instance \"grok_unset\" (grok_unset) is disabled in T3 Code; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
-    "$(instance grok_unset)"
-assert_eq "--provider for a thread whose instance is gone skips the driver comparison" \
-    "codex_spare|codex_spare|codex" \
-    "$(instance codex_spare claudeAgent_removed)"
-assert_eq "--provider refuses an instance of another driver than the thread's model" \
-    "error: provider instance \"codex_spare\" runs codex, and this thread's model runs on claudeAgent" \
-    "$(instance codex_spare claudeAgent_work)"
-
-current="{projectId:'here',branch:'feature',worktreePath:null,modelSelection:{instanceId:'claudeAgent',model:'claude-model',options:[{id:'effort',value:'medium'}]}}"
-
-# destination <project expression>: prints the next thread's "<projectId>|<branch>|<worktreePath>|<place>".
-destination() {
-    call "(({ projectId, branch, worktreePath, place }) => [projectId, branch, worktreePath, place].join('|'))(await t3.destination(undefined, $current, undefined, $1))"
-}
-
-# Through variables, as $copy above.
-here_project="{id:'here',workspaceRoot:'D:/projects/here'}"
-there_project="{id:'there',workspaceRoot:'D:/projects/there'}"
-
-assert_eq "without --project the next thread keeps this project and branch" \
-    "here|feature||feature" \
-    "$(destination undefined)"
-assert_eq "--project for this thread's own project keeps the branch" \
-    "here|feature||D:/projects/here, feature" \
-    "$(destination "$here_project")"
-assert_eq "--project for another project starts in its checkout" \
-    "there|||D:/projects/there" \
-    "$(destination "$there_project")"
-
 assert_eq "an https remote is keyed by host and path, without .git" \
     "github.com/hugoforte/dotfiles-private" \
     "$(call "t3.remoteKey('https://github.com/HugoForte/dotfiles-private.git')")"
@@ -198,15 +108,22 @@ this_computer="$(call "t3.reachableName((await import('node:os')).hostname())")"
 
 # to_mac <this project> <the mac's projects>: prints "<projectId>|<place>" for --to the mac, or the error.
 to_mac() {
-    call "(({ projectId, place }) => projectId + '|' + place)(await t3.destination({ get: async () => ({ projects: [$1] }) }, $current, { name: 'a-macbook-pro', server: {}, projects: $2 }))"
+    call "(({ projectId, place }) => projectId + '|' + place)(t3.destination($1, { name: 'a-macbook-pro', server: {}, projects: $2 }))"
 }
 
-# Through variables, as $copy above.
+# Object literals go through variables: macOS's /bin/sh (bash 3.2) brace-expands a {a,b} written
+# inside "$( ... "..." )" when no whitespace separates the comma from the braces, which would
+# split one before Node saw it.
 unresolved_here="{id:'here',title:'dotfiles-private',workspaceRoot:String.raw\`$with_origin\`,repositoryIdentity:null}"
 no_remote_here="{id:'here',title:'scratch',workspaceRoot:String.raw\`$no_remote\`,repositoryIdentity:null}"
 mac_clone="{id:'mac',title:'dotfiles-private',workspaceRoot:'/Users/me/dotfiles-private',repositoryIdentity:{canonicalKey:'github.com/hugoforte/dotfiles-private'}}"
 mac_unresolved="{id:'pending',title:'dotfiles-private',workspaceRoot:'/Users/me/dotfiles-private',repositoryIdentity:null}"
 
+said_here="{id:'here',title:'dotfiles-private',workspaceRoot:String.raw\`$no_remote\`,repositoryIdentity:{canonicalKey:'github.com/hugoforte/dotfiles-private'}}"
+
+assert_eq "--to finds the project by the repository T3 said for this one" \
+    "mac|a-macbook-pro, /Users/me/dotfiles-private" \
+    "$(to_mac "$said_here" "[$mac_clone]")"
 assert_eq "--to finds the project by this checkout's origin when T3 has not said its repository" \
     "mac|a-macbook-pro, /Users/me/dotfiles-private" \
     "$(to_mac "$unresolved_here" "[$mac_clone]")"
@@ -224,13 +141,6 @@ assert_eq "the projects there are read again until T3 says their repositories" \
     "mac" \
     "$(call "(await t3.readProjectsWithRepositories($warming, { delayMs: 1 }))[0].id")"
 
-assert_eq "without --provider the model selection is this thread's, untouched" \
-    "true" \
-    "$(call "(() => { const s = ($current).modelSelection; return t3.modelSelectionOn(s, undefined) === s; })()")"
-assert_eq "--provider keeps the model and its options and changes only the instance" \
-    '{"instanceId":"claudeAgent_work","model":"claude-model","options":[{"id":"effort","value":"medium"}]}' \
-    "$(call "JSON.stringify(t3.modelSelectionOn(($current).modelSelection, { id: 'claudeAgent_work' }))")"
-
 # cli_path <platform> <T3 home> [T3CODE_CLI_PATH]: prints the T3 command line t3.mjs runs.
 cli_path() {
     call "t3.t3Cli('$1', { ${3:+T3CODE_CLI_PATH: String.raw\`$3\`} }, String.raw\`$2\`)"
@@ -245,26 +155,6 @@ assert_eq "on Windows the launcher is a .cmd" \
 assert_eq "T3CODE_CLI_PATH names the launcher instead" \
     '/opt/t3/t3' \
     "$(cli_path darwin /Users/me/.t3 /opt/t3/t3)"
-
-# strategy <next>: prints the launch's workspace strategy as JSON.
-strategy() {
-    call "JSON.stringify(t3.workspaceStrategy($1))"
-}
-
-# Through variables, as $copy above.
-in_worktree="{branch:'feature',worktreePath:'/w/here'}"
-on_branch="{branch:'feature',worktreePath:null}"
-in_checkout="{branch:null,worktreePath:null}"
-
-assert_eq "a thread in a worktree continues in that worktree" \
-    '{"type":"existing_worktree","worktreePath":"/w/here","branch":"feature"}' \
-    "$(strategy "$in_worktree")"
-assert_eq "a thread on a branch of the project checkout continues there on that branch" \
-    '{"type":"root","branch":"feature"}' \
-    "$(strategy "$on_branch")"
-assert_eq "a thread with neither continues in the project checkout" \
-    '{"type":"root"}' \
-    "$(strategy "$in_checkout")"
 
 # rpc <exit>: prints what an RPC answer comes to, or the error.
 rpc() {
@@ -374,12 +264,67 @@ cli() {
     node "$module" "$@" 2>&1 >/dev/null | head -n 1
 }
 
-assert_eq "--project needs a folder" \
-    "t3: --project needs a value" \
-    "$(cli continue --prompt-file x --project)"
-assert_eq "--provider needs an instance id" \
-    "t3: --provider needs a value" \
-    "$(cli check --provider --dry-run)"
+assert_eq "--to needs a computer" \
+    "t3: --to needs a value" \
+    "$(cli check --to --from x)"
+assert_eq "--to needs --from, which says what this thread is" \
+    "t3: --to needs --from, the file of this thread's project and configuration" \
+    "$(cli check --to elsewhere)"
+assert_eq "continue without --to says the MCP tools hand off on this computer" \
+    "t3: continue starts a thread on another computer: --to <computer> is required. On this computer, the agent hands off with its t3-code MCP tools." \
+    "$(cli continue --title x --prompt-file x)"
+assert_eq "continue needs the next title" \
+    "t3: --title <title> is required: the next title \`t3.mjs title\` printed" \
+    "$(cli continue --to elsewhere --from x --prompt-file x)"
+assert_eq "title needs the current title" \
+    "t3: --current <title> is required" \
+    "$(cli title)"
+assert_eq "--key without --description is refused" \
+    "t3: --key and --description go together" \
+    "$(cli title --current x --key KTLO-1)"
+assert_eq "title prints the rename and the next title as JSON" \
+    '{"rename":"RIG - [dotfiles#94] Handoff over MCP","next":"RIG - [dotfiles#94] Handoff over MCP 1"}' \
+    "$(node "$module" title --current 'Move the handoff' --key 'dotfiles#94' --description 'Handoff over MCP')"
+assert_eq "a title may start with a dash, as one T3 drew from a message can" \
+    '{"next":"- fix the build 2"}' \
+    "$(node "$module" title --current '- fix the build')"
+assert_eq "title prints no rename for a standard title" \
+    '{"next":"RIG - [dotfiles#94] Handoff over MCP 2"}' \
+    "$(node "$module" title --current 'RIG - [dotfiles#94] Handoff over MCP 1')"
+
+# from <json>: prints the project title --from reads out of a file holding the json, or the error.
+from() {
+    printf '%s' "$1" > "$work/from.json"
+    call "t3.readFrom(String.raw\`$(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json\`).project.title"
+}
+
+assert_eq "--from reads the project and configuration the MCP tools gave" \
+    "dotfiles-private" \
+    "$(from '{"project":{"title":"dotfiles-private","workspaceRoot":"/w/here"},"configuration":{"modelSelection":{"instanceId":"claudeAgent","model":"m"},"runtimeMode":"full-access","interactionMode":"default"}}')"
+assert_eq "--from names every field it lacks" \
+    "error: --from $(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json has no project.workspaceRoot, configuration.runtimeMode, configuration.interactionMode" \
+    "$(from '{"project":{"title":"dotfiles-private"},"configuration":{"modelSelection":{"model":"m"}}}')"
+assert_eq "--from needs a model in the model selection" \
+    "error: --from $(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json has no configuration.modelSelection.model" \
+    "$(from '{"project":{"title":"t","workspaceRoot":"/w"},"configuration":{"modelSelection":{"instanceId":"claudeAgent"},"runtimeMode":"full-access","interactionMode":"default"}}')"
+
+configuration="{modelSelection:{instanceId:'claudeAgent_work',model:'m',options:[{id:'effort',value:'max'}]},runtimeMode:'auto',interactionMode:'plan'}"
+launch="t3.launchCommand($configuration, 'mac', 'Next 2', 'Read the handoff.')"
+
+assert_eq "the launch there carries this thread's model selection, options and instance included" \
+    '{"instanceId":"claudeAgent_work","model":"m","options":[{"id":"effort","value":"max"}]}' \
+    "$(call "JSON.stringify(($launch).modelSelection)")"
+assert_eq "the launch there keeps this thread's modes" \
+    "auto|plan" \
+    "$(call "((l) => l.runtimeMode + '|' + l.interactionMode)($launch)")"
+assert_eq "the launch there starts in the project's checkout with the prompt, under the next title" \
+    'mac|Next 2|{"type":"root"}|Read the handoff.' \
+    "$(call "((l) => [l.projectId, l.title, JSON.stringify(l.workspaceStrategy), l.initialMessage.text].join('|'))($launch)")"
+# Node words the parse error itself differently from version to version, so only what t3.mjs says is compared.
+assert_eq "--from that is not JSON says so" \
+    "error: --from $(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json cannot be read as JSON" \
+    "$(from 'not json' | sed 's/ as JSON: .*/ as JSON/')"
+
 assert_eq "--ttl takes a count and a unit, which reach a shell on Windows" \
     "t3: --ttl must be a count and a unit such as 365d, not 1d & calc" \
     "$(cli token --ttl '1d & calc')"
@@ -389,8 +334,4 @@ assert_eq "--ttl of nothing is refused" \
 assert_eq "--ttl takes a unit in words, as T3 does" \
     "2 weeks" \
     "$(call "t3.parseArgs(['token', '--ttl', '2 weeks']).flags.ttl")"
-assert_eq "--project and --to do not go together" \
-    "t3: --project and --provider choose on this computer, so they do not go with --to" \
-    "$(cli continue --prompt-file x --to elsewhere --project .)"
-
 assert_summary "t3-handoff"
