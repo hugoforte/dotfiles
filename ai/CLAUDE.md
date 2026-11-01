@@ -23,7 +23,7 @@
 - Find three similar things in the codebase before writing a fourth, and follow them.
 - Code added on the current branch is not legacy: change it freely instead of adding a parallel method to preserve compatibility. Only code already on the main branch counts as legacy.
 - Fail fast with descriptive errors that include context, and let exceptions surface rather than swallowing them.
-- Add a dependency only for more than a one-liner, and write down why.
+- Add a dependency only when it replaces more than a one-liner of your own code, and write down why.
 - A TODO carries an issue number.
 - Fix a linter or tool warning rather than suppressing it, unless you say why.
 - After two failed attempts at one issue, stop and hand it to the `bug-root-cause-analyzer` agent.

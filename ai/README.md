@@ -108,4 +108,4 @@ Hooks of this repo's are the one value written differently on each side. The fra
 
 ## Agents and CLAUDE.md
 
-Each agent's description says when to use it, so `CLAUDE.md` does not list them; it names only `bug-root-cause-analyzer`, for the hand-off after two failed attempts. Agents write plans, notes and reviews under `~/ai-notes/`. Both are plain markdown; edit in the repo and the symlink makes it live.
+Each agent's description says when to use it, so `CLAUDE.md` does not list them; it names only `bug-root-cause-analyzer`, for the hand-off after two failed attempts. Agents write plans, notes, reviews and scratch files under `~/ai-notes/`. Both are plain markdown; edit in the repo and the symlink makes it live.

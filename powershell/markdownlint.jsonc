@@ -31,7 +31,7 @@
     // "no trailing whitespace"
     "MD009": true
 
-    // Deliberately absent: MD013 (line length) contradicts "keep each paragraph on one line"; MD033
+    // Deliberately absent: MD013 (line length) contradicts "write each new paragraph on one line"; MD033
     // (inline HTML) fires on the HTML comments several docs here use for scaffolding notes;
     // MD060 (table column style) fires on every compact table in the repo.
   },

@@ -55,7 +55,7 @@ A report-only run: it says what would change and changes nothing. Every installe
 _Avoid_: verify, validate, test
 
 **Component**:
-One unit `ai/install.sh` installs, checks and uninstalls: CLAUDE.md, agents (this repo's and the overlays'), rules, skills, rig skills, overlay skills, Bruno collections, settings, secrets. Each has an `install_`, `uninstall_` and `check_` of its own.
+One unit `ai/install.sh` installs, checks and uninstalls: CLAUDE.md, agents and rules (this repo's and the overlays'), skills, rig skills, overlay skills, Bruno collections, settings, secrets. Each has an `install_`, `uninstall_` and `check_` of its own.
 _Avoid_: module, feature, part
 
 **Sync**:
