@@ -120,7 +120,7 @@ What an overlay can supply, and how:
 
 - `ai/secrets/registry.psd1` and `ai/secrets/<skill>/`: merged with every other registry; a skill id may be registered only once.
 - `ai/skills/<name>/`: linked beside this repo's skills by `ai/install.sh`, for a skill whose text names something private; a skill name may be shipped from only one place.
-- `ai/rules/<name>.md`: guidance beside this repo's `CLAUDE.md` and rules, linked by `ai/install.sh` into `~/.claude/rules/` and every extra Claude config folder's `rules/`, which Claude Code reads with `CLAUDE.md`; a rule name may be shipped from only one place. Only the folder's own `.md` files are rules, not its subfolders', and every one is loaded, so keep notes about them elsewhere. This is where one person's or one employer's working rules go.
+- `ai/rules/<name>.md`: guidance beside this repo's `CLAUDE.md` and rules, linked by `ai/install.sh` into `~/.claude/rules/` and every extra Claude config folder's `rules/`, which Claude Code reads with `CLAUDE.md`; a rule name may be shipped from only one place. Only the folder's own `.md` files are rules, not its subfolders', and every one is loaded, so keep notes about them elsewhere or in a block-level HTML comment, which Claude Code strips before loading. This is where one person's or one employer's working rules go.
 - `ai/agents/<name>.md`: agents linked beside this repo's agents; a name this repo or an earlier overlay already ships is not linked.
 - `bruno/<collection>/`: linked into `~/bruno` by `ai/install.sh`, so Bruno opens every overlay's collections from one home; a collection name may be shipped from only one place.
 - `ai/claude/config-dirs`: extra Claude config folders, one absolute or `~/…` path per line (`#` starts a comment). `ai/install.sh` gives each the same as `~/.claude`; see [Claude accounts](#claude-accounts).
@@ -176,7 +176,7 @@ A folder that only one machine should have goes in the overlay's `machines/<KEY>
 
 A line is one absolute path (`/…`, `C:\…` or `C:/…`) or one under the home directory (`~/…` or `~\…`); a path may hold spaces. A `#` at the start of a line, or after a space, starts a comment. A folder named twice, or `~/.claude` itself, is set up once. A path that is neither is skipped with a warning, and `--check` reports it as drift.
 
-`ai/install.sh` makes each one a full Claude home: the same `CLAUDE.md`, agents, skills and managed settings as `~/.claude`, and `--check` reports each folder's links and settings as it does `~/.claude`'s. The overlays' MCP servers are the exception: they sign in as someone, so they go to `~/.claude` alone, and a folder that needs one adds it under its own login. It never touches a folder's login (`.credentials.json`), `.claude.json`, history or projects. A folder an overlay stops naming is left as it is.
+`ai/install.sh` makes each one a full Claude home: the same `CLAUDE.md`, agents, rules, skills and managed settings as `~/.claude`, and `--check` reports each folder's links and settings as it does `~/.claude`'s. The overlays' MCP servers are the exception: they sign in as someone, so they go to `~/.claude` alone, and a folder that needs one adds it under its own login. It never touches a folder's login (`.credentials.json`), `.claude.json`, history or projects. A folder an overlay stops naming is left as it is.
 
 Sign a folder in once, with the account it is for:
 

@@ -8,7 +8,8 @@ Configuration for AI coding agents (Claude Code, Codex, Copilot). Everything is 
 |---|---|
 | `skills/<name>/` | Agent skills. Each folder has a `SKILL.md`. Linked into every tool's skills directory. |
 | `CLAUDE.md` | Global Claude Code instructions, linked to `~/.claude/CLAUDE.md`. |
-| `agents/*.md` | Claude Code sub-agents: `implementation-planner`, `code-reviewer`, `unit-test-writer`, `bug-root-cause-analyzer`, `note-taker`, `prompt-optimizer`, `task-orchestrator`. Referenced from `CLAUDE.md`. |
+| `agents/*.md` | Claude Code sub-agents: `implementation-planner`, `code-reviewer`, `unit-test-writer`, `bug-root-cause-analyzer`, `note-taker`, `prompt-optimizer`, `task-orchestrator`. Each is triggered by its own description. |
+| `rules/*.md` | Claude Code rules for one kind of file, each path-scoped in its frontmatter; linked into `~/.claude/rules/`. |
 | `claude/settings.json` | Fragment merged into `~/.claude/settings.json`: model, plugins, marketplaces, UI prefs, a read-only tool allowlist. |
 | `install.sh` | Installer, checker and uninstaller for all of the above. |
 | `validate-settings.sh` | Prints a summary of `~/.claude/settings.json` (needs `jq`). |
@@ -107,4 +108,4 @@ Hooks of this repo's are the one value written differently on each side. The fra
 
 ## Agents and CLAUDE.md
 
-`CLAUDE.md` names the seven agents and when to use them. Agents write plans, notes and reviews under `~/ai-notes/`. Both are plain markdown; edit in the repo and the symlink makes it live.
+Each agent's description says when to use it, so `CLAUDE.md` does not list them; it names only `bug-root-cause-analyzer`, for the hand-off after two failed attempts. Agents write plans, notes and reviews under `~/ai-notes/`. Both are plain markdown; edit in the repo and the symlink makes it live.
