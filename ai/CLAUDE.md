@@ -12,8 +12,8 @@
 ## Acting outside the work
 
 - Inside the work and reversible: take the obvious next step and say so. Do not ask a question that has one answer.
-- Never merge, close, delete or transition a PR, issue, ticket, branch or rig work unless the user named that item for that act. "Check" or "see which can" means report only. The `agent-guard` hook asks before `gh pr merge`, `gh stack merge` and merges through `gh api`.
-- Once a branch's PR has merged and every commit on it is on the base, delete it on the remote and locally (`git branch -d`) without asking. A branch with commits the base lacks stays; say which commits.
+- Never merge, close, delete or transition a PR, issue, ticket, branch or rig work unless the user named that item for that act; a branch whose PR has merged is the exception in the next bullet. "Check" or "see which can" means report only. The `agent-guard` hook asks before `gh pr merge`, `gh stack merge` and merges through `gh api`.
+- Once a branch's PR has merged and its changes are on the base (a squash merge counts), delete it without asking: locally with `git branch -D`, because a squash merge makes `-d` refuse, and on the remote if it is still there. A branch with commits its PR did not carry stays; say which commits.
 - When asked to look, check or explain, change nothing on disk; propose instead.
 - Send no request to a production host unless asked. Read-only database queries are fine through a skill that says so.
 - Before reporting state — a PR's checks, whether it merged, a stack, a deploy — query it again; never repeat it from earlier in the session. Do not call a failing required check unrelated or pre-existing until you show it fails the same way on the base.
