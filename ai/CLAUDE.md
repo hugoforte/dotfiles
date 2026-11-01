@@ -25,6 +25,7 @@
 - Fail fast with descriptive errors that include context, and let exceptions surface rather than swallowing them.
 - Add a dependency only for more than a one-liner, and write down why.
 - A TODO carries an issue number.
+- Fix a linter or tool warning rather than suppressing it, unless you say why.
 - After two failed attempts at one issue, stop and hand it to the `bug-root-cause-analyzer` agent.
 
 ## Testing
@@ -35,6 +36,7 @@
 ## Git and GitHub
 
 - Every commit compiles, passes the existing tests, includes tests for new behaviour, and is formatted with the project's formatter.
+- A commit that fixes an issue carries `Fixes #123` on its own line.
 - Post PR review comments only with the user's explicit approval. Reply to an existing review thread in that thread, not at the root.
 
 ## Comments and docs
