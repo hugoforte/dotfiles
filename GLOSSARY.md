@@ -103,7 +103,7 @@ A skill the rig checkout ships under its `skills/`, linked *out* by this repo ex
 _Avoid_: skill (unqualified), external skill, vendored skill (that is `matt-*`, a copy this repo owns)
 
 **Rule**:
-A guidance file an overlay ships under its `ai/rules/`, linked into every Claude config folder's `rules/`, where Claude Code reads it beside `CLAUDE.md`: how one person's or one employer's working rules reach a session without this repo naming them. A rule name is linked from one place only.
+A guidance file under `ai/rules/`, linked into every Claude config folder's `rules/`, where Claude Code reads it beside `CLAUDE.md`. This repo's are path-scoped: guidance for one kind of file, loaded only when a session works on one. An overlay's are how one person's or one employer's working rules reach a session without this repo naming them. A rule name is linked from one place only, this repo's first.
 _Avoid_: rule for a row of the overlay table, which is a row
 
 **Overlay skill**:
