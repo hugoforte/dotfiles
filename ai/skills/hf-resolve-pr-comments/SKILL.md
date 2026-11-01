@@ -178,7 +178,7 @@ gh pr view <number> --json mergeable,mergeStateStatus
 gh pr checks <number>
 ```
 
-A push sets `mergeable` back to `UNKNOWN` while GitHub recomputes it: ask again, as before the merge, and never report `UNKNOWN` as the answer. A check still running is pending, not passed. Wait for it with `gh pr checks <number> --watch` run in the background when the user wants a final answer, or report it as pending.
+A push sets `mergeable` back to `UNKNOWN` while GitHub recomputes it: ask again, as before the merge, and never report `UNKNOWN` as the answer. A check still running is pending, not passed. When the user wants a final answer, wait for it with the agent host's own pull-request watch where it has one, else `gh pr checks <number> --watch` run in the background; otherwise report it as pending.
 
 ## Step 8: Report
 

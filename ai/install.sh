@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Installs the AI tooling in this repo into the agents' home directories by symlink.
-# Components: CLAUDE.md, agents (this repo's and the overlays'), rules, skills, rig skills, overlay
+# Components: CLAUDE.md, agents and rules (this repo's and the overlays'), skills, rig skills, overlay
 # skills, Bruno collections, settings, MCP servers.
 # The Claude ones apply to ~/.claude and to every extra Claude config folder (see CLAUDE_DIRS).
 # See --help.
@@ -36,7 +36,7 @@ BRUNO_DIR="$HOME/bruno"
 TAB="$(printf '\t')"
 
 # The Claude config folders, one per line: ~/.claude, then each extra folder the overlays name in
-# their ai/claude/config-dirs, or in this machine's machines/<KEY>.config-dirs. Each gets exactly what ~/.claude gets: CLAUDE.md, agents, skills and
+# their ai/claude/config-dirs, or in this machine's machines/<KEY>.config-dirs. Each gets exactly what ~/.claude gets: CLAUDE.md, agents, rules, skills and
 # the managed settings, but not the overlays' MCP servers (see MCP_FILE). Nothing else in a folder
 # is touched, so its login (.credentials.json), .claude.json, history and projects stay Claude Code's. Set by resolve_claude_dirs; a path may
 # hold spaces, so loop over it line by line, never with `for`.
@@ -395,10 +395,52 @@ install_overlay_skills()   { overlay_skills install; }
 uninstall_overlay_skills() { overlay_skills uninstall; }
 check_overlay_skills()     { overlay_skills check; }
 
-# No rule ships from this repo: its own guidance is CLAUDE.md.
-install_rules()   { overlay_link install 'ai/rules/*.md' rules "$(claude_subdirs rules)"; }
-uninstall_rules() { overlay_link uninstall 'ai/rules/*.md' rules "$(claude_subdirs rules)"; }
-check_rules()     { overlay_link check 'ai/rules/*.md' rules "$(claude_subdirs rules)"; }
+# This repo's rules are guidance that holds for one kind of file only, path-scoped in their
+# frontmatter so Claude Code loads them only there; what holds everywhere is CLAUDE.md.
+install_rules() {
+    while IFS= read -r dir; do
+        mkdir -p "$dir/rules"
+        for rule in "$ZSH"/ai/rules/*.md; do
+            [ -f "$rule" ] || continue
+            link "$rule" "$dir/rules/$(basename "$rule")"
+        done
+        prune_orphans "$dir/rules" "$ZSH/ai/rules"
+        success "Linked rules into $dir/rules"
+    done <<EOF
+$CLAUDE_DIRS
+EOF
+    overlay_rules install
+}
+uninstall_rules() {
+    while IFS= read -r dir; do
+        for rule in "$ZSH"/ai/rules/*.md; do
+            [ -f "$rule" ] || continue
+            unlink_managed "$rule" "$dir/rules/$(basename "$rule")"
+        done
+        prune_orphans "$dir/rules" "$ZSH/ai/rules"
+    done <<EOF
+$CLAUDE_DIRS
+EOF
+    success "Removed rule links"
+    overlay_rules uninstall
+}
+check_rules() {
+    while IFS= read -r dir; do
+        for rule in "$ZSH"/ai/rules/*.md; do
+            [ -f "$rule" ] || continue
+            check_link "$rule" "$dir/rules/$(basename "$rule")"
+        done
+        check_orphans "$dir/rules" "$ZSH/ai/rules"
+    done <<EOF
+$CLAUDE_DIRS
+EOF
+    overlay_rules check
+}
+
+# overlay_rules <mode>: the overlays' rules, beside this repo's, whose names this repo's claim first.
+overlay_rules() {
+    overlay_link "$1" 'ai/rules/*.md' rules "$(claude_subdirs rules)" "$ZSH/ai/rules"
+}
 
 # No collection lives in this public repo, so nothing of this repo's own claims a name.
 install_bruno()   { overlay_link install 'bruno/*/' "Bruno collections" "$BRUNO_DIR"; }
@@ -609,11 +651,11 @@ disable_all() {
 show_help() {
     echo "Usage: $0 [MODE] [COMPONENT FLAGS]"
     echo ""
-    echo "Symlinks CLAUDE.md, agents and skills from this repo into ~/.claude (and skills"
+    echo "Symlinks CLAUDE.md, agents, rules and skills from this repo into ~/.claude (and skills"
     echo "into ~/.codex and ~/.copilot when present), links the skills the rig checkout"
     echo "ships and the skills each overlay in ai/secrets/machine.local.psd1 ships the same way,"
-    echo "links each overlay's agents beside this repo's and its rules (<overlay>/ai/rules/*.md)"
-    echo "into ~/.claude/rules, links each overlay's Bruno collections (<overlay>/bruno/) into ~/bruno, and merges"
+    echo "links each overlay's agents and rules (<overlay>/ai/rules/*.md) beside this repo's,"
+    echo "links each overlay's Bruno collections (<overlay>/bruno/) into ~/bruno, and merges"
     echo "ai/claude/settings.json into ~/.claude/settings.json, and sets the MCP servers each"
     echo "overlay declares in <overlay>/ai/claude/mcp.json in ~/.claude.json's user scope. Every"
     echo "extra Claude config folder an overlay names in <overlay>/ai/claude/config-dirs gets the"
@@ -629,7 +671,7 @@ show_help() {
     echo "Component flags:"
     echo "  --claude-md-only       Only CLAUDE.md"
     echo "  --agents-only          Only agent files, this repo's and the overlays'"
-    echo "  --rules-only           Only the rules overlays ship (<overlay>/ai/rules/*.md)"
+    echo "  --rules-only           Only rule files, this repo's and the overlays'"
     echo "  --skills-only          Only skills"
     echo "  --rig-skills-only      Only the skills rig ships (RIG_ROOT, else D:/rig, C:/rig, ~/rig)"
     echo "  --overlay-skills-only  Only the skills overlays ship (<overlay>/ai/skills/)"
@@ -638,7 +680,7 @@ show_help() {
     echo "  --mcp-only             Only the MCP servers overlays declare (<overlay>/ai/claude/mcp.json)"
     echo "  --no-claude-md         Skip CLAUDE.md"
     echo "  --no-agents            Skip agents"
-    echo "  --no-rules             Skip the rules overlays ship"
+    echo "  --no-rules             Skip rules"
     echo "  --no-skills            Skip skills"
     echo "  --no-rig-skills        Skip the skills rig ships"
     echo "  --no-overlay-skills    Skip the skills overlays ship"

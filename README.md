@@ -17,6 +17,7 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
 | Agent skills | `ai/skills/<name>/`, here or in an overlay | `~/.claude/skills` and every extra Claude config folder's `skills`, `~/.codex/skills`, `~/.copilot/skills` (symlinks) | `ai/install.sh` |
 | Bruno API collections | an overlay's `bruno/<collection>/` | `~/bruno/<collection>` (symlinks) | `ai/install.sh` |
 | Claude Code global instructions | `ai/CLAUDE.md` | `~/.claude/CLAUDE.md` and each extra Claude config folder's (symlinks) | `ai/install.sh` |
+| Claude Code rules, guidance for one kind of file (`paths:` in the frontmatter) | `ai/rules/*.md` | `~/.claude/rules/` and each extra Claude config folder's (symlinks) | `ai/install.sh` |
 | Claude Code sub-agents | `ai/agents/*.md` | `~/.claude/agents/` and each extra Claude config folder's (symlinks) | `ai/install.sh` |
 | Claude Code settings (model, plugins, skill listing, allowlist) | `ai/claude/settings.json` | merged into `~/.claude/settings.json` and each extra Claude config folder's | `ai/install.sh` |
 | Claude Code MCP servers | an overlay's `ai/claude/mcp.json` | set by name in `~/.claude.json`'s user scope; extra Claude config folders get none | `ai/install.sh` |
@@ -24,7 +25,7 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
 | Skill secrets (encrypted with SOPS + age) | `ai/secrets/<skill>/`, here or in an overlay | `%USERPROFILE%\.agent-secrets\` (`~/.agent-secrets/` on a Mac), then symlinked into every checkout that has the skill (shipped skills read them in place) | `powershell/deploy-secrets.ps1`, `macos/deploy-secrets.sh` |
 | Commands for every shell, agents' included (`md-lint`, `check-encrypted`, `leak-check`) | `bin/` | the user PATH | `powershell/setup.ps1`, `powershell/sync.ps1` |
 | Tools and programs a machine needs | `powershell/tools.psd1`, here or in an overlay | installed via winget, npm, uv and GitHub releases | `powershell/install-tools.ps1` |
-| Default markdownlint rules | `powershell/markdownlint.jsonc` | passed to `markdownlint-cli2` by `bin/md-lint` | none (used in place) |
+| Default markdownlint rules | `powershell/markdownlint.jsonc` | passed to `markdownlint-cli2` by `bin/md-lint` | none (used in place); `markdownlint-cli2` itself comes from `powershell/tools.psd1` on Windows and an overlay's `macos/Brewfile` on a Mac |
 | Automatic pull-and-relink | `powershell/sync.ps1` | Windows scheduled task "Dotfiles Sync" | `powershell/install-sync-task.ps1` |
 | Automatic pull-and-relink on a Mac | `macos/sync.sh` | LaunchAgent `local.dotfiles.sync`, logging to `~/Library/Logs/dotfiles-sync.log` | `macos/install-sync-agent.sh` |
 | Claude account rotation (`cswap auto`), on machines with the `claude-swap` option | none | Windows scheduled task "Claude Swap Auto", at sign-in | `powershell/install-cswap-task.ps1` |
@@ -119,7 +120,7 @@ What an overlay can supply, and how:
 
 - `ai/secrets/registry.psd1` and `ai/secrets/<skill>/`: merged with every other registry; a skill id may be registered only once.
 - `ai/skills/<name>/`: linked beside this repo's skills by `ai/install.sh`, for a skill whose text names something private; a skill name may be shipped from only one place.
-- `ai/rules/<name>.md`: guidance beside this repo's `CLAUDE.md`, linked by `ai/install.sh` into `~/.claude/rules/` and every extra Claude config folder's `rules/`, which Claude Code reads with `CLAUDE.md`; a rule name may be shipped from only one place. Only the folder's own `.md` files are rules, not its subfolders', and every one is loaded, so keep notes about them elsewhere. This is where one person's or one employer's working rules go.
+- `ai/rules/<name>.md`: guidance beside this repo's `CLAUDE.md` and rules, linked by `ai/install.sh` into `~/.claude/rules/` and every extra Claude config folder's `rules/`, which Claude Code reads with `CLAUDE.md`; a rule name may be shipped from only one place. `ai/install.sh` links only the folder's own `.md` files, not its subfolders', and every linked file is loaded, so keep notes about them elsewhere or in a block-level HTML comment, which Claude Code strips before loading. This is where one person's or one employer's working rules go.
 - `ai/agents/<name>.md`: agents linked beside this repo's agents; a name this repo or an earlier overlay already ships is not linked.
 - `bruno/<collection>/`: linked into `~/bruno` by `ai/install.sh`, so Bruno opens every overlay's collections from one home; a collection name may be shipped from only one place.
 - `ai/claude/config-dirs`: extra Claude config folders, one absolute or `~/…` path per line (`#` starts a comment). `ai/install.sh` gives each the same as `~/.claude`; see [Claude accounts](#claude-accounts).
@@ -175,7 +176,7 @@ A folder that only one machine should have goes in the overlay's `machines/<KEY>
 
 A line is one absolute path (`/…`, `C:\…` or `C:/…`) or one under the home directory (`~/…` or `~\…`); a path may hold spaces. A `#` at the start of a line, or after a space, starts a comment. A folder named twice, or `~/.claude` itself, is set up once. A path that is neither is skipped with a warning, and `--check` reports it as drift.
 
-`ai/install.sh` makes each one a full Claude home: the same `CLAUDE.md`, agents, skills and managed settings as `~/.claude`, and `--check` reports each folder's links and settings as it does `~/.claude`'s. The overlays' MCP servers are the exception: they sign in as someone, so they go to `~/.claude` alone, and a folder that needs one adds it under its own login. It never touches a folder's login (`.credentials.json`), `.claude.json`, history or projects. A folder an overlay stops naming is left as it is.
+`ai/install.sh` makes each one a full Claude home: the same `CLAUDE.md`, agents, rules, skills and managed settings as `~/.claude`, and `--check` reports each folder's links and settings as it does `~/.claude`'s. The overlays' MCP servers are the exception: they sign in as someone, so they go to `~/.claude` alone, and a folder that needs one adds it under its own login. It never touches a folder's login (`.credentials.json`), `.claude.json`, history or projects. A folder an overlay stops naming is left as it is.
 
 Sign a folder in once, with the account it is for:
 

@@ -8,7 +8,8 @@ Configuration for AI coding agents (Claude Code, Codex, Copilot). Everything is 
 |---|---|
 | `skills/<name>/` | Agent skills. Each folder has a `SKILL.md`. Linked into every tool's skills directory. |
 | `CLAUDE.md` | Global Claude Code instructions, linked to `~/.claude/CLAUDE.md`. |
-| `agents/*.md` | Claude Code sub-agents: `implementation-planner`, `code-reviewer`, `unit-test-writer`, `bug-root-cause-analyzer`, `note-taker`, `prompt-optimizer`, `task-orchestrator`. Referenced from `CLAUDE.md`. |
+| `agents/*.md` | Claude Code sub-agents: `implementation-planner`, `code-reviewer`, `unit-test-writer`, `bug-root-cause-analyzer`, `note-taker`, `prompt-optimizer`, `task-orchestrator`. Each is triggered by its own description. |
+| `rules/*.md` | Claude Code rules for one kind of file, each path-scoped in its frontmatter; linked into `~/.claude/rules/`. |
 | `claude/settings.json` | Fragment merged into `~/.claude/settings.json`: model, plugins, marketplaces, UI prefs, a read-only tool allowlist. |
 | `install.sh` | Installer, checker and uninstaller for all of the above. |
 | `validate-settings.sh` | Prints a summary of `~/.claude/settings.json` (needs `jq`). |
@@ -31,7 +32,7 @@ From Git Bash on Windows, or any POSIX shell:
 |---|---|---|---|
 | `CLAUDE.md` | `ai/CLAUDE.md` | `~/.claude/CLAUDE.md` | symlinks |
 | Agents | `ai/agents/*.md`, then `<overlay>/ai/agents/*.md` | `~/.claude/agents/` | symlinks; an overlay agent whose name this repo or an earlier overlay already ships is not linked |
-| Rules | `<overlay>/ai/rules/*.md`, for each overlay in `ai/secrets/machine.local.psd1` | `~/.claude/rules/`, which Claude Code reads beside `CLAUDE.md` | symlinks; a name an earlier overlay already ships is not linked: install warns, `--check` fails |
+| Rules | `ai/rules/*.md`, then `<overlay>/ai/rules/*.md` for each overlay in `ai/secrets/machine.local.psd1` | `~/.claude/rules/`, which Claude Code reads beside `CLAUDE.md`; a rule with `paths:` in its frontmatter loads only for the files it matches | symlinks; an overlay rule whose name this repo or an earlier overlay already ships is not linked: install warns, `--check` fails |
 | Skills | `ai/skills/*/` | `~/.claude/skills/`, `~/.codex/skills/`, `~/.copilot/skills/` (the last two only when the tool dir exists) | symlinks |
 | Extra Claude config folders | `<overlay>/ai/claude/config-dirs`, one absolute or `~/…` path per line (`#` starts a comment), and `<overlay>/machines/<KEY>.config-dirs`, the same for the one machine whose key is `KEY` (`COMPUTERNAME` on Windows, the `HostName`, else `LocalHostName`, on a Mac; uppercased) | each folder named gets what `~/.claude` gets in the `CLAUDE.md`, agents, rules, skills, rig skills, overlay skills and settings rows, once however often it is named, but none of the MCP servers; its login, `.claude.json`, history and projects are never touched; a path that is not absolute is skipped with a warning | the same as those rows, and a path that is not absolute fails |
 | rig skills | `<rig checkout>/skills/*/`, the checkout being `RIG_ROOT`, else `D:\rig`, `C:\rig`, `~/rig` | the same three skills directories | symlinks; a machine without rig links nothing and is not drifted |
@@ -107,4 +108,4 @@ Hooks of this repo's are the one value written differently on each side. The fra
 
 ## Agents and CLAUDE.md
 
-`CLAUDE.md` names the seven agents and when to use them. Agents write plans, notes and reviews under `~/ai-notes/`. Both are plain markdown; edit in the repo and the symlink makes it live.
+Each agent's description says when to use it, so `CLAUDE.md` does not list them; it names only `bug-root-cause-analyzer`, for the hand-off after two failed attempts. Agents write plans, notes, reviews and scratch files under `~/ai-notes/`. Both are plain markdown; edit in the repo and the symlink makes it live.
