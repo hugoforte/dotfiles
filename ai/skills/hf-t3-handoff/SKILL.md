@@ -20,13 +20,13 @@ Threads of a rig work are titled `RIG - [KEY] Short description`, and each hando
 ## What it needs
 
 - **rig**, set up, with its `rig-handoff` skill linked into `~/.claude/skills`.
-- **T3 Code** with its `t3-code` MCP server, running this skill from a thread in it: `t3_thread_configuration`, `t3_thread_read`, `t3_thread_launch`, `t3_thread_update` and `t3_thread_organize`, and `t3_project_list` or `orchestrator_capabilities` for another project or provider instance.
+- **T3 Code** with its `t3-code` MCP server, running this skill from a thread in it: `t3_thread_configure`, `t3_thread_read`, `t3_thread_launch`, `t3_thread_update` and `t3_thread_organize`, and `t3_project_list` or `orchestrator_capabilities` for another project or provider instance.
 - **Node** for `t3.mjs`, 22.4 or later for another computer.
 - **For another computer**: T3 Code running there with its server network-accessible, the repository added as a project in it, and that computer's entry in `~/.agent-secrets/hf-t3-handoff/computers.local.json` on this one. That file is a skill secret: `deploy-secrets.ps1` decrypts it from `ai/secrets/hf-t3-handoff/` in the personal overlay, so one copy lists every machine and reaches each of them by sync. Running `node ~/.claude/skills/hf-t3-handoff/t3.mjs token` on a computer prints its entry, token included, and the entry goes into the overlay's file with `sops edit` (see the `hf-dotfiles-secrets` skill), never into the decrypted copy. That is the user's to run and to paste: the token is a password, so never ask for it in chat and never print the file.
 
 ## 0. Check the setup
 
-Call `t3_thread_configuration` with no arguments. It answers with this thread's id, model selection and modes; keep the answer. If the tool is not there, or fails, tell the user this skill needs T3 Code's `t3-code` MCP server and stop.
+Call `t3_thread_configure` with no arguments. It answers with this thread's id, model selection and modes; keep the answer. Never pass it a `modelSelection`: that changes this thread's model instead of reading it. If the tool is not there, or fails, tell the user this skill needs T3 Code's `t3-code` MCP server and stop.
 
 Call `t3_thread_read` with this thread's id, `limit` 1. Keep its `title`, `projectId`, `branch` and `worktreePath`. If it says `archived`, stop: the thread was already handed off.
 
@@ -35,7 +35,7 @@ When the user named another project or provider instance, find it now, before an
 - **Another project**, named by its folder: page through `t3_project_list`, following `nextCursor` until it is null, and take the projects whose `workspaceRoot` is that folder, compared as absolute paths with either slash, without a trailing one, and without case on Windows, leaving out any with a `deletedAt`. It must be exactly one: with none, the user adds the folder as a project in T3 Code; with several, they remove all but one.
 - **Another provider instance**: `orchestrator_capabilities`, and the instance whose `providerInstanceId` or `displayName` the user named. It must have no "disabled" constraint and the same `driverKind` as this thread's instance, since the model belongs to its driver; otherwise list the enabled instances of that driver with their display names.
 
-For another computer, also call `t3_project_read` with this thread's `projectId`, and write a JSON file in the OS temp directory: `{ "project": <t3_project_read's answer>, "configuration": <t3_thread_configuration's answer> }`, each answer as the tool gave it. That file is the `--from` below.
+For another computer, also call `t3_project_read` with this thread's `projectId`, and write a JSON file in the OS temp directory: `{ "project": <t3_project_read's answer>, "configuration": <t3_thread_configure's answer> }`, each answer as the tool gave it. That file is the `--from` below.
 
 ```bash
 node ~/.claude/skills/hf-t3-handoff/t3.mjs check [--to <computer> --from <file>]
