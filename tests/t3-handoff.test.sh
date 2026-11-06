@@ -294,12 +294,18 @@ assert_eq "a peer known only by a device label is not offered as a name" \
     "" \
     "$(call "t3.tailscalePeerNames($labelled).join(',')")"
 
+# clis <platform> <env field>: each CLI tailscaleClis gives, with that field of its environment.
+# The expression is built outside $(…), whose parsing bash 3.2, macOS's, gets wrong around parentheses.
+clis() {
+    call "t3.tailscaleClis('$1', { HOME: 'h' }).map(c => c.cli + ':' + (c.env.$2 || '-')).join(',')"
+}
+
 assert_eq "on macOS the Tailscale app's own executable is asked too, told to act as a CLI" \
     'tailscale:-,/Applications/Tailscale.app/Contents/MacOS/Tailscale:1' \
-    "$(call "t3.tailscaleClis('darwin', { HOME: 'h' }).map(({ cli, env }) => cli + ':' + (env.TAILSCALE_BE_CLI ?? '-')).join(',')")"
+    "$(clis darwin TAILSCALE_BE_CLI)"
 assert_eq "elsewhere only the tailscale on PATH is asked, in the environment as it is" \
     'tailscale:h' \
-    "$(call "t3.tailscaleClis('win32', { HOME: 'h' }).map(({ cli, env }) => cli + ':' + env.HOME).join(',')")"
+    "$(clis win32 HOME)"
 
 # fetch_error <cause code>: a rejection shaped like Node's fetch's.
 fetch_error() {
