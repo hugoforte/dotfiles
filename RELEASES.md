@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- An agent answers an automated reviewer without asking first (#103). The global `ai/CLAUDE.md` still has every PR review comment wait for the user's approval, except in a thread an automated reviewer such as CodeRabbit started: there the agent acts on the finding, replies in the thread, resolves it and tells the user what it did. `hf-resolve-pr-comments` tells such a thread by its first comment's author being a `Bot` and carries out its row of the plan without waiting; a human's thread, and a new comment at the root, still wait for approval
+- An agent answers an automated reviewer without asking first (#103). The global `ai/CLAUDE.md` still has every PR review comment wait for the user's approval, except in a thread an automated reviewer such as CodeRabbit started, while the work is to address the PR's review feedback or make it mergeable: there the agent acts on the finding, replies in the thread, resolves it and tells the user what it did. Asked only to look at a review, it still changes nothing. `hf-resolve-pr-comments` carries out the row of a thread without waiting when every comment in it is a `Bot`'s or the agent's own; a thread a human has written in, and a new comment at the root, still wait for approval
 
 - The sync keeps rig up to date. `powershell/sync.ps1` and `macos/sync.sh` run `rig update` when the machine has a rig checkout, so a rig release reaches every machine on its next sync, in the signed-in session where its credentials are. The log keeps what happened to the tool and each data root. `rig update`'s exit code is not read, because it is non-zero whenever its doctor checks report anything; a run that says nothing of the tool or a data root fails the sync, after the rest has run.
 

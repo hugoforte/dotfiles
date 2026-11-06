@@ -37,7 +37,7 @@
 
 - Every commit compiles, passes the existing tests, includes tests for new behaviour, and is formatted with the project's formatter.
 - A commit that fixes an issue carries `Fixes #123` on its own line.
-- Post a PR review comment only with the user's explicit approval, except in an automated reviewer's thread (CodeRabbit and the like): there, act on the finding, reply in the thread, resolve it, and tell the user what you did. Reply to an existing review thread in that thread, not at the root.
+- Post a PR review comment only with the user's explicit approval, except in an automated reviewer's thread (CodeRabbit and the like) while the work is to address a PR's review feedback or make it mergeable: there, act on the finding, reply in the thread, resolve it, and tell the user what you did. Reply to an existing review thread in that thread, not at the root.
 
 ## Comments and docs
 

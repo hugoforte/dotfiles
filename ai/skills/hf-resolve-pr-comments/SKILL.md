@@ -89,7 +89,7 @@ Present a table before changing anything or posting anything:
 
 Say plainly which comments you propose to push back on and why.
 
-A thread an automated reviewer started, one whose first comment's author is a `Bot` (`__typename` in Step 2's query; CodeRabbit is one), goes ahead without waiting: carry out its row, reply and resolve as in the steps below, and report it with the rest. For every other row, wait for approval. Do not commit, comment, or resolve a human's thread until the user approves — replies and resolutions are public and hard to take back.
+A thread only automated reviewers have written in, every comment's author a `Bot` (`__typename` in Step 2's query; CodeRabbit is one) or you, goes ahead without waiting: carry out its row, reply and resolve as in the steps below, and report it with the rest. For every other row, wait for approval. Do not commit, comment, or resolve a human's thread until the user approves — replies and resolutions are public and hard to take back.
 
 If the user disagrees with a decision, re-decide that row and re-present; don't argue past one exchange.
 
