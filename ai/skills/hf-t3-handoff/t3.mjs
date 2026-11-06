@@ -176,6 +176,91 @@ export function reachableName(host) {
     return host.replace(/\.local$/i, '');
 }
 
+/**
+ * A node of `tailscale status --json` by its MagicDNS name, the first label of
+ * its DNSName, else by its HostName when that is a host name at all: Tailscale
+ * reports a device's own label there, such as "Living Room TV".
+ */
+function tailscaleNodeName(node) {
+    const label = node?.DNSName?.split('.')[0];
+    if (label) return label;
+    return /^[a-z0-9-]+$/i.test(node?.HostName ?? '') ? node.HostName : undefined;
+}
+
+/**
+ * A node of `tailscale status --json` by the host name to reach it at: its full
+ * MagicDNS name, which resolves to that node alone wherever MagicDNS is on, else
+ * its HostName when that is a host name at all.
+ */
+function tailscaleNodeHost(node) {
+    const fqdn = node?.DNSName?.replace(/\.$/, '');
+    if (fqdn) return fqdn;
+    return tailscaleNodeName(node);
+}
+
+/**
+ * The name `token` gives this computer's entry: its short Tailscale name when
+ * `status`, the parsed `tailscale status --json`, has one; else the reachable
+ * form of `host`.
+ */
+export function tokenName(status, host) {
+    return tailscaleNodeName(status?.Self) ?? reachableName(host);
+}
+
+/**
+ * The host `token` puts in this computer's origin: its full MagicDNS name when
+ * `status` has one, not the short label, which resolves only through the
+ * tailnet's search domain and can name another server; else as tokenName.
+ */
+export function tokenHost(status, host) {
+    return tailscaleNodeHost(status?.Self) ?? reachableName(host);
+}
+
+/** The host names to reach the peers in `status`, the parsed `tailscale status --json`, at. */
+export function tailscalePeerNames(status) {
+    return Object.values(status?.Peer ?? {}).map(tailscaleNodeHost).filter(Boolean);
+}
+
+/** Whether a fetch failed because its host name does not resolve, rather than because nothing answered. */
+export function doesNotResolve(error) {
+    return ['ENOTFOUND', 'EAI_AGAIN'].includes(error?.cause?.code);
+}
+
+/** The problem for another computer's `origin` whose host does not resolve; `peers` are the Tailscale names, when Tailscale answered. */
+export function unresolvedOrigin(name, origin, peers) {
+    return new Problem(
+        `${new URL(origin).hostname}, the host in ${name}'s origin ${origin}, does not resolve on this computer`,
+        peers
+            ? `Change the origin in that entry to a name this computer resolves. Tailscale sees: ${peers.join(', ') || 'no peers'}.`
+            : 'Change the origin in that entry to a name or address this computer resolves, such as its Tailscale name.',
+    );
+}
+
+/**
+ * The Tailscale CLIs to ask, in order, each with the environment to run it in.
+ * On macOS the app's own executable is tried too, since the App Store build
+ * puts none on PATH and an app started from the Dock gets launchd's PATH; run
+ * without a terminal, that executable may open the app rather than answer,
+ * unless TAILSCALE_BE_CLI says it is a CLI.
+ */
+export function tailscaleClis(platform, env) {
+    const clis = [{ cli: 'tailscale', env }];
+    if (platform === 'darwin') clis.push({ cli: '/Applications/Tailscale.app/Contents/MacOS/Tailscale', env: { ...env, TAILSCALE_BE_CLI: '1' } });
+    return clis;
+}
+
+/** `tailscale status --json`, parsed, or undefined when tailscale is not found or does not answer. */
+function tailscaleStatus() {
+    for (const { cli, env } of tailscaleClis(process.platform, process.env)) {
+        try {
+            return JSON.parse(execFileSync(cli, ['status', '--json'], { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'ignore'], timeout: PROBE_TIMEOUT_MS }));
+        } catch {
+            // Not there, or not answering: try the next, then go without.
+        }
+    }
+    return undefined;
+}
+
 /** An error that says what went wrong and, when there is one, what fixes it. */
 class Problem extends Error {
     constructor(message, fix) {
@@ -253,12 +338,17 @@ function checkWebSocket() {
     }
 }
 
-/** Checks that a T3 Code server answers at `origin` and speaks this script's protocol. */
-async function probe(origin, problem, fix) {
+/**
+ * Checks that a T3 Code server answers at `origin` and speaks this script's
+ * protocol. Fails with `problem` when nothing answers, or with what
+ * `unresolved` returns when the origin's host does not resolve.
+ */
+export async function probe(origin, problem, fix, unresolved) {
     let response;
     try {
         response = await fetch(`${origin}/.well-known/t3/environment`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
-    } catch {
+    } catch (error) {
+        if (unresolved && doesNotResolve(error)) throw unresolved();
         throw new Problem(problem, fix);
     }
     const environment = response.ok ? await response.json().catch(() => undefined) : undefined;
@@ -283,7 +373,15 @@ async function otherComputer(name) {
     if (!known) throw new Problem(`${COMPUTERS_FILE} has no computer "${name}"; it has: ${Object.keys(computers).join(', ') || 'none'}`, entry);
     const { origin, token } = computers[known];
     if (!origin || !token) throw new Problem(`"${known}" in ${COMPUTERS_FILE} needs an origin and a token`, entry);
-    await probe(origin, `T3 Code on ${known} does not answer at ${origin}`, 'Open T3 Code on that computer, set its server to network-accessible, and check this computer reaches it (Tailscale up on both).');
+    await probe(
+        origin,
+        `T3 Code on ${known} does not answer at ${origin}`,
+        'Open T3 Code on that computer, set its server to network-accessible, and check this computer reaches it (Tailscale up on both).',
+        () => {
+            const status = tailscaleStatus();
+            return unresolvedOrigin(known, origin, status && tailscalePeerNames(status));
+        },
+    );
     const server = api(origin, token, `${known} refused its token in ${COMPUTERS_FILE}. ${entry}`);
     return { name: known, server, projects: await readProjectsWithRepositories(server) };
 }
@@ -597,10 +695,14 @@ async function continueThread(flags) {
 async function printToken(ttl = '365d') {
     const { port } = new URL(await serverOrigin());
     const { token, expiresAt } = issueSession(ttl);
-    const name = reachableName(hostname());
+    const status = tailscaleStatus();
+    const name = tokenName(status, hostname());
     console.log(`This computer's entry for ${COMPUTERS_FILE} on the computer that hands off to it:\n`);
-    console.log(`  ${JSON.stringify(name.toLowerCase())}: ${JSON.stringify({ origin: `http://${name}:${port}`, token })}\n`);
+    console.log(`  ${JSON.stringify(name.toLowerCase())}: ${JSON.stringify({ origin: `http://${tokenHost(status, hostname())}:${port}`, token })}\n`);
     console.log(`The token opens T3 Code on this computer until ${expiresAt}: keep it out of git and out of chat.`);
+    console.log(tailscaleNodeHost(status?.Self)
+        ? 'The origin names this computer by its Tailscale name.'
+        : 'Tailscale did not answer, so the origin names this computer by its host name, which the other computer may not resolve.');
     console.log('If the other computer knows this one by another name or address, change the origin to match.');
 }
 
