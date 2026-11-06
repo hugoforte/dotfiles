@@ -50,6 +50,7 @@ query($owner:String!, $repo:String!, $pr:Int!) {
           path
           line
           comments(first: 50) {
+            totalCount
             nodes { databaseId author { login __typename } body createdAt }
           }
         }
@@ -89,7 +90,7 @@ Present a table before changing anything or posting anything:
 
 Say plainly which comments you propose to push back on and why.
 
-A thread only automated reviewers have written in, every comment's author a `Bot` (`__typename` in Step 2's query; CodeRabbit is one) or you, goes ahead without waiting: carry out its row, reply and resolve as in the steps below, and report it with the rest. For every other row, wait for approval. Do not commit, comment, or resolve a human's thread until the user approves — replies and resolutions are public and hard to take back.
+A thread only automated reviewers have written in, every comment's author a `Bot` (`__typename` in Step 2's query; CodeRabbit is one) or you, goes ahead without waiting: carry out its row through the steps below, commit, push, reply and resolve, and report it with the rest, even while other rows wait. A push-back on a bot's finding goes ahead too, its reasons in the reply. Two such threads still wait: one with more comments (`totalCount`) than the query fetched, since a human may have written in the rest, and one whose bot asks a question only the author can answer, such as whether a behaviour is intended. For every other row, wait for approval. Do not commit, comment, or resolve a human's thread until the user approves — replies and resolutions are public and hard to take back.
 
 If the user disagrees with a decision, re-decide that row and re-present; don't argue past one exchange.
 
