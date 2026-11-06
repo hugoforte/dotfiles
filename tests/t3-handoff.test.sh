@@ -330,9 +330,15 @@ printf '%s' 'p' > "$work/prompt.txt"
 from_fix="$(node "$module" continue --to elsewhere --title t \
     --from "$(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json" \
     --prompt-file "$(cd "$work" && (pwd -W 2>/dev/null || pwd))/prompt.txt" 2>&1 >/dev/null | sed -n 2p)"
+# Matched outside $(…): bash 3.2, macOS's, ends a command substitution at a case pattern's ")".
+if [[ "$from_fix" == *"<t3_project_read>"*"<t3_thread_configure>"* ]]; then
+    from_named="names t3_project_read and t3_thread_configure"
+else
+    from_named="$from_fix"
+fi
 assert_eq "a --from without what it needs names the MCP tools that write it" \
     "names t3_project_read and t3_thread_configure" \
-    "$(case "$from_fix" in *"<t3_project_read>"*"<t3_thread_configure>"*) echo "names t3_project_read and t3_thread_configure" ;; *) echo "$from_fix" ;; esac)"
+    "$from_named"
 
 assert_eq "--ttl takes a count and a unit, which reach a shell on Windows" \
     "t3: --ttl must be a count and a unit such as 365d, not 1d & calc" \
