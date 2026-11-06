@@ -324,6 +324,22 @@ assert_eq "the launch there starts in the project's checkout with the prompt, un
 assert_eq "--from that is not JSON says so" \
     "error: --from $(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json cannot be read as JSON" \
     "$(from 'not json' | sed 's/ as JSON: .*/ as JSON/')"
+# The fix is how the agent learns which MCP tools write --from, so it must name tools T3 Code offers.
+printf '%s' '{}' > "$work/from.json"
+printf '%s' 'p' > "$work/prompt.txt"
+from_fix="$(node "$module" continue --to elsewhere --title t \
+    --from "$(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json" \
+    --prompt-file "$(cd "$work" && (pwd -W 2>/dev/null || pwd))/prompt.txt" 2>&1 >/dev/null | sed -n 2p)"
+# Matched outside $(…): bash 3.2, macOS's, ends a command substitution at a case pattern's ")".
+# T3 Code 0.1.2 reads a thread's configuration with t3_thread_configuration, 0.1.6 with t3_thread_configure.
+if [[ "$from_fix" == *"<t3_project_read>"*"t3_thread_configuration"*"t3_thread_configure with no arguments"* ]]; then
+    from_named="names t3_project_read and both configuration tools"
+else
+    from_named="$from_fix"
+fi
+assert_eq "a --from without what it needs names the MCP tools that write it" \
+    "names t3_project_read and both configuration tools" \
+    "$from_named"
 
 assert_eq "--ttl takes a count and a unit, which reach a shell on Windows" \
     "t3: --ttl must be a count and a unit such as 365d, not 1d & calc" \
