@@ -131,6 +131,29 @@ try {
     $toolsFailed = $toolsExit -ne 0
     if ($toolsFailed) { Write-Log "install-tools.ps1 exited $toolsExit" }
 
+    # rig, so a release reaches this machine on its next sync. rig update exits non-zero whenever
+    # its doctor checks report anything, which is a healthy update, so its exit says nothing here.
+    # What says it worked is its own line about the tool or a data root: a rig that printed neither
+    # never got that far. It only fast-forwards, and leaves a data root with changes in it alone.
+    . (Join-Path $PSScriptRoot "rig.ps1")
+    $rigFailed = $false
+    $rigRoot = Get-RigRoot
+    if (-not $rigRoot) {
+        Write-Log "rig update skipped (no rig checkout)"
+    } else {
+        $rigUpdate = Invoke-Native node ([System.IO.Path]::Combine($rigRoot, "bin\rig.mjs")) update
+        $rigLines = (Remove-AnsiEscape $rigUpdate.Output) -split "`r?`n"
+        $rigSaid = @($rigLines | Where-Object { $_ -match '^\S+ (tool|data root( [^ :]+)?): |update landed' })
+        if ($rigSaid.Count -gt 0) {
+            Write-Log "rig update ran"
+            foreach ($line in $rigSaid) { Write-Log "  $line" }
+        } else {
+            Write-Log "rig update failed: it said nothing of the tool or a data root"
+            foreach ($line in $rigLines) { Write-Log "  $line" }
+            $rigFailed = $true
+        }
+    }
+
     # A link into this repo whose source the repo no longer ships is left over from a file that
     # moved out, to an overlay or away entirely.
     foreach ($path in @(Get-ChildItem -LiteralPath $env:USERPROFILE -Filter ".gitconfig-*" -Force | ForEach-Object { $_.FullName })) {
@@ -199,6 +222,10 @@ try {
     }
     if ($toolsFailed) {
         Write-Log "sync finished, but install-tools.ps1 failed (above)"
+        exit 1
+    }
+    if ($rigFailed) {
+        Write-Log "sync finished, but rig update failed (above)"
         exit 1
     }
     if ($awsFailed) {

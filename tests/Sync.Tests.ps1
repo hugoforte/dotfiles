@@ -69,6 +69,33 @@ Describe 'sync.ps1' {
         Save-Commit $pusher 'change the marker'
         Invoke-Git -C $pusher push -q origin HEAD
 
+        # A rig checkout and a node ahead of the real one, exiting 1 as rig update does whenever its
+        # doctor checks report anything.
+        $rigRoot = Join-Path $TestDrive 'rig'
+        New-Item -ItemType Directory -Path (Join-Path $rigRoot 'bin') | Out-Null
+        Set-Content -LiteralPath (Join-Path $rigRoot 'bin\rig.mjs') -Value ''
+        $stubs = Join-Path $TestDrive 'stubs'
+        New-Item -ItemType Directory -Path $stubs | Out-Null
+        $nodeArgs = Join-Path $TestDrive 'node-args.txt'
+        $nodeSource = @"
+using System;
+using System.IO;
+static class Program {
+    static int Main(string[] args) {
+        File.WriteAllText(@"$nodeArgs", string.Join(" ", args));
+        char esc = (char)27;
+        Console.WriteLine(esc + "[32m+" + esc + "[0m tool: fast-forwarded 1 commit(s)");
+        Console.WriteLine("  abc1234 a commit that arrived");
+        Console.WriteLine(esc + "[33m!" + esc + "[0m data root other: 2 uncommitted change(s)");
+        Console.WriteLine(esc + "[32m+" + esc + "[0m personal: data root /somewhere");
+        return 1;
+    }
+}
+"@
+        Add-Type -TypeDefinition $nodeSource -OutputAssembly (Join-Path $stubs 'node.exe') -OutputType ConsoleApplication
+
+        $env:RIG_ROOT, $savedRigRoot = $rigRoot, $env:RIG_ROOT
+        $env:PATH, $savedPath = "$stubs;$env:PATH", $env:PATH
         $env:USERPROFILE, $savedProfile = $home_, $env:USERPROFILE
         $env:LOCALAPPDATA, $savedAppData = (Join-Path $home_ 'AppData'), $env:LOCALAPPDATA
         try {
@@ -77,7 +104,10 @@ Describe 'sync.ps1' {
         } finally {
             $env:USERPROFILE = $savedProfile
             $env:LOCALAPPDATA = $savedAppData
+            $env:PATH = $savedPath
+            $env:RIG_ROOT = $savedRigRoot
         }
+        $syncLog = Get-Content -LiteralPath (Join-Path $home_ 'AppData\dotfiles\sync.log') -Raw
     }
 
     It 'succeeds' {
@@ -86,5 +116,16 @@ Describe 'sync.ps1' {
 
     It 'runs ai/install.sh after pulling the overlay repos, so it links what they now supply' {
         (Get-Content -LiteralPath $seen) | Should -Be 'after'
+    }
+
+    It 'runs rig update from the checkout, and its doctor findings do not fail the sync' {
+        Get-Content -LiteralPath $nodeArgs -Raw | Should -Match 'bin\\rig\.mjs update$'
+    }
+
+    It 'logs what happened to the tool and each data root, without the doctor''s findings or colour' {
+        $syncLog | Should -Match 'tool: fast-forwarded 1 commit'
+        $syncLog | Should -Match 'data root other: 2 uncommitted'
+        $syncLog | Should -Not -Match 'personal: data root /somewhere'
+        $syncLog | Should -Not -Match ([regex]::Escape([string][char]27))
     }
 }

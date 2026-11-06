@@ -2,7 +2,8 @@
 
 # Pulls this repo and its overlay repos, then brings the Mac in line with them: macos/setup.sh
 # (the links, ~/.gitconfig-overlays, the Brewfiles only when one changed, ai/install.sh), then
-# the skill secrets when machine.local.psd1 declares SearchRoots. The Mac's counterpart of
+# rig update when there is a rig checkout, then the skill secrets when machine.local.psd1
+# declares SearchRoots. The Mac's counterpart of
 # powershell/sync.ps1, run by the LaunchAgent macos/install-sync-agent.sh installs
 # (docs/adr/0009-a-launchagent-syncs-the-mac.md). Safe unattended: fast-forward only, never
 # commits or pushes.
@@ -98,6 +99,27 @@ else
     log "macos/setup.sh failed"
     log_result failed "$out"
     failed=1
+fi
+
+# rig, so a release reaches this Mac on its next sync. rig update exits non-zero whenever its
+# doctor checks report anything, which is a healthy update, so its exit says nothing here. What
+# says it worked is its own line about the tool or a data root: a rig that printed neither never
+# got that far. It only fast-forwards, and leaves a data root with changes in it alone.
+rig_root="${RIG_ROOT:-$HOME/rig}"
+if [ ! -f "$rig_root/bin/rig.mjs" ]; then
+    log "rig update skipped (no checkout at $rig_root)"
+else
+    out="$(node "$rig_root/bin/rig.mjs" update 2>&1)"
+    plain="$(printf '%s\n' "$out" | LC_ALL=C sed "s/$ESC\[[0-9;]*m//g")"
+    said="$(printf '%s\n' "$plain" | LC_ALL=C grep -E '^[^ ]+ (tool|data root( [^ :]+)?): |update landed')"
+    if [ -n "$said" ]; then
+        log "rig update ran"
+        printf '%s\n' "$said" | while IFS= read -r line; do log "  $line"; done
+    else
+        log "rig update failed: it said nothing of the tool or a data root"
+        printf '%s\n' "$plain" | while IFS= read -r line; do log "  $line"; done
+        failed=1
+    fi
 fi
 
 # Skill secrets only on a Mac whose machine.local.psd1 declares SearchRoots, as on Windows.
