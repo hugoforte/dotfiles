@@ -128,4 +128,9 @@ static class Program {
         $syncLog | Should -Not -Match 'personal: data root /somewhere'
         $syncLog | Should -Not -Match ([regex]::Escape([string][char]27))
     }
+
+    It 'runs rig update before ai/install.sh, which links the skills rig ships' {
+        $syncLog.IndexOf('rig update ran') | Should -BeGreaterOrEqual 0
+        $syncLog.IndexOf('rig update ran') | Should -BeLessThan $syncLog.IndexOf('ai/install.sh ok')
+    }
 }
