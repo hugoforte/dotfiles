@@ -108,7 +108,7 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/hugoforte/dotfiles/main/ma
    sh macos/install-sync-agent.sh
    ```
 
-   It installs a LaunchAgent that runs `macos/sync.sh` at login and every 4 hours ([ADR 0009](docs/adr/0009-a-launchagent-syncs-the-mac.md)): pull this repo and each overlay repo, run `setup.sh` (with `brew bundle` only when a Brewfile changed), and deploy the skill secrets. `dotfiles-sync` runs it now. Safe to re-run; `--uninstall` removes it.
+   It installs a LaunchAgent that runs `macos/sync.sh` at login and every 4 hours ([ADR 0009](docs/adr/0009-a-launchagent-syncs-the-mac.md)): pull this repo and each overlay repo, run `rig update` when there is a rig checkout, run `setup.sh` (with `brew bundle` only when a Brewfile changed), and deploy the skill secrets. `dotfiles-sync` runs it now. Safe to re-run; `--uninstall` removes it.
 
 6. Skill secrets: add the Mac as a SOPS recipient in each overlay (see [ai/secrets/README.md](ai/secrets/README.md), "Add a machine"), set `SearchRoots` in `machine.local.psd1`, and run `sh macos/deploy-secrets.sh`. The sync deploys them from then on.
 

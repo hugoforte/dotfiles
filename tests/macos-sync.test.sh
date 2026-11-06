@@ -150,4 +150,76 @@ assert_eq "and is logged" "y" "$(says "$(cat "$log")" "git pull failed")"
 assert_eq "and nothing is applied from a repo it could not update" "n" "$(says "$(cat "$log")" "macos/setup.sh")"
 git -C "$repo" remote set-url origin "$work/dotfiles.git"
 
+# --- rig -------------------------------------------------------------------------------------
+
+# stub_node <path> <exit> <line>...: a node that prints the lines, as rig update would, colours and all.
+stub_node() {
+    target="$1"; code="$2"; shift 2
+    mkdir -p "$(dirname "$target")"
+    {
+        printf '#!/bin/sh\necho "$0 $*" >> "%s"\n' "$work/node.log"
+        for line in "$@"; do printf "printf '%%b\\\\n' '%s'\n" "$line"; done
+        printf 'exit %s\n' "$code"
+    } > "$target"
+    chmod +x "$target"
+}
+
+: > "$log"
+out="$(sync)"; rc=$?
+assert_eq "no rig checkout is no failure" "0" "$rc"
+assert_eq "and is logged as skipped" "y" "$(says "$(cat "$log")" "rig update skipped")"
+
+mkdir -p "$work/rig/bin"
+: > "$work/rig/bin/rig.mjs"
+RIG_ROOT="$work/rig"; export RIG_ROOT
+
+# Exit 1, as rig update exits whenever its doctor checks report anything.
+stub_node "$stubs/node" 1 \
+    '\\033[32m✓\\033[0m tool: fast-forwarded 1 commit(s)' \
+    '  abc1234 a commit that arrived' \
+    '\\033[33m!\\033[0m data root other: 2 uncommitted change(s) — not updated' \
+    '\\033[32m✓\\033[0m personal: data root /somewhere' \
+    '76 thing(s) to look at'
+: > "$log"; : > "$work/node.log"
+out="$(sync)"; rc=$?
+assert_eq "rig update reporting doctor findings is no failure" "0" "$rc"
+assert_eq "it runs the checkout's rig update" "y" "$(says "$(cat "$work/node.log")" "$work/rig/bin/rig.mjs update")"
+assert_eq "it logs what happened to the tool" "y" "$(says "$(cat "$log")" "tool: fast-forwarded 1 commit(s)")"
+assert_eq "and to each data root" "y" "$(says "$(cat "$log")" "data root other: 2 uncommitted")"
+assert_eq "and not the doctor's findings" "n" "$(says "$(cat "$log")" "personal: data root /somewhere")"
+assert_eq "without their colour codes" "n" "$(says "$(cat "$log")" "$(printf '\033')")"
+# setup.sh links the skills rig ships, so one a release adds is linked on this sync.
+rig_line="$(grep -n 'rig update ran' "$log" | cut -d: -f1)"
+setup_line="$(grep -n 'macos/setup.sh ok' "$log" | cut -d: -f1)"
+assert_eq "it runs before setup.sh, which links what rig ships" "y" "$([ "${rig_line:-99}" -lt "${setup_line:-0}" ] && echo y || echo n)"
+
+# A rig that never got as far as updating anything, whatever its exit says.
+stub_node "$stubs/node" 1 'Error: Cannot find module rig.mjs'
+: > "$log"
+out="$(sync)"; rc=$?
+assert_eq "a rig update that says nothing of the tool or a data root fails the run" "1" "$rc"
+assert_eq "and is logged with what it did say" "y" "$(says "$(cat "$log")" "Cannot find module rig.mjs")"
+assert_eq "and the sync still finishes" "y" "$(says "$(cat "$log")" "deploy-secrets.sh")"
+
+# The phrase rig warns with, in a path in Node's error rather than as rig's own line.
+stub_node "$stubs/node" 1 'Error: Cannot find module /tmp/update landed/rig.mjs'
+: > "$log"
+out="$(sync)"; rc=$?
+assert_eq "the words of rig's warning in someone else's line are no status" "1" "$rc"
+
+stub_node "$stubs/node" 1 '\\033[33m!\\033[0m the update landed, but the rig that arrived does not run'
+: > "$log"
+out="$(sync)"; rc=$?
+assert_eq "rig's own warning that the update landed is kept" "y" "$(says "$(cat "$log")" "the update landed, but")"
+rm "$stubs/node"
+
+# The default checkout, with RIG_ROOT unset.
+mkdir -p "$home/rig/bin"
+: > "$home/rig/bin/rig.mjs"
+stub_node "$stubs/node" 0 '\\033[32m✓\\033[0m tool: already up to date'
+: > "$log"; : > "$work/node.log"
+out="$(unset RIG_ROOT; sync)"; rc=$?
+assert_eq "with no RIG_ROOT it looks in ~/rig" "y" "$(says "$(cat "$work/node.log")" "$home/rig/bin/rig.mjs update")"
+rm "$stubs/node"
+
 assert_summary "macos/sync.sh"
