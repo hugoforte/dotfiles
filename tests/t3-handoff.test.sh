@@ -331,13 +331,14 @@ from_fix="$(node "$module" continue --to elsewhere --title t \
     --from "$(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json" \
     --prompt-file "$(cd "$work" && (pwd -W 2>/dev/null || pwd))/prompt.txt" 2>&1 >/dev/null | sed -n 2p)"
 # Matched outside $(…): bash 3.2, macOS's, ends a command substitution at a case pattern's ")".
-if [[ "$from_fix" == *"<t3_project_read>"*"<t3_thread_configure>"* ]]; then
-    from_named="names t3_project_read and t3_thread_configure"
+# T3 Code 0.1.2 reads a thread's configuration with t3_thread_configuration, 0.1.6 with t3_thread_configure.
+if [[ "$from_fix" == *"<t3_project_read>"*"t3_thread_configuration"*"t3_thread_configure with no arguments"* ]]; then
+    from_named="names t3_project_read and both configuration tools"
 else
     from_named="$from_fix"
 fi
 assert_eq "a --from without what it needs names the MCP tools that write it" \
-    "names t3_project_read and t3_thread_configure" \
+    "names t3_project_read and both configuration tools" \
     "$from_named"
 
 assert_eq "--ttl takes a count and a unit, which reach a shell on Windows" \

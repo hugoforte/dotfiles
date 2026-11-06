@@ -14,7 +14,7 @@
 // to fix what is missing. `continue` starts the next thread on the other
 // computer and waits for its run to start; the agent then renames and archives
 // this thread. `--from` is a JSON file the agent writes from its MCP tools:
-// { "project": <t3_project_read>, "configuration": <t3_thread_configure> }.
+// { "project": <t3_project_read>, "configuration": <t3_thread_configuration or t3_thread_configure> }.
 // `token` prints this computer's entry for another computer's COMPUTERS_FILE.
 //
 // It drives the other computer's server through the API T3's own web client
@@ -212,10 +212,12 @@ export function parseArgs(argv) {
 
 /**
  * This thread's project and configuration, from the file the agent wrote out
- * of its t3_project_read and t3_thread_configure answers.
+ * of its t3_project_read answer and the configuration it read: from
+ * t3_thread_configuration where T3 Code has it, else t3_thread_configure with
+ * no arguments.
  */
 export function readFrom(path) {
-    const fix = 'Write it as { "project": <t3_project_read>, "configuration": <t3_thread_configure> }, each answer as the MCP tool gave it.';
+    const fix = 'Write it as { "project": <t3_project_read>, "configuration": <t3_thread_configuration, or t3_thread_configure with no arguments> }, each answer as the MCP tool gave it.';
     let from;
     try {
         from = JSON.parse(readFileSync(path, 'utf8'));
