@@ -294,6 +294,13 @@ assert_eq "a peer known only by a device label is not offered as a name" \
     "" \
     "$(call "t3.tailscalePeerNames($labelled).join(',')")"
 
+assert_eq "on macOS the Tailscale app's own executable is asked too, told to act as a CLI" \
+    'tailscale:-,/Applications/Tailscale.app/Contents/MacOS/Tailscale:1' \
+    "$(call "t3.tailscaleClis('darwin', { HOME: 'h' }).map(({ cli, env }) => cli + ':' + (env.TAILSCALE_BE_CLI ?? '-')).join(',')")"
+assert_eq "elsewhere only the tailscale on PATH is asked, in the environment as it is" \
+    'tailscale:h' \
+    "$(call "t3.tailscaleClis('win32', { HOME: 'h' }).map(({ cli, env }) => cli + ':' + env.HOME).join(',')")"
+
 # fetch_error <cause code>: a rejection shaped like Node's fetch's.
 fetch_error() {
     printf "Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('x'), { code: '%s' }) })" "$1"

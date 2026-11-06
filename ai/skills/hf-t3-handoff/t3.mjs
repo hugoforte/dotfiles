@@ -237,15 +237,23 @@ export function unresolvedOrigin(name, origin, peers) {
 }
 
 /**
- * `tailscale status --json`, parsed, or undefined when tailscale is not found or
- * does not answer. On macOS the app's own CLI is tried too, since the App Store
- * build puts none on PATH and an app started from the Dock gets launchd's PATH.
+ * The Tailscale CLIs to ask, in order, each with the environment to run it in.
+ * On macOS the app's own executable is tried too, since the App Store build
+ * puts none on PATH and an app started from the Dock gets launchd's PATH; run
+ * without a terminal, that executable may open the app rather than answer,
+ * unless TAILSCALE_BE_CLI says it is a CLI.
  */
+export function tailscaleClis(platform, env) {
+    const clis = [{ cli: 'tailscale', env }];
+    if (platform === 'darwin') clis.push({ cli: '/Applications/Tailscale.app/Contents/MacOS/Tailscale', env: { ...env, TAILSCALE_BE_CLI: '1' } });
+    return clis;
+}
+
+/** `tailscale status --json`, parsed, or undefined when tailscale is not found or does not answer. */
 function tailscaleStatus() {
-    const clis = process.platform === 'darwin' ? ['tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale'] : ['tailscale'];
-    for (const cli of clis) {
+    for (const { cli, env } of tailscaleClis(process.platform, process.env)) {
         try {
-            return JSON.parse(execFileSync(cli, ['status', '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: PROBE_TIMEOUT_MS }));
+            return JSON.parse(execFileSync(cli, ['status', '--json'], { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'ignore'], timeout: PROBE_TIMEOUT_MS }));
         } catch {
             // Not there, or not answering: try the next, then go without.
         }
