@@ -50,7 +50,7 @@ query($owner:String!, $repo:String!, $pr:Int!) {
           path
           line
           comments(first: 50) {
-            nodes { databaseId author { login } body createdAt }
+            nodes { databaseId author { login __typename } body createdAt }
           }
         }
       }
@@ -87,7 +87,9 @@ Present a table before changing anything or posting anything:
 | # | File:line | Comment (short) | Decision | What I'll do |
 |---|---|---|---|---|
 
-Say plainly which comments you propose to push back on and why. Then wait for approval. Do not commit, comment, or resolve until the user approves — replies and resolutions are public and hard to take back.
+Say plainly which comments you propose to push back on and why.
+
+A thread an automated reviewer started, one whose first comment's author is a `Bot` (`__typename` in Step 2's query; CodeRabbit is one), goes ahead without waiting: carry out its row, reply and resolve as in the steps below, and report it with the rest. For every other row, wait for approval. Do not commit, comment, or resolve a human's thread until the user approves — replies and resolutions are public and hard to take back.
 
 If the user disagrees with a decision, re-decide that row and re-present; don't argue past one exchange.
 
