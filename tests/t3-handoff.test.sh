@@ -324,11 +324,15 @@ assert_eq "the launch there starts in the project's checkout with the prompt, un
 assert_eq "--from that is not JSON says so" \
     "error: --from $(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json cannot be read as JSON" \
     "$(from 'not json' | sed 's/ as JSON: .*/ as JSON/')"
-# T3 Code renamed t3_thread_configuration; a fix naming the old tool sends the agent after one that is gone.
+# The fix is how the agent learns which MCP tools write --from, so it must name tools T3 Code offers.
 printf '%s' '{}' > "$work/from.json"
-assert_eq "a --from without what it needs names the MCP tools that give it" \
-    'Write it as { "project": <t3_project_read>, "configuration": <t3_thread_configure> }, each answer as the MCP tool gave it.' \
-    "$(call "(() => { try { t3.readFrom(String.raw\`$(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json\`); } catch (error) { return error.fix; } })()")"
+printf '%s' 'p' > "$work/prompt.txt"
+from_fix="$(node "$module" continue --to elsewhere --title t \
+    --from "$(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json" \
+    --prompt-file "$(cd "$work" && (pwd -W 2>/dev/null || pwd))/prompt.txt" 2>&1 >/dev/null | sed -n 2p)"
+assert_eq "a --from without what it needs names the MCP tools that write it" \
+    "names t3_project_read and t3_thread_configure" \
+    "$(case "$from_fix" in *"<t3_project_read>"*"<t3_thread_configure>"*) echo "names t3_project_read and t3_thread_configure" ;; *) echo "$from_fix" ;; esac)"
 
 assert_eq "--ttl takes a count and a unit, which reach a shell on Windows" \
     "t3: --ttl must be a count and a unit such as 365d, not 1d & calc" \
