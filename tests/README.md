@@ -47,7 +47,7 @@ testable yet:
 | `ai/helpers/managed-link.sh`'s `link` / `unlink_managed` / `check_link` | the same contract in sh, in a helper that only defines functions, so it is sourced as it is | #6 |
 | `ai/skills/hf-t3-handoff/t3.mjs`'s `handoffTitles` and `matchingProject` | exported, and the script only acts when run directly | #14 |
 | `ai/skills/hf-t3-handoff/t3.mjs`'s `destination`, `readFrom` and `title` | exported, or a command that reads no server; the other computer's projects and the `--from` file are fixtures | hugoforte/dotfiles#94 |
-| `ai/skills/hf-t3-handoff/t3.mjs`'s `tokenName`, `tailscalePeerNames`, `doesNotResolve` and `unresolvedOrigin` | exported; the `tailscale status --json` output and the fetch error are arguments, so tailscale is never run | hugoforte/dotfiles#58 |
+| `ai/skills/hf-t3-handoff/t3.mjs`'s `tokenName`, `tokenHost`, `tailscalePeerNames`, `doesNotResolve`, `unresolvedOrigin` and `probe` | exported; the `tailscale status --json` output and the fetch error are arguments and `fetch` is stubbed, so tailscale is never run and no request is made | hugoforte/dotfiles#58 |
 | `powershell/native.ps1` | the command is an argument, and the verdict is the exit code | #15 |
 | `bin/md-lint.mjs`'s `markdownlintArguments` and `hasOwnConfig` | exported, and the script only acts when run directly | this change |
 | `powershell/user-path.ps1`'s `Add-PathEntry` | the PATH list is an argument; `Add-UserPathEntry` applies it and is not run | this change |

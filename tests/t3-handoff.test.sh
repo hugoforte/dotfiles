@@ -275,30 +275,43 @@ assert_eq "token names this computer by its host name without Tailscale" \
 assert_eq "token passes over a Tailscale host name that is a device label, not a host name" \
     "A-MacBook-Pro" \
     "$(call "t3.tokenName($labelled, 'A-MacBook-Pro.local')")"
-assert_eq "the peers are named as the Tailscale name of each" \
-    "workpc,spare" \
+assert_eq "token's origin names this computer by its full MagicDNS name, which resolves to it alone" \
+    "laptop.tail0.ts.net" \
+    "$(call "t3.tokenHost($tailnet, 'A-MacBook-Pro.local')")"
+assert_eq "token's origin falls back to the Tailscale host name without MagicDNS" \
+    "A-MacBook-Pro" \
+    "$(call "t3.tokenHost($no_dns, 'other')")"
+assert_eq "token's origin falls back to the host name without Tailscale" \
+    "A-MacBook-Pro" \
+    "$(call "t3.tokenHost(undefined, 'A-MacBook-Pro.local')")"
+assert_eq "token's origin passes over a device label" \
+    "A-MacBook-Pro" \
+    "$(call "t3.tokenHost($labelled, 'A-MacBook-Pro.local')")"
+assert_eq "the peers are named by the full MagicDNS name of each, else a plain host name" \
+    "workpc.tail0.ts.net,spare" \
     "$(call "t3.tailscalePeerNames($tailnet).join(',')")"
 assert_eq "a peer known only by a device label is not offered as a name" \
     "" \
     "$(call "t3.tailscalePeerNames($labelled).join(',')")"
 
-# probe <origin>: what the probe fails with, the "unresolved" marker only for a name that does not resolve.
-probe() {
-    call "t3.probe('$1', 'no answer', undefined, () => new Error('unresolved'))"
-}
-
-assert_eq "a probe of a host that does not resolve fails as unresolved" \
-    "error: unresolved" \
-    "$(probe http://t3-handoff-test.invalid:3773)"
-# Port 2 is one fetch allows (unlike 1 and 9) and nothing on a test machine listens on, so the connection is refused.
-assert_eq "a probe that nothing answers keeps its own problem" \
-    "error: no answer" \
-    "$(probe http://127.0.0.1:2)"
-
 # fetch_error <cause code>: a rejection shaped like Node's fetch's.
 fetch_error() {
     printf "Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('x'), { code: '%s' }) })" "$1"
 }
+
+# probe <cause code>: what the probe fails with when fetch rejects with that code, the
+# "unresolved" marker only for a name that does not resolve. fetch is stubbed, so no
+# request leaves the machine.
+probe() {
+    call "(globalThis.fetch = async () => { throw $(fetch_error "$1"); }, t3.probe('http://workpc:3773', 'no answer', undefined, () => new Error('unresolved')))"
+}
+
+assert_eq "a probe of a host that does not resolve fails as unresolved" \
+    "error: unresolved" \
+    "$(probe ENOTFOUND)"
+assert_eq "a probe that nothing answers keeps its own problem" \
+    "error: no answer" \
+    "$(probe ECONNREFUSED)"
 
 assert_eq "a name that is not found does not resolve" \
     "true" \

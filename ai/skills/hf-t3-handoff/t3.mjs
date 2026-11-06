@@ -188,17 +188,37 @@ function tailscaleNodeName(node) {
 }
 
 /**
- * The name `token` puts in this computer's origin: its Tailscale name when
- * `status`, the parsed `tailscale status --json`, has one, since that is the
- * name the other computers resolve; else the reachable form of `host`.
+ * A node of `tailscale status --json` by the host name to reach it at: its full
+ * MagicDNS name, which resolves to that node alone wherever MagicDNS is on, else
+ * its HostName when that is a host name at all.
+ */
+function tailscaleNodeHost(node) {
+    const fqdn = node?.DNSName?.replace(/\.$/, '');
+    if (fqdn) return fqdn;
+    return tailscaleNodeName(node);
+}
+
+/**
+ * The name `token` gives this computer's entry: its short Tailscale name when
+ * `status`, the parsed `tailscale status --json`, has one; else the reachable
+ * form of `host`.
  */
 export function tokenName(status, host) {
     return tailscaleNodeName(status?.Self) ?? reachableName(host);
 }
 
-/** The Tailscale names of the peers in `status`, the parsed `tailscale status --json`. */
+/**
+ * The host `token` puts in this computer's origin: its full MagicDNS name when
+ * `status` has one, not the short label, which resolves only through the
+ * tailnet's search domain and can name another server; else as tokenName.
+ */
+export function tokenHost(status, host) {
+    return tailscaleNodeHost(status?.Self) ?? reachableName(host);
+}
+
+/** The host names to reach the peers in `status`, the parsed `tailscale status --json`, at. */
 export function tailscalePeerNames(status) {
-    return Object.values(status?.Peer ?? {}).map(tailscaleNodeName).filter(Boolean);
+    return Object.values(status?.Peer ?? {}).map(tailscaleNodeHost).filter(Boolean);
 }
 
 /** Whether a fetch failed because its host name does not resolve, rather than because nothing answered. */
@@ -670,9 +690,9 @@ async function printToken(ttl = '365d') {
     const status = tailscaleStatus();
     const name = tokenName(status, hostname());
     console.log(`This computer's entry for ${COMPUTERS_FILE} on the computer that hands off to it:\n`);
-    console.log(`  ${JSON.stringify(name.toLowerCase())}: ${JSON.stringify({ origin: `http://${name}:${port}`, token })}\n`);
+    console.log(`  ${JSON.stringify(name.toLowerCase())}: ${JSON.stringify({ origin: `http://${tokenHost(status, hostname())}:${port}`, token })}\n`);
     console.log(`The token opens T3 Code on this computer until ${expiresAt}: keep it out of git and out of chat.`);
-    console.log(tailscaleNodeName(status?.Self)
+    console.log(tailscaleNodeHost(status?.Self)
         ? 'The origin names this computer by its Tailscale name.'
         : 'Tailscale did not answer, so the origin names this computer by its host name, which the other computer may not resolve.');
     console.log('If the other computer knows this one by another name or address, change the origin to match.');
