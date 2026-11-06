@@ -1,29 +1,32 @@
 #!/usr/bin/env node
-// Continues the current T3 Code thread in a new one: creates the next thread in
-// the same project, branch and model, sends it the prompt, waits for its turn to
-// start, then archives the current thread (renamed first when it was not yet
-// standard; see handoffTitles). With --to, the next thread starts on another
-// computer's T3 Code server instead, in its project for the same repository.
-// With --project or --provider, it starts here in the project for that folder,
-// or on that provider instance with the same model.
+// The parts of a T3 Code handoff the agent's t3-code MCP tools cannot do. A
+// handoff on this computer goes through those tools; this script gives it the
+// titles, and starts the next thread on another computer, whose T3 Code server
+// the MCP tools do not reach.
 //
-//   node t3.mjs check [--to <computer> | [--project <folder>] [--provider <instance-id>]] [--thread <id>]
-//   node t3.mjs continue --prompt-file <path> [--to <computer> | [--project <folder>] [--provider <instance-id>]]
-//                        [--key <key> --description <text>] [--thread <id>] [--dry-run]
+//   node t3.mjs title --current <title> [--key <key> --description <text>]
+//   node t3.mjs check [--to <computer> --from <file>]
+//   node t3.mjs continue --to <computer> --from <file> --title <title> --prompt-file <path> [--dry-run]
 //   node t3.mjs token [--ttl <ttl>]
 //
-// `check` lists everything the handoff needs and how to fix what is missing.
+// `title` prints the rename this thread needs, if any, and the next thread's
+// title (see handoffTitles). `check` lists everything the handoff needs and how
+// to fix what is missing. `continue` starts the next thread on the other
+// computer and waits for its run to start; the agent then renames and archives
+// this thread. `--from` is a JSON file the agent writes from its MCP tools:
+// { "project": <t3_project_read>, "configuration": <t3_thread_configuration or t3_thread_configure> }.
 // `token` prints this computer's entry for another computer's COMPUTERS_FILE.
 //
-// It drives the local T3 Code server's HTTP API, which is what T3's own web
-// client uses. That API is internal to an alpha app, so every call checks its
-// answer and stops with the response it got rather than guessing.
+// It drives the other computer's server through the API T3's own web client
+// uses: orchestration protocol 2, read over HTTP and commanded over its
+// WebSocket RPC. That API is internal to a pre-1.0 app, so every call checks
+// its answer and stops with the response it got rather than guessing.
 
 import { execFileSync, execSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir, hostname } from 'node:os';
-import { join, posix, resolve, win32 } from 'node:path';
+import { join, posix, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const T3_HOME = process.env.T3CODE_HOME ?? join(homedir(), '.t3');
@@ -33,10 +36,14 @@ const RIG_HANDOFF_SKILL = join(homedir(), '.claude', 'skills', 'rig-handoff', 'S
 const COMPUTERS_FILE = join(homedir(), '.agent-secrets', 'hf-t3-handoff', 'computers.local.json');
 const TURN_START_TIMEOUT_MS = 60_000;
 const PROBE_TIMEOUT_MS = 10_000;
+const RPC_TIMEOUT_MS = 30_000;
+// The orchestration protocol this script speaks; T3 refuses a client that speaks another.
+const PROTOCOL = 2;
+const PROTOCOL_FIX = `T3 Code there may not speak orchestration protocol ${PROTOCOL}: update T3 Code on that computer. If it is current, its API has changed and t3.mjs needs updating.`;
 const USAGE = [
-    'usage: t3.mjs check [--to <computer> | [--project <folder>] [--provider <instance-id>]] [--thread <id>]',
-    '       t3.mjs continue --prompt-file <path> [--to <computer> | [--project <folder>] [--provider <instance-id>]]',
-    '                       [--key <key> --description <text>] [--thread <id>] [--dry-run]',
+    'usage: t3.mjs title --current <title> [--key <key> --description <text>]',
+    '       t3.mjs check [--to <computer> --from <file>]',
+    '       t3.mjs continue --to <computer> --from <file> --title <title> --prompt-file <path> [--dry-run]',
     '       t3.mjs token [--ttl <ttl>]',
 ].join('\n');
 
@@ -65,13 +72,49 @@ export function handoffTitles(currentTitle, work) {
 }
 
 /**
+ * A git remote URL as T3 keys a repository: lower case, without `.git` or a
+ * trailing slash, as `host/path` whether written as a URL or as `user@host:path`.
+ * T3's own spelling of Azure DevOps remotes is not reproduced.
+ */
+export function remoteKey(url) {
+    const normalized = url.trim().replace(/\/+$/, '').replace(/\.git$/i, '').toLowerCase();
+    if (/^(?:ssh|https?|git):\/\//.test(normalized)) {
+        try {
+            const { hostname, pathname } = new URL(normalized);
+            const segments = pathname.split('/').filter(Boolean);
+            if (hostname && segments.length > 1) return `${hostname}/${segments.join('/')}`;
+        } catch {
+            return normalized;
+        }
+    }
+    const scp = /^[a-z0-9._-]+@([^:/\s]+):([^/\s]+(?:\/[^/\s]+)+)$/.exec(normalized);
+    return scp ? `${scp[1]}/${scp[2]}` : normalized;
+}
+
+/**
+ * The repository key of the checkout at `folder`, read from its remote as T3
+ * reads it: `upstream`, else `origin`. Undefined when it has neither.
+ */
+export function checkoutRepositoryKey(folder) {
+    for (const remote of ['upstream', 'origin']) {
+        try {
+            const url = execFileSync('git', ['-C', folder, 'remote', 'get-url', remote], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+            if (url) return remoteKey(url);
+        } catch {
+            // No such remote, or no checkout there: try the next.
+        }
+    }
+    return undefined;
+}
+
+/**
  * The project among another computer's that holds the same repository as this
  * one, or undefined when none or several do. Project ids differ per computer,
  * so the repository is what the two share; among several clones of it, the one
- * titled like this project is the match.
+ * titled like this project is the match. `key` is this project's repository,
+ * for when T3 has not said it.
  */
-export function matchingProject(project, candidates) {
-    const key = project.repositoryIdentity?.canonicalKey;
+export function matchingProject(project, candidates, key = project.repositoryIdentity?.canonicalKey) {
     if (!key) return undefined;
     const clones = candidates.filter((candidate) => candidate.repositoryIdentity?.canonicalKey === key);
     if (clones.length === 1) return clones[0];
@@ -80,21 +123,49 @@ export function matchingProject(project, candidates) {
 }
 
 /**
- * T3 Code's executable and the server script packed beside it, where its
- * installer puts them on `platform`: under %LOCALAPPDATA% on Windows, in an app
- * bundle in /Applications on macOS, whose server is packed in the app's own
- * app.asar rather than a server.asar. `env.T3_EXE` names the executable
- * instead, and the server is found from it the same way.
+ * T3 Code's command line: the launcher the desktop app writes into T3's home,
+ * `bin/t3` (`bin\t3.cmd` on Windows), which runs the CLI bundled with whichever
+ * channel of the app is installed. `env.T3CODE_CLI_PATH`, which T3 sets for its
+ * agents, names it instead.
  */
-export function t3App(platform, env) {
-    const server = ['apps', 'server', 'dist', 'bin.mjs'];
-    if (platform === 'darwin') {
-        const exe = env.T3_EXE ?? '/Applications/T3 Code (Alpha).app/Contents/MacOS/T3 Code (Alpha)';
-        return { exe, serverBin: posix.join(exe, '..', '..', 'Resources', 'app.asar', ...server) };
-    }
+export function t3Cli(platform, env, home) {
+    if (env.T3CODE_CLI_PATH) return env.T3CODE_CLI_PATH;
     const path = platform === 'win32' ? win32 : posix;
-    const exe = env.T3_EXE ?? path.join(env.LOCALAPPDATA ?? '', 'Programs', 't3code', 'T3 Code (Alpha).exe');
-    return { exe, serverBin: path.join(exe, '..', 'resources', 'server.asar', ...server) };
+    return path.join(home, 'bin', platform === 'win32' ? 't3.cmd' : 't3');
+}
+
+/**
+ * Whether a thread's latest run has started, from its runs as T3 projects them.
+ * A launch returns with the run already created and still preparing, so only a
+ * run past that counts; one that ended before starting stops the handoff.
+ */
+export function runStarted(runs) {
+    const status = runs.at(-1)?.status;
+    if (['failed', 'cancelled', 'interrupted', 'rolled_back'].includes(status)) {
+        throw new Problem(`the new thread's run ended ${status} before it started`);
+    }
+    return ['running', 'waiting', 'completed'].includes(status);
+}
+
+/** True when a server's environment says it speaks this script's protocol; a Problem otherwise. */
+export function speaksProtocol(origin, environment) {
+    // Hosts from before protocol negotiation leave the version out.
+    const version = environment.orchestrationProtocolVersion ?? 1;
+    if (version !== PROTOCOL) {
+        throw new Problem(`T3 Code at ${origin} speaks orchestration protocol ${version}, and this script speaks ${PROTOCOL}`, PROTOCOL_FIX);
+    }
+    return true;
+}
+
+/** The value of an Effect RPC exit, or a Problem saying why the server failed the call. */
+export function rpcValue(method, exit) {
+    if (exit?._tag === 'Success') return exit.value;
+    const causes = Array.isArray(exit?.cause) ? exit.cause : [];
+    const reasons = causes.map((cause) => {
+        const reason = cause.error ?? cause.defect ?? cause;
+        return typeof reason === 'string' ? reason : reason.message ?? JSON.stringify(reason);
+    });
+    throw new Problem(`${method} failed: ${reasons.join('; ') || JSON.stringify(exit)}`);
 }
 
 /**
@@ -146,21 +217,6 @@ export function unresolvedOrigin(name, origin, peers) {
 }
 
 /**
- * The T3 thread of a Claude session, from the ids of the threads whose session
- * record names it. T3 also keeps a row, `import:<instance>:<session>`, for a
- * session it imported; that one is the thread only when no other matches.
- */
-export function sessionThread(sessionId, threadIds) {
-    const live = threadIds.filter((id) => !id.startsWith('import:'));
-    const candidates = live.length ? live : threadIds;
-    if (candidates.length !== 1) {
-        const found = candidates.length ? `${candidates.length}: ${candidates.join(', ')}` : '0';
-        throw new Problem(`expected one T3 thread for Claude session ${sessionId}, found ${found}`, 'Pass --thread <id>. T3 may have changed how it records sessions.');
-    }
-    return candidates[0];
-}
-
-/**
  * `tailscale status --json`, parsed, or undefined when tailscale is not found or
  * does not answer. On macOS the app's own CLI is tried too, since the App Store
  * build puts none on PATH and an app started from the Dock gets launchd's PATH.
@@ -185,100 +241,56 @@ class Problem extends Error {
     }
 }
 
-/** A folder made absolute. A bare drive, `D:`, is that drive's root rather than the folder last used on it. */
-function absolute(folder) {
-    return resolve(/^[a-z]:$/i.test(folder) ? `${folder}/` : folder);
-}
-
-/** A folder as T3 compares it: absolute, forward slashes, no trailing slash, and without case on Windows. */
-function folderKey(folder) {
-    const key = absolute(folder).replaceAll('\\', '/').replace(/\/+$/, '');
-    return process.platform === 'win32' ? key.toLowerCase() : key;
-}
-
-/** The T3 project whose workspace root is `folder`, for --project. */
-export function projectForFolder(folder, projects) {
-    const key = folderKey(folder);
-    const found = projects.filter((project) => project.workspaceRoot && folderKey(project.workspaceRoot) === key);
-    if (found.length === 1) return found[0];
-    if (!found.length) {
-        throw new Problem(`T3 Code has no project for ${absolute(folder)}`, 'Add the folder as a project in T3 Code, then run this again.');
-    }
-    throw new Problem(
-        `T3 Code has ${found.length} projects for ${absolute(folder)}: ${found.map((project) => `"${project.title}" (${project.id})`).join(', ')}`,
-        'Remove all but one of them in T3 Code, then run this again.',
-    );
-}
-
-/**
- * The provider instance `id` names in T3's settings, for --provider: one of
- * `providerInstances`, or a driver's default instance, whose id is the driver's
- * name. It must be enabled and, when the thread's own instance is known, run
- * the same driver as it, since the thread's model belongs to its driver.
- */
-export function providerInstance(id, settings, currentInstanceId) {
-    const configured = settings.providerInstances ?? {};
-    const providers = settings.providers ?? {};
-    const driverEnabled = (driver) => providers[driver]?.enabled ?? true;
-    const instances = new Map(
-        Object.entries(configured).map(([key, instance]) => {
-            // As T3 reads it: off when the instance or its config says so, else what either
-            // says, else what the driver says.
-            const own = instance.enabled === false || instance.config?.enabled === false
-                ? false
-                : instance.enabled ?? instance.config?.enabled;
-            return [key, { id: key, displayName: instance.displayName ?? key, driver: instance.driver, enabled: own ?? driverEnabled(instance.driver) }];
-        }),
-    );
-    for (const driver of [...Object.values(configured).map((instance) => instance.driver), ...Object.keys(providers)]) {
-        if (!instances.has(driver)) instances.set(driver, { id: driver, displayName: driver, driver, enabled: driverEnabled(driver) });
-    }
-
-    const enabled = [...instances.values()].filter((instance) => instance.enabled);
-    const fix = `Pass one of them, or enable the instance in T3 Code's settings.`;
-    const list = `the enabled ones are ${enabled.map((instance) => `${instance.id} (${instance.displayName})`).join(', ') || 'none'}`;
-    const instance = instances.get(id);
-    if (!instance) throw new Problem(`T3 Code has no provider instance "${id}"; ${list}`, fix);
-    if (!instance.enabled) throw new Problem(`provider instance "${id}" (${instance.displayName}) is disabled in T3 Code; ${list}`, fix);
-    // An instance removed since the thread started has no driver to compare.
-    const currentDriver = instances.get(currentInstanceId)?.driver;
-    if (currentDriver && instance.driver !== currentDriver) {
-        const same = enabled.filter((candidate) => candidate.driver === currentDriver).map((candidate) => candidate.id);
-        throw new Problem(
-            `provider instance "${id}" runs ${instance.driver}, and this thread's model runs on ${currentDriver}`,
-            `Pick an instance of ${currentDriver}: ${same.join(', ') || 'none is enabled'}.`,
-        );
-    }
-    return { id: instance.id, displayName: instance.displayName, driver: instance.driver };
-}
-
-/** The next thread's model selection: this thread's, moved onto `provider` when one is given. */
-export function modelSelectionOn(selection, provider) {
-    return provider ? { ...selection, instanceId: provider.id } : selection;
-}
-
-function parseArgs(argv) {
+export function parseArgs(argv) {
     const [command, ...rest] = argv;
     const flags = { dryRun: false };
+    const named = { '--to': 'to', '--ttl': 'ttl', '--from': 'from', '--title': 'title', '--current': 'current', '--prompt-file': 'promptFile' };
+    // A title is free text and may start with a dash; a computer or a file named so is a flag left without its value.
+    const freeText = ['--title', '--current'];
     for (let i = 0; i < rest.length; i++) {
         const arg = rest[i];
         if (arg === '--dry-run') flags.dryRun = true;
-        else if (arg === '--prompt-file') flags.promptFile = rest[++i];
-        else if (['--to', '--ttl', '--project', '--provider', '--thread'].includes(arg)) {
-            // A missing name must not fall back to this computer without a word.
+        else if (named[arg]) {
+            // A missing value must not fall back to this computer, or an empty title, without a word.
             const value = rest[++i]?.trim();
-            if (!value || value.startsWith('-')) throw new Problem(`${arg} needs a value`, USAGE);
-            flags[arg.slice(2)] = value;
+            if (!value || (value.startsWith('-') && !freeText.includes(arg))) throw new Problem(`${arg} needs a value`, USAGE);
+            // T3's command line runs through cmd on Windows, so the ttl is kept to what cannot be a command.
+            if (arg === '--ttl' && !/^[1-9]\d*\s*[a-z]+$/i.test(value)) throw new Problem(`--ttl must be a count and a unit such as 365d, not ${value}`, USAGE);
+            flags[named[arg]] = value;
         }
         else if (arg === '--key') flags.key = rest[++i]?.trim();
         else if (arg === '--description') flags.description = rest[++i]?.trim();
         else throw new Problem(`unknown argument ${arg}`, USAGE);
     }
     if (!flags.key !== !flags.description) throw new Problem('--key and --description go together', USAGE);
-    if (flags.to && (flags.project || flags.provider)) {
-        throw new Problem('--project and --provider choose on this computer, so they do not go with --to', USAGE);
-    }
+    if (flags.to && !flags.from) throw new Problem('--to needs --from, the file of this thread\'s project and configuration', USAGE);
     return { command, flags };
+}
+
+/**
+ * This thread's project and configuration, from the file the agent wrote out
+ * of its t3_project_read answer and the configuration it read: from
+ * t3_thread_configuration where T3 Code has it, else t3_thread_configure with
+ * no arguments.
+ */
+export function readFrom(path) {
+    const fix = 'Write it as { "project": <t3_project_read>, "configuration": <t3_thread_configuration, or t3_thread_configure with no arguments> }, each answer as the MCP tool gave it.';
+    let from;
+    try {
+        from = JSON.parse(readFileSync(path, 'utf8'));
+    } catch (error) {
+        throw new Problem(`--from ${path} cannot be read as JSON: ${error.message}`, fix);
+    }
+    const { project, configuration } = from ?? {};
+    const missing = [
+        ['project.title', project?.title],
+        ['project.workspaceRoot', project?.workspaceRoot],
+        ['configuration.modelSelection.model', configuration?.modelSelection?.model],
+        ['configuration.runtimeMode', configuration?.runtimeMode],
+        ['configuration.interactionMode', configuration?.interactionMode],
+    ].filter(([, value]) => !value).map(([name]) => name);
+    if (missing.length) throw new Problem(`--from ${path} has no ${missing.join(', ')}`, fix);
+    return { project, configuration };
 }
 
 /** The origin of the running T3 Code server, once it has answered. */
@@ -291,14 +303,32 @@ async function serverOrigin() {
     return origin;
 }
 
-/** Fails with `problem` when nothing answers at `origin`, or with what `unresolved` returns when its host does not resolve. */
+/** Commanding another computer's T3 Code goes over a WebSocket, which Node has built in from 22.4. */
+function checkWebSocket() {
+    if (typeof WebSocket === 'undefined') {
+        throw new Problem(`commanding T3 Code needs Node 22.4 or later, and this is ${process.version}`, 'Install Node 22.4 or later (`nvm install 22`).');
+    }
+}
+
+/**
+ * Checks that a T3 Code server answers at `origin` and speaks this script's
+ * protocol. Fails with `problem` when nothing answers, or with what
+ * `unresolved` returns when the origin's host does not resolve.
+ */
 export async function probe(origin, problem, fix, unresolved) {
+    let response;
     try {
-        await fetch(`${origin}/.well-known/t3/environment`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+        response = await fetch(`${origin}/.well-known/t3/environment`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
     } catch (error) {
         if (unresolved && doesNotResolve(error)) throw unresolved();
         throw new Problem(problem, fix);
     }
+    const environment = response.ok ? await response.json().catch(() => undefined) : undefined;
+    // Something else answering, such as a proxy's error page, is no description of a T3 server.
+    if (typeof environment?.serverVersion !== 'string') {
+        throw new Problem(`T3 Code at ${origin} did not describe itself (${response.status})`, PROTOCOL_FIX);
+    }
+    speaksProtocol(origin, environment);
 }
 
 /** Another computer from COMPUTERS_FILE, once its T3 Code server has answered and taken its token. */
@@ -324,47 +354,27 @@ async function otherComputer(name) {
             return unresolvedOrigin(known, origin, status && tailscalePeerNames(status));
         },
     );
-    const call = api(origin, token, `${known} refused its token in ${COMPUTERS_FILE}. ${entry}`);
-    return { name: known, call, projects: await readProjects(call) };
+    const server = api(origin, token, `${known} refused its token in ${COMPUTERS_FILE}. ${entry}`);
+    return { name: known, server, projects: await readProjectsWithRepositories(server) };
 }
 
-/** The thread this Claude session belongs to, found through T3's own record of the session. */
-async function currentThreadId() {
-    const sessionId = process.env.CLAUDE_CODE_SESSION_ID;
-    if (!sessionId) {
-        throw new Problem('this is not a Claude session in T3 Code: CLAUDE_CODE_SESSION_ID is not set', 'Run the skill from a Claude thread in T3 Code, or pass --thread <id>.');
-    }
-    // node:sqlite prints an ExperimentalWarning on load; it is noise here.
-    process.removeAllListeners('warning');
-    let DatabaseSync;
-    try {
-        ({ DatabaseSync } = await import('node:sqlite'));
-    } catch {
-        throw new Problem(`finding the current thread needs Node 22.13 or later, and this is ${process.version}`, 'Install Node 22.13 or later (`nvm install 22`), or pass --thread <id>.');
-    }
-    const db = new DatabaseSync(join(T3_HOME, 'userdata', 'state.sqlite'), { readOnly: true });
-    try {
-        const rows = db
-            .prepare('select thread_id from provider_session_runtime where resume_cursor_json like ?')
-            .all(`%"resume":"${sessionId}"%`);
-        return sessionThread(sessionId, rows.map((row) => row.thread_id));
-    } finally {
-        db.close();
-    }
-}
-
-/** A bearer session, ten minutes long unless told otherwise, issued by T3's own CLI from its local auth store. */
-function issueSession(ttl = '10m') {
-    const { exe, serverBin } = t3App(process.platform, process.env);
-    if (!existsSync(exe)) throw new Problem(`T3 Code is not installed at ${exe}`, 'Install T3 Code, or set T3_EXE to its executable.');
+/**
+ * A bearer session lasting `ttl`, issued by T3's own CLI from its local auth
+ * store, for another computer to hand off to this one with. It may read threads
+ * and command them, and nothing else T3 can grant.
+ */
+function issueSession(ttl) {
+    const cli = t3Cli(process.platform, process.env, T3_HOME);
+    if (!existsSync(cli)) throw new Problem(`T3 Code's command line is missing: ${cli}`, 'Open T3 Code once, which writes it, or set T3CODE_CLI_PATH to it.');
     const fix = 'Update T3 Code. If it is current, its `auth session issue` command has changed and t3.mjs needs updating.';
+    const args = ['auth', 'session', 'issue', '--ttl', ttl, '--label', 'hf-t3-handoff', '--scope', 'orchestration:read', '--scope', 'orchestration:operate', '--json'];
+    const options = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] };
     let out;
     try {
-        out = execFileSync(exe, [serverBin, 'auth', 'session', 'issue', '--ttl', ttl, '--label', 'hf-t3-handoff', '--json'], {
-            env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-            encoding: 'utf8',
-            stdio: ['ignore', 'pipe', 'pipe'],
-        });
+        // Windows runs a .cmd only through its shell, given one command line with each part quoted.
+        out = process.platform === 'win32'
+            ? execSync([cli, ...args].map((part) => `"${part}"`).join(' '), options)
+            : execFileSync(cli, args, options);
     } catch (error) {
         // error.message opens with the long command line, so prefer what the command said; when it never
         // started, it said nothing and error.message is all there is.
@@ -377,71 +387,142 @@ function issueSession(ttl = '10m') {
     return session;
 }
 
-/** Calls to one T3 Code server. `refusedFix` is what to do when it turns the token down. */
-function api(origin, token, refusedFix) {
-    return async (method, path, body) => {
-        const response = await fetch(origin + path, {
-            method,
-            headers: { authorization: `Bearer ${token}`, ...(body ? { 'content-type': 'application/json' } : {}) },
-            body: body ? JSON.stringify(body) : undefined,
+/**
+ * One Effect RPC call over `socket`, a WebSocket to the server at `origin`, sent
+ * once it opens: the call's value, or a Problem when the server fails it,
+ * cannot take it, closes first or does not answer within `timeoutMs`.
+ */
+export function rpcOver(socket, origin, method, payload, timeoutMs = RPC_TIMEOUT_MS) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Problem(`${method} on ${origin} had no answer after ${timeoutMs / 1000} s`)), timeoutMs);
+        const settle = (settleWith) => (value) => {
+            clearTimeout(timer);
+            settleWith(value);
+        };
+        const fail = settle(reject);
+        socket.addEventListener('open', () => {
+            socket.send(JSON.stringify({ _tag: 'Request', id: '1', tag: method, payload, headers: [] }));
         });
-        const text = await response.text();
-        if (!response.ok) {
-            const refused = response.status === 401 || response.status === 403;
-            throw new Problem(`${method} ${origin}${path} answered ${response.status}: ${text.slice(0, 500)}`, refused ? refusedFix : undefined);
-        }
-        return text ? JSON.parse(text) : null;
-    };
-}
-
-async function readThread(call, threadId) {
-    return (await call('GET', `/api/orchestration/threads/${threadId}?turnLimit=1`)).thread;
-}
-
-async function readProjects(call) {
-    return (await call('GET', '/api/orchestration/shell')).projects;
-}
-
-/** T3's own settings, where its provider instances are configured. */
-function readSettings() {
-    const path = join(T3_HOME, 'userdata', 'settings.json');
-    if (!existsSync(path)) throw new Problem(`T3 Code's settings are missing: ${path}`, 'Open T3 Code once, or set T3CODE_HOME to its home folder.');
-    try {
-        return JSON.parse(readFileSync(path, 'utf8'));
-    } catch (error) {
-        throw new Problem(`${path} is not JSON: ${error.message}`, 'Fix the file, or change a setting in T3 Code so it writes it again.');
-    }
+        socket.addEventListener('message', (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                // A Defect or a protocol error is the server unable to take the request at all.
+                if (message._tag === 'Defect' || message._tag === 'ClientProtocolError') {
+                    throw new Problem(`${origin} could not take ${method}: ${JSON.stringify(message).slice(0, 500)}`, PROTOCOL_FIX);
+                }
+                if (message._tag !== 'Exit' || String(message.requestId) !== '1') return;
+                settle(resolve)(rpcValue(method, message.exit));
+            } catch (error) {
+                fail(error instanceof Problem ? error : new Problem(`${origin} answered ${method} with a frame that is not JSON: ${String(event.data).slice(0, 200)}`));
+            }
+        });
+        // Settling twice is harmless: a close after the answer changes nothing.
+        socket.addEventListener('error', () => fail(new Problem(`the WebSocket to ${origin} failed during ${method}`)));
+        socket.addEventListener('close', ({ code, reason }) => {
+            fail(new Problem(`${origin} closed the WebSocket during ${method} (${code}${reason ? `: ${reason}` : ''})`));
+        });
+    });
 }
 
 /**
- * Where the next thread starts: here, in the current thread's project and
- * checkout or in `target`, the project --project named, or on another computer,
- * in its project for the same repository.
+ * One T3 Code server: `get` reads over HTTP, `rpc` calls a method over its
+ * WebSocket. `refusedFix` is what to do when it turns the token down.
  */
-export async function destination(call, current, there, target) {
-    const { projectId, branch, worktreePath } = current;
-    if (target && target.id !== projectId) {
-        // A branch or worktree of one project says nothing about the checkout of another.
-        return { call, projectId: target.id, branch: null, worktreePath: null, place: target.workspaceRoot };
+function api(origin, token, refusedFix) {
+    const request = async (method, path) => {
+        let response;
+        let text;
+        try {
+            response = await fetch(origin + path, {
+                method,
+                headers: { authorization: `Bearer ${token}`, 'x-t3-orchestration-protocol': String(PROTOCOL) },
+                signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+            });
+            text = await response.text();
+        } catch (error) {
+            throw new Problem(`${method} ${origin}${path} failed: ${error.message}`);
+        }
+        if (!response.ok) {
+            const refused = response.status === 401 || response.status === 403;
+            // A server on another protocol answers 400 with nothing to say, or 426.
+            const otherProtocol = (response.status === 400 && !text) || response.status === 426;
+            throw new Problem(
+                `${method} ${origin}${path} answered ${response.status}: ${text.slice(0, 500)}`,
+                refused ? refusedFix : otherProtocol ? PROTOCOL_FIX : undefined,
+            );
+        }
+        try {
+            return text ? JSON.parse(text) : null;
+        } catch {
+            throw new Problem(`${method} ${origin}${path} answered with something that is not JSON: ${text.slice(0, 200)}`);
+        }
+    };
+
+    const rpc = async (method, payload) => {
+        checkWebSocket();
+        const { ticket } = await request('POST', '/api/auth/websocket-ticket');
+        const url = new URL(`/ws?orchestrationProtocol=${PROTOCOL}&wsTicket=${encodeURIComponent(ticket)}`, origin);
+        url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+        const socket = new WebSocket(url);
+        try {
+            return await rpcOver(socket, origin, method, payload);
+        } finally {
+            socket.close();
+        }
+    };
+
+    return { get: (path) => request('GET', path), rpc };
+}
+
+/** A thread as T3 projects it, with its runs. */
+async function readThread(server, threadId) {
+    const { projection } = await server.get(`/api/orchestration/threads/${encodeURIComponent(threadId)}/bounded`);
+    return { ...projection.thread, runs: projection.runs };
+}
+
+async function readProjects(server) {
+    return (await server.get('/api/orchestration/shell')).projects;
+}
+
+/**
+ * A server's projects with their repositories. T3 answers with the repository
+ * identity it has cached, which it keeps for a minute, and null where it has
+ * none, starting a lookup that lands within moments. So while a project lacks
+ * one, read again, a few times: a project with no remote never gains one.
+ */
+export async function readProjectsWithRepositories(server, { attempts = 5, delayMs = 500 } = {}) {
+    let projects = await readProjects(server);
+    for (let attempt = 1; attempt < attempts && projects.some((project) => !project.repositoryIdentity); attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        projects = await readProjects(server);
     }
-    if (!there) {
-        const checkout = branch ?? worktreePath ?? 'project checkout';
-        return { call, projectId, branch, worktreePath, place: target ? `${target.workspaceRoot}, ${checkout}` : checkout };
-    }
-    const project = (await readProjects(call)).find((candidate) => candidate.id === current.projectId);
-    if (!project) throw new Problem(`T3 Code does not list the project of this thread (${current.projectId})`);
-    const match = matchingProject(project, there.projects);
-    if (!match) {
-        const repository = project.repositoryIdentity?.canonicalKey;
+    return projects;
+}
+
+/**
+ * Where the next thread starts on another computer: its project for the same
+ * repository as `project`, this thread's project as t3_project_read gave it.
+ */
+export function destination(project, there) {
+    // T3 leaves the identity null until it has looked the remote up, and this computer can look itself.
+    const repository = project.repositoryIdentity?.canonicalKey ?? checkoutRepositoryKey(project.workspaceRoot);
+    if (!repository) {
+        const here = reachableName(hostname());
         throw new Problem(
-            repository
-                ? `${there.name} has no one project for ${repository}, the repository of "${project.title}"`
-                : `project "${project.title}" has no git remote to find it by on ${there.name}`,
+            `project "${project.title}" has no git remote on ${here} to find it by: ${project.workspaceRoot} has neither an upstream nor an origin`,
+            `Add the repository's remote to ${project.workspaceRoot} on ${here} (git remote add origin <url>), then run this again.`,
+        );
+    }
+    const match = matchingProject(project, there.projects, repository);
+    if (!match) {
+        const unknown = there.projects.filter((candidate) => !candidate.repositoryIdentity).map((candidate) => `"${candidate.title}"`);
+        const unsaid = unknown.length ? `; T3 Code there did not say the repository of ${unknown.join(', ')}` : '';
+        throw new Problem(
+            `${there.name} has no one project for ${repository}, the repository of "${project.title}"${unsaid}`,
             `Add the repository as a project in T3 Code on ${there.name}. If several of its clones are projects there, title one "${project.title}".`,
         );
     }
-    // A branch or worktree of this computer says nothing about the checkout there.
-    return { call: there.call, projectId: match.id, branch: null, worktreePath: null, place: `${there.name}, ${match.workspaceRoot}` };
+    return { server: there.server, projectId: match.id, place: `${there.name}, ${match.workspaceRoot}` };
 }
 
 function checkRig() {
@@ -484,21 +565,11 @@ async function check(flags) {
 
     await run('rig is installed', checkRig);
     await run('the rig-handoff skill is linked', checkRigHandoffSkill);
-    const origin = await run('T3 Code is running', serverOrigin);
-    const session = await run('T3 Code issues a token', issueSession);
-    const threadId = await run('this thread is found', async () => flags.thread ?? (await currentThreadId()));
-    const call = origin && session && api(origin, session.token);
-    const current = call && threadId && (await run('the T3 API reads this thread', () => readThread(call, threadId)));
     if (flags.to) {
+        await run('Node can command another computer', checkWebSocket);
+        const from = await run(`--from ${flags.from} holds this thread's project and configuration`, () => readFrom(flags.from));
         const there = await run(`T3 Code on ${flags.to} answers and takes its token`, () => otherComputer(flags.to));
-        if (current && there) await run(`${there.name} has this thread's project`, () => destination(call, current, there));
-    }
-    if (flags.project && call) {
-        await run(`T3 Code has a project for ${flags.project}`, async () => projectForFolder(flags.project, await readProjects(call)));
-    }
-    if (flags.provider) {
-        const label = current ? 'is enabled and runs this thread\'s model' : 'is enabled';
-        await run(`provider instance ${flags.provider} ${label}`, () => providerInstance(flags.provider, readSettings(), current?.modelSelection?.instanceId));
+        if (from && there) await run(`${there.name} has this thread's project`, () => destination(from.project, there));
     }
 
     console.log('hf-t3-handoff needs:');
@@ -511,71 +582,85 @@ async function check(flags) {
     return results.every((result) => result.ok);
 }
 
+/** Prints the rename this thread needs, if any, and the next thread's title, as JSON. */
+function printTitles(flags) {
+    if (!flags.current) throw new Problem('--current <title> is required', USAGE);
+    console.log(JSON.stringify(handoffTitles(flags.current, flags.key && { key: flags.key, description: flags.description })));
+}
+
+/**
+ * The `orchestration.launchThread` that starts the next thread in `projectId`
+ * on another computer, with this thread's model selection and modes. A branch
+ * or worktree of this computer says nothing about the checkout there, so it
+ * starts in the project's checkout. One call creates the thread there and
+ * starts its first run with the prompt.
+ */
+export function launchCommand(configuration, projectId, title, prompt) {
+    return {
+        commandId: randomUUID(),
+        threadId: randomUUID(),
+        projectId,
+        title,
+        modelSelection: configuration.modelSelection,
+        runtimeMode: configuration.runtimeMode,
+        interactionMode: configuration.interactionMode,
+        workspaceStrategy: { type: 'root' },
+        initialMessage: { messageId: randomUUID(), text: prompt, attachments: [] },
+    };
+}
+
+/** Starts the next thread on another computer and waits for its run to start; this thread is the agent's to close. */
 async function continueThread(flags) {
+    if (!flags.to) throw new Problem('continue starts a thread on another computer: --to <computer> is required. On this computer, the agent hands off with its t3-code MCP tools.', USAGE);
+    if (!flags.title) throw new Problem('--title <title> is required: the next title `t3.mjs title` printed', USAGE);
     if (!flags.promptFile) throw new Problem('--prompt-file <path> is required', USAGE);
     const prompt = readFileSync(flags.promptFile, 'utf8').trim();
     if (!prompt) throw new Problem(`${flags.promptFile} is empty`);
 
-    const origin = await serverOrigin();
-    const currentId = flags.thread ?? (await currentThreadId());
-    const call = api(origin, issueSession().token);
-    const current = await readThread(call, currentId);
-    if (current.archivedAt) throw new Problem(`thread "${current.title}" is already archived`);
-    const project = flags.project && projectForFolder(flags.project, await readProjects(call));
-    const provider = flags.provider && providerInstance(flags.provider, readSettings(), current.modelSelection.instanceId);
-    const next = await destination(call, current, flags.to && (await otherComputer(flags.to)), project);
-    const modelSelection = modelSelectionOn(current.modelSelection, provider);
-
-    const newId = randomUUID();
-    const { rename, next: title } = handoffTitles(current.title, flags.key && { key: flags.key, description: flags.description });
-    const archivedTitle = rename ?? current.title;
-    const createdAt = new Date().toISOString();
-    const create = {
-        type: 'thread.create',
-        commandId: randomUUID(),
-        threadId: newId,
-        projectId: next.projectId,
-        title,
-        modelSelection,
-        runtimeMode: current.runtimeMode,
-        interactionMode: current.interactionMode,
-        branch: next.branch,
-        worktreePath: next.worktreePath,
-        createdAt,
-    };
-    const turn = {
-        type: 'thread.turn.start',
-        commandId: randomUUID(),
-        threadId: newId,
-        message: { messageId: randomUUID(), role: 'user', text: prompt, attachments: [] },
-        runtimeMode: current.runtimeMode,
-        interactionMode: current.interactionMode,
-        createdAt,
-    };
+    const { project, configuration } = readFrom(flags.from);
+    const next = destination(project, await otherComputer(flags.to));
+    const { title } = flags;
+    const launch = launchCommand(configuration, next.projectId, title, prompt);
+    const newId = launch.threadId;
 
     if (flags.dryRun) {
-        const renaming = rename ? `rename "${current.title}" to "${rename}", ` : '';
-        const model = provider ? `${modelSelection.model} on ${provider.displayName}` : modelSelection.model;
-        console.log(`Would start "${title}" (${next.place}, ${model}), ${renaming}and archive "${archivedTitle}".`);
+        console.log(`Would start "${title}" (${next.place}, ${configuration.modelSelection.model}).`);
         return;
     }
 
-    await next.call('POST', '/api/orchestration/dispatch', create);
-    await next.call('POST', '/api/orchestration/dispatch', turn);
+    // From here on a thread may exist, so every failure names it and leaves the current one open.
+    const created = `"${title}" (${newId}; ${next.place})`;
+    const leftOpen = 'this thread is left open';
+    const lookFirst = 'Look for it in T3 Code before running this again, which would start another.';
+    try {
+        await next.server.rpc('orchestration.launchThread', launch);
+    } catch (error) {
+        throw new Problem(`launching ${created} failed, and it may have been created anyway: ${error.message}; ${leftOpen}`, lookFirst);
+    }
 
     const deadline = Date.now() + TURN_START_TIMEOUT_MS;
-    while (!(await readThread(next.call, newId)).latestTurn) {
+    for (let lastError; ;) {
+        let runs;
+        try {
+            ({ runs } = await readThread(next.server, newId));
+            lastError = undefined;
+        } catch (error) {
+            // A read that fails once is no reason to give up on a thread that is starting.
+            lastError = error;
+        }
+        try {
+            if (runs && runStarted(runs)) break;
+        } catch (error) {
+            throw new Problem(`${created}: ${error.message}; ${leftOpen}`);
+        }
         if (Date.now() > deadline) {
-            throw new Problem(`"${title}" (${newId}; ${next.place}) was created but its turn has not started after ${TURN_START_TIMEOUT_MS / 1000} s; "${current.title}" is left open`);
+            const last = lastError ? ` (last read: ${lastError.message})` : '';
+            throw new Problem(`${created} was launched but its run has not started after ${TURN_START_TIMEOUT_MS / 1000} s${last}; ${leftOpen}`, `It may still start, as when a setup script is slow. ${lookFirst}`);
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
-    if (rename) {
-        await call('POST', '/api/orchestration/dispatch', { type: 'thread.meta.update', commandId: randomUUID(), threadId: currentId, title: rename });
-    }
-    console.log(`Started "${title}" (${newId}; ${next.place}). Archiving "${archivedTitle}".`);
-    await call('POST', '/api/orchestration/dispatch', { type: 'thread.archive', commandId: randomUUID(), threadId: currentId });
+    console.log(`Started ${created}.`);
 }
 
 /** Prints this computer's entry for another computer's COMPUTERS_FILE, with a token that lasts `ttl`. */
@@ -597,7 +682,8 @@ async function printToken(ttl = '365d') {
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
     try {
         const { command, flags } = parseArgs(process.argv.slice(2));
-        if (command === 'check') process.exitCode = (await check(flags)) ? 0 : 1;
+        if (command === 'title') printTitles(flags);
+        else if (command === 'check') process.exitCode = (await check(flags)) ? 0 : 1;
         else if (command === 'continue') await continueThread(flags);
         else if (command === 'token') await printToken(flags.ttl);
         else throw new Problem(command ? `unknown command ${command}` : 'no command given', USAGE);

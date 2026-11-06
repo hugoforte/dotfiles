@@ -1,8 +1,9 @@
 # Linked to ~/.gitconfig by macos/setup.sh. git/gitconfig is the Windows one: its credential
 # helper is a Windows path, and it converts line endings to CRLF on checkout.
+# No name or email: the identity comes from an overlay's git/gitconfig, through ~/.gitconfig-overlays
+# below. Until one does, git refuses to commit rather than make one up from the host name.
 [user]
-	name = Hugo Forte
-	email = hugo@hugoforte.com
+	useConfigOnly = true
 [core]
 	autocrlf = input
 # gh's absolute path: an app started from the Dock does not have Homebrew on its PATH.

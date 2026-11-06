@@ -55,7 +55,7 @@ A report-only run: it says what would change and changes nothing. Every installe
 _Avoid_: verify, validate, test
 
 **Component**:
-One unit `ai/install.sh` installs, checks and uninstalls: CLAUDE.md, agents, skills, rig skills, overlay skills, settings, secrets. Each has an `install_`, `uninstall_` and `check_` of its own.
+One unit `ai/install.sh` installs, checks and uninstalls: CLAUDE.md, agents and rules (this repo's and the overlays'), skills, rig skills, overlay skills, Bruno collections, settings, secrets. Each has an `install_`, `uninstall_` and `check_` of its own.
 _Avoid_: module, feature, part
 
 **Sync**:
@@ -81,11 +81,11 @@ A directory on a machine whose immediate children are checkouts, listed in `mach
 _Avoid_: source root, projects directory, workspace
 
 **Overlay**:
-A private directory laid out like this repo's root, which the tooling reads from as well as from the repo: registries merge, `aws/config` comes from exactly one place, each overlay's `git/gitconfig` is included, and its `ai/skills/` are linked beside this repo's. Listed per machine in `machine.local.psd1`, so no tracked file names one. An overlay is cut by audience (one person, or one employer), and one private repo may hold several.
+A private directory laid out like this repo's root, which the tooling reads from as well as from the repo: registries merge, every `aws/config` merges into one generated `~/.aws/config` and, on a Mac, every `ssh/config` into `~/.ssh/config`, `ssh/authorized_keys` from at most one overlay, each overlay's `git/gitconfig` is included (the owner's identity comes from one, since this repo ships none), its `ai/skills/` and `ai/agents/` are linked beside this repo's, and its `ai/rules/` are linked into `~/.claude/rules/`, beside this repo's `CLAUDE.md` and rules. Its `leak-check/terms.txt` says what must never reach this public repo. What may come from where is one table per language, in `ai/helpers/overlays.sh` and `powershell/overlays.ps1`. Listed per machine in `machine.local.psd1`, so no tracked file names one. An overlay is cut by audience (one person, or one employer), and one private repo may hold several.
 _Avoid_: private repo (a repo may hold several overlays), layer, plugin
 
 **Route folder**:
-An extra Claude config folder (a `CLAUDE_CONFIG_DIR`) with its own login, for work that bills a different Claude subscription than `~/.claude`. An overlay names it in `ai/claude/config-dirs`; `ai/install.sh` gives it everything it gives `~/.claude` and touches nothing else in it.
+An extra Claude config folder (a `CLAUDE_CONFIG_DIR`) with its own login, for work that bills a different Claude subscription than `~/.claude`. An overlay names it in `ai/claude/config-dirs`, or in `machines/<KEY>.config-dirs` for one machine; `ai/install.sh` gives it everything it gives `~/.claude` and touches nothing else in it.
 _Avoid_: profile, account folder, claude home (unqualified)
 
 ### Skills
@@ -101,6 +101,10 @@ _Avoid_: skill (unqualified), local skill, app skill
 **rig skill**:
 A skill the rig checkout ships under its `skills/`, linked *out* by this repo exactly as a shipped skill is, but owned and versioned by rig. Present only on a machine that has a rig checkout.
 _Avoid_: skill (unqualified), external skill, vendored skill (that is `matt-*`, a copy this repo owns)
+
+**Rule**:
+A guidance file under `ai/rules/`, linked into every Claude config folder's `rules/`, where Claude Code reads it beside `CLAUDE.md`. This repo's are path-scoped: guidance for one kind of file, loaded only when a session works on one. An overlay's are how one person's or one employer's working rules reach a session without this repo naming them. A rule name is linked from one place only, this repo's first.
+_Avoid_: rule for a row of the overlay table, which is a row
 
 **Overlay skill**:
 A skill an overlay ships under its `ai/skills/`, linked *out* exactly as a shipped skill is, for a skill whose text names something private. A skill name is linked from one place only: a name this repo, rig or an earlier overlay already ships is not linked.
@@ -135,11 +139,11 @@ A manifest entry marked `Unattended = $false`: safe to install only on a watched
 _Avoid_: skipped, blocked, manual (that is a `Source`, for entries nothing can install)
 
 **Option**:
-A named group of manifest entries (`Optional = '<name>'`) that only machines opting in get: the install and its manual steps together. A machine opts in by listing the name under `OptionalTools` in an overlay's `machines/<COMPUTERNAME>.psd1` or its `machine.local.psd1`; on any other machine the option is reported as available, never as missing.
+A named group of manifest entries (`Optional = '<name>'`) that only machines opting in get: the install and its manual steps together. A machine opts in by listing the name under `OptionalTools` in an overlay's `machines/<KEY>.psd1` or its `machine.local.psd1`; on any other machine the option is reported as available, never as missing.
 _Avoid_: profile, feature flag, extra
 
 **Install method**:
-What an entry's `Source` field names: `winget`, `npm`, `uv` (a Python tool, `uv tool install`), `github-release` (a repo's latest release asset, run silently) or `manual`. The field is called `Source` for history; in prose it is the install method, because a source is a file in this repo.
+What an entry's `Source` field names: `winget`, `npm`, `uv` (a Python tool, `uv tool install`), `github-release` (a repo's latest release asset, run silently), `download` (an installer at a fixed `Url`, run silently) or `manual`. The field is called `Source` for history; in prose it is the install method, because a source is a file in this repo.
 _Avoid_: source (that is the repo file a managed path points at), provider, package manager
 
 **Overlay Brewfile**:

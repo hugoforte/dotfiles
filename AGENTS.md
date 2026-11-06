@@ -1,5 +1,10 @@
 # AGENTS.md
 
+## Shell scripts
+
+- Print with plain `echo` or the helpers in `ai/helpers/output.sh`, rather than a logging function of the script's own.
+- Check an optional tool with `command -v` before using it.
+
 ## Agent skills
 
 ### Issue tracker

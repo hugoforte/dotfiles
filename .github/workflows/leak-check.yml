@@ -1,0 +1,40 @@
+name: Leak check
+
+# Nothing private may merge into this public repo (ai/helpers/leak-check.sh): a private term, an
+# email address, a key or a token, in the tracked files or the pull request's title, body, commit
+# messages and commit authors. Its own workflow, not a step of check.yml, so an edit to a pull
+# request's title or body runs it again without the whole suite.
+#
+# windows-latest, like check.yml's main job (docs/adr/0004, 0006): Git Bash is what bin/leak-check
+# runs under on the machines too.
+#
+# The private terms are the LEAK_CHECK_TERMS secret (README, "Leak check"). A fork's pull request
+# and Dependabot's get no secret, so there the generic rules run alone; everywhere else a missing
+# or empty secret fails the run rather than checking no terms in silence.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  leak-check:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Leak check
+        shell: bash
+        env:
+          LEAK_CHECK_TERMS: ${{ secrets.LEAK_CHECK_TERMS }}
+          LEAK_CHECK_REQUIRE_TERMS: ${{ github.event.pull_request.head.repo.fork != true && github.actor != 'dependabot[bot]' }}
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: sh bin/leak-check ${PR:+--pr "$PR"}

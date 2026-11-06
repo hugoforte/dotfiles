@@ -21,6 +21,18 @@
   "autoUpdatesChannel": "latest",
   "tui": "fullscreen",
   "theme": "dark",
+  "syncClaudeAiSkills": false,
+  "skillOverrides": {
+    "claude-api": "name-only",
+    "dataviz": "name-only",
+    "keybindings-help": "user-invocable-only",
+    "matt-prototype": "name-only",
+    "matt-research": "name-only",
+    "matt-tdd": "name-only",
+    "matt-wizard": "name-only",
+    "plugin-authoring": "user-invocable-only",
+    "workflow-authoring": "name-only"
+  },
   "enabledPlugins": {
     "bloomfilter-agent-miner-claude-code-windows@bloomfilter-plugins": false,
     "mattpocock-skills@mattpocock": false

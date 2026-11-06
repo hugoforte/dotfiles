@@ -1,9 +1,10 @@
 #!/bin/sh
 
 # Suite for ai/skills/hf-t3-handoff/t3.mjs: the parts of the T3 handoff that are
-# functions of their arguments, such as the titles, the project matching and
-# where T3 Code is installed on each platform. Everything
-# else in that script talks to a running T3 Code server and is not run here.
+# functions of their arguments, such as the titles, the project matching on
+# another computer, the --from file and where T3 Code's command line is on each
+# platform. Everything else in that script talks to a running T3 Code server and
+# is not run here; on this computer the agent's MCP tools do the handoff.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -88,145 +89,194 @@ call() {
     "
 }
 
-# The examples live under the temp directory, so they are absolute on every platform.
-root="$(cd "${TMPDIR:-/tmp}" && pwd -W 2>/dev/null || pwd)"
-# The separator Node reads on this platform: \ on Windows, where pwd -W answered, / elsewhere.
-case "$root" in [A-Za-z]:*) s='\' ;; *) s='/' ;; esac
-# native <part...>: a folder under the root, as Node spells it in a message.
-native() {
-    call "(await import('node:path')).resolve(String.raw\`$root\`, ...'$*'.split(' '))"
+assert_eq "an https remote is keyed by host and path, without .git" \
+    "github.com/hugoforte/dotfiles-private" \
+    "$(call "t3.remoteKey('https://github.com/HugoForte/dotfiles-private.git')")"
+assert_eq "an scp-style remote is keyed the same" \
+    "github.com/hugoforte/dotfiles-private" \
+    "$(call "t3.remoteKey('git@github.com:hugoforte/dotfiles-private.git')")"
+
+# A checkout with an origin, and one with no remote, for when T3 has not said a project's repository.
+work="$(mktemp -d)" || exit 1
+trap 'rm -rf "$work"' EXIT INT TERM
+git init -q "$work/with-origin" && git -C "$work/with-origin" remote add origin https://github.com/hugoforte/dotfiles-private.git
+git init -q "$work/no-remote"
+# As Node spells them on this platform.
+with_origin="$(cd "$work/with-origin" && (pwd -W 2>/dev/null || pwd))"
+no_remote="$(cd "$work/no-remote" && (pwd -W 2>/dev/null || pwd))"
+this_computer="$(call "t3.reachableName((await import('node:os')).hostname())")"
+
+# to_mac <this project> <the mac's projects>: prints "<projectId>|<place>" for --to the mac, or the error.
+to_mac() {
+    call "(({ projectId, place }) => projectId + '|' + place)(t3.destination($1, { name: 'a-macbook-pro', server: {}, projects: $2 }))"
 }
-example="String.raw\`$root${s}projects${s}example\`"
+
 # Object literals go through variables: macOS's /bin/sh (bash 3.2) brace-expands a {a,b} written
 # inside "$( ... "..." )" when no whitespace separates the comma from the braces, which would
 # split one before Node saw it.
-projects="[{id:'example',title:'example',workspaceRoot:$example},{id:'other',title:'other',workspaceRoot:'$root/projects/other/'}]"
-copy="{id:'copy',title:'copy',workspaceRoot:$example}"
+unresolved_here="{id:'here',title:'dotfiles-private',workspaceRoot:String.raw\`$with_origin\`,repositoryIdentity:null}"
+no_remote_here="{id:'here',title:'scratch',workspaceRoot:String.raw\`$no_remote\`,repositoryIdentity:null}"
+mac_clone="{id:'mac',title:'dotfiles-private',workspaceRoot:'/Users/me/dotfiles-private',repositoryIdentity:{canonicalKey:'github.com/hugoforte/dotfiles-private'}}"
+mac_unresolved="{id:'pending',title:'dotfiles-private',workspaceRoot:'/Users/me/dotfiles-private',repositoryIdentity:null}"
 
-assert_eq "--project finds the project whose workspace root is the folder" \
-    "example" \
-    "$(call "t3.projectForFolder($example, $projects).id")"
-assert_eq "--project matches with either slash and a trailing one" \
-    "other" \
-    "$(call "t3.projectForFolder('$root/projects/other', $projects).id")"
-if [ "$s" = '\' ]; then
-    assert_eq "--project matches without case on Windows" \
-        "example" \
-        "$(call "t3.projectForFolder(String.raw\`$root\\PROJECTS\\Example\`, $projects).id")"
-else
-    printf '  SKIP  --project matches without case on Windows: not on Windows\n'
-fi
-assert_eq "--project for a folder T3 has no project for says how to add one" \
-    "error: T3 Code has no project for $(native projects missing)" \
-    "$(call "t3.projectForFolder(String.raw\`$root${s}projects${s}missing\`, $projects)")"
-assert_eq "--project for a folder with two T3 projects names both" \
-    "error: T3 Code has 2 projects for $(native projects example): \"example\" (example), \"copy\" (copy)" \
-    "$(call "t3.projectForFolder($example, [...$projects, $copy])")"
+said_here="{id:'here',title:'dotfiles-private',workspaceRoot:String.raw\`$no_remote\`,repositoryIdentity:{canonicalKey:'github.com/hugoforte/dotfiles-private'}}"
 
-settings="{providers:{codex:{enabled:false},grok:{enabled:false}},providerInstances:{claudeAgent:{driver:'claudeAgent',displayName:'Claude'},claudeAgent_work:{driver:'claudeAgent',displayName:'Claude Work',enabled:true,config:{homePath:'~/.claude-work'}},claudeAgent_old:{driver:'claudeAgent',displayName:'Claude Old',enabled:false},codex_spare:{driver:'codex',config:{enabled:true}},codex_managed:{driver:'codex',enabled:true,config:{enabled:false}},grok_unset:{driver:'grok'}}}"
+assert_eq "--to finds the project by the repository T3 said for this one" \
+    "mac|a-macbook-pro, /Users/me/dotfiles-private" \
+    "$(to_mac "$said_here" "[$mac_clone]")"
+assert_eq "--to finds the project by this checkout's origin when T3 has not said its repository" \
+    "mac|a-macbook-pro, /Users/me/dotfiles-private" \
+    "$(to_mac "$unresolved_here" "[$mac_clone]")"
+assert_eq "--to for a project with no remote names this computer, not the destination" \
+    "error: project \"scratch\" has no git remote on $this_computer to find it by: $no_remote has neither an upstream nor an origin" \
+    "$(to_mac "$no_remote_here" "[$mac_clone]")"
+assert_eq "--to with no match names the projects there whose repository T3 did not say" \
+    "error: a-macbook-pro has no one project for github.com/hugoforte/dotfiles-private, the repository of \"dotfiles-private\"; T3 Code there did not say the repository of \"dotfiles-private\"" \
+    "$(to_mac "$unresolved_here" "[$mac_unresolved]")"
 
-# instance <id> [current instance id]: prints "<id>|<display name>|<driver>", or the error.
-instance() {
-    call "(({ id, displayName, driver }) => [id, displayName, driver].join('|'))(t3.providerInstance('$1', $settings, '${2:-}' || undefined))"
+# Reads the shell twice: T3 says the repository only on the second read, as when its cache was cold.
+warming="{ reads: 0, async get() { this.reads++; return { projects: [this.reads > 1 ? $mac_clone : $mac_unresolved] }; } }"
+
+assert_eq "the projects there are read again until T3 says their repositories" \
+    "mac" \
+    "$(call "(await t3.readProjectsWithRepositories($warming, { delayMs: 1 }))[0].id")"
+
+# cli_path <platform> <T3 home> [T3CODE_CLI_PATH]: prints the T3 command line t3.mjs runs.
+cli_path() {
+    call "t3.t3Cli('$1', { ${3:+T3CODE_CLI_PATH: String.raw\`$3\`} }, String.raw\`$2\`)"
 }
 
-assert_eq "--provider finds an enabled instance and its display name" \
-    "claudeAgent_work|Claude Work|claudeAgent" \
-    "$(instance claudeAgent_work claudeAgent)"
-assert_eq "--provider names an instance with no display name by its id" \
-    "codex_spare|codex_spare|codex" \
-    "$(instance codex_spare)"
-assert_eq "--provider for an unknown instance lists the enabled ones" \
-    "error: T3 Code has no provider instance \"claudeAgent_typo\"; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
-    "$(instance claudeAgent_typo)"
-assert_eq "--provider for a disabled instance lists the enabled ones" \
-    "error: provider instance \"claudeAgent_old\" (Claude Old) is disabled in T3 Code; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
-    "$(instance claudeAgent_old)"
-assert_eq "--provider for a default instance its driver turned off says it is disabled" \
-    "error: provider instance \"codex\" (codex) is disabled in T3 Code; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
-    "$(instance codex)"
-assert_eq "--provider for an instance whose config turns it off says it is disabled" \
-    "error: provider instance \"codex_managed\" (codex_managed) is disabled in T3 Code; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
-    "$(instance codex_managed)"
-assert_eq "--provider for an instance that does not say takes its driver's setting" \
-    "error: provider instance \"grok_unset\" (grok_unset) is disabled in T3 Code; the enabled ones are claudeAgent (Claude), claudeAgent_work (Claude Work), codex_spare (codex_spare)" \
-    "$(instance grok_unset)"
-assert_eq "--provider for a thread whose instance is gone skips the driver comparison" \
-    "codex_spare|codex_spare|codex" \
-    "$(instance codex_spare claudeAgent_removed)"
-assert_eq "--provider refuses an instance of another driver than the thread's model" \
-    "error: provider instance \"codex_spare\" runs codex, and this thread's model runs on claudeAgent" \
-    "$(instance codex_spare claudeAgent_work)"
+assert_eq "on macOS the T3 command line is the launcher in T3's home" \
+    '/Users/me/.t3/bin/t3' \
+    "$(cli_path darwin /Users/me/.t3)"
+assert_eq "on Windows the launcher is a .cmd" \
+    'C:\Users\me\.t3\bin\t3.cmd' \
+    "$(cli_path win32 'C:\Users\me\.t3')"
+assert_eq "T3CODE_CLI_PATH names the launcher instead" \
+    '/opt/t3/t3' \
+    "$(cli_path darwin /Users/me/.t3 /opt/t3/t3)"
 
-current="{projectId:'here',branch:'feature',worktreePath:null,modelSelection:{instanceId:'claudeAgent',model:'claude-model',options:[{id:'effort',value:'medium'}]}}"
-
-# destination <project expression>: prints the next thread's "<projectId>|<branch>|<worktreePath>|<place>".
-destination() {
-    call "(({ projectId, branch, worktreePath, place }) => [projectId, branch, worktreePath, place].join('|'))(await t3.destination(undefined, $current, undefined, $1))"
+# rpc <exit>: prints what an RPC answer comes to, or the error.
+rpc() {
+    call "JSON.stringify(t3.rpcValue('orchestration.launchThread', $1))"
 }
 
-# Through variables, as $copy above.
-here_project="{id:'here',workspaceRoot:'D:/projects/here'}"
-there_project="{id:'there',workspaceRoot:'D:/projects/there'}"
+success="{_tag:'Success',value:{threadId:'t'}}"
+died="{_tag:'Failure',cause:[{_tag:'Die',defect:'Missing key at [\"commandId\"]'}]}"
+failed="{_tag:'Failure',cause:[{_tag:'Fail',error:{_tag:'ThreadManagementProviderInstanceDisabledError',message:'claudeAgent_old is disabled'}}]}"
 
-assert_eq "without --project the next thread keeps this project and branch" \
-    "here|feature||feature" \
-    "$(destination undefined)"
-assert_eq "--project for this thread's own project keeps the branch" \
-    "here|feature||D:/projects/here, feature" \
-    "$(destination "$here_project")"
-assert_eq "--project for another project starts in its checkout" \
-    "there|||D:/projects/there" \
-    "$(destination "$there_project")"
+assert_eq "an RPC success is its value" \
+    '{"threadId":"t"}' \
+    "$(rpc "$success")"
+assert_eq "an RPC defect says what the server could not read" \
+    'error: orchestration.launchThread failed: Missing key at ["commandId"]' \
+    "$(rpc "$died")"
+assert_eq "an RPC failure says the server's message" \
+    'error: orchestration.launchThread failed: claudeAgent_old is disabled' \
+    "$(rpc "$failed")"
 
-assert_eq "without --provider the model selection is this thread's, untouched" \
-    "true" \
-    "$(call "(() => { const s = ($current).modelSelection; return t3.modelSelectionOn(s, undefined) === s; })()")"
-assert_eq "--provider keeps the model and its options and changes only the instance" \
-    '{"instanceId":"claudeAgent_work","model":"claude-model","options":[{"id":"effort","value":"medium"}]}' \
-    "$(call "JSON.stringify(t3.modelSelectionOn(($current).modelSelection, { id: 'claudeAgent_work' }))")"
-
-# app <platform> [T3_EXE]: prints "<exe>|<serverBin>" for that platform.
-app() {
-    call "(({ exe, serverBin }) => exe + '|' + serverBin)(t3.t3App('$1', { LOCALAPPDATA: String.raw\`C:\\Users\\me\\AppData\\Local\`, ${2:+T3_EXE: String.raw\`$2\`} }))"
+# frames <frame...>: prints what an RPC over a socket that answers with these frames comes to, or the
+# error. A frame is JSON, or `close` for the socket closing; the call times out after 200 ms.
+frames() {
+    # Frames are separated by newlines, since the module reads any argv[1] as its own path.
+    T3_MODULE="$module" T3_FRAMES="$(printf '%s\n' "$@")" node --input-type=module -e "
+        import { pathToFileURL } from 'node:url';
+        const t3 = await import(pathToFileURL(process.env.T3_MODULE).href);
+        const frames = process.env.T3_FRAMES.split('\n').filter(Boolean);
+        class Socket extends EventTarget {
+            send() {
+                for (const frame of frames) {
+                    if (frame === 'close') this.dispatchEvent(Object.assign(new Event('close'), { code: 1006, reason: '' }));
+                    else this.dispatchEvent(Object.assign(new Event('message'), { data: frame }));
+                }
+            }
+        }
+        const socket = new Socket();
+        const answer = t3.rpcOver(socket, 'http://here:3773', 'orchestration.launchThread', {}, 200);
+        socket.dispatchEvent(new Event('open'));
+        try {
+            console.log(JSON.stringify(await answer));
+        } catch (error) {
+            console.log('error: ' + error.message);
+        }
+    "
 }
 
-assert_eq "on Windows T3 Code is the per-user install, its server in resources beside it" \
-    'C:\Users\me\AppData\Local\Programs\t3code\T3 Code (Alpha).exe|C:\Users\me\AppData\Local\Programs\t3code\resources\server.asar\apps\server\dist\bin.mjs' \
-    "$(app win32)"
-assert_eq "on macOS T3 Code is the app bundle, its server in the bundle's app.asar" \
-    '/Applications/T3 Code (Alpha).app/Contents/MacOS/T3 Code (Alpha)|/Applications/T3 Code (Alpha).app/Contents/Resources/app.asar/apps/server/dist/bin.mjs' \
-    "$(app darwin)"
-assert_eq "on macOS T3_EXE moves the server with it" \
-    '/Users/me/Applications/T3.app/Contents/MacOS/T3|/Users/me/Applications/T3.app/Contents/Resources/app.asar/apps/server/dist/bin.mjs' \
-    "$(app darwin /Users/me/Applications/T3.app/Contents/MacOS/T3)"
+answer='{"_tag":"Exit","requestId":"1","exit":{"_tag":"Success","value":"done"}}'
+other='{"_tag":"Exit","requestId":"2","exit":{"_tag":"Success","value":"not ours"}}'
+
+assert_eq "an RPC answers with its request's exit" '"done"' "$(frames "$answer")"
+assert_eq "an exit for another request is not the answer" '"done"' "$(frames "$other" "$answer")"
+assert_eq "a socket closed before the answer fails the call" \
+    'error: http://here:3773 closed the WebSocket during orchestration.launchThread (1006)' \
+    "$(frames close)"
+assert_eq "a defect frame fails the call" \
+    'error: http://here:3773 could not take orchestration.launchThread: {"_tag":"Defect","defect":"unknown method"}' \
+    "$(frames '{"_tag":"Defect","defect":"unknown method"}')"
+assert_eq "a frame that is not JSON fails the call" \
+    'error: http://here:3773 answered orchestration.launchThread with a frame that is not JSON: oops' \
+    "$(frames oops)"
+assert_eq "a call with no answer times out" \
+    'error: orchestration.launchThread on http://here:3773 had no answer after 0.2 s' \
+    "$(frames)"
+
+# started <status...>: prints whether a thread whose runs have these statuses has started, or the error.
+started() {
+    runs=""
+    for status in "$@"; do runs="$runs{status:'$status'},"; done
+    call "t3.runStarted([$runs])"
+}
+
+assert_eq "a thread with no run has not started" "false" "$(started)"
+assert_eq "a run still being prepared has not started" "false" "$(started preparing)"
+assert_eq "a run still starting has not started" "false" "$(started starting)"
+assert_eq "a running run has started" "true" "$(started running)"
+assert_eq "a run waiting for input has started" "true" "$(started waiting)"
+assert_eq "a run that completed has started" "true" "$(started completed)"
+assert_eq "the latest run is the one that counts" "false" "$(started completed preparing)"
+assert_eq "a run that failed stops the handoff" \
+    "error: the new thread's run ended failed before it started" \
+    "$(started failed)"
+
+# protocol <environment>: prints what the environment's protocol comes to, or the error.
+protocol() {
+    call "t3.speaksProtocol('http://workpc:3773', $1)"
+}
+
+assert_eq "a server on protocol 2 is spoken to" "true" "$(protocol "{orchestrationProtocolVersion:2}")"
+assert_eq "a server that names no protocol is from before protocol 2" \
+    "error: T3 Code at http://workpc:3773 speaks orchestration protocol 1, and this script speaks 2" \
+    "$(protocol "{serverVersion:'0.0.45'}")"
+assert_eq "a newer protocol is refused too" \
+    "error: T3 Code at http://workpc:3773 speaks orchestration protocol 3, and this script speaks 2" \
+    "$(protocol "{orchestrationProtocolVersion:3}")"
 
 assert_eq "a Mac's .local host name is reached without it" \
-    "Hugos-MacBook-Pro" \
-    "$(call "t3.reachableName('Hugos-MacBook-Pro.local')")"
+    "A-MacBook-Pro" \
+    "$(call "t3.reachableName('A-MacBook-Pro.local')")"
 assert_eq "a host name without .local is reached as it is" \
-    "ZENBOOK" \
-    "$(call "t3.reachableName('ZENBOOK')")"
+    "WORKPC" \
+    "$(call "t3.reachableName('WORKPC')")"
 
 # Statuses as `tailscale status --json` prints them, cut to the fields read.
-tailnet="{Self:{HostName:'Hugos-MacBook-Pro',DNSName:'macbook.tail0.ts.net.'},Peer:{a:{HostName:'HugoDesktop',DNSName:'hugodesktop.tail0.ts.net.'},b:{HostName:'zenbook',DNSName:''}}}"
-no_dns="{Self:{HostName:'Hugos-MacBook-Pro',DNSName:''}}"
+tailnet="{Self:{HostName:'A-MacBook-Pro',DNSName:'laptop.tail0.ts.net.'},Peer:{a:{HostName:'WORKPC',DNSName:'workpc.tail0.ts.net.'},b:{HostName:'spare',DNSName:''}}}"
+no_dns="{Self:{HostName:'A-MacBook-Pro',DNSName:''}}"
 labelled="{Self:{HostName:'Living Room TV',DNSName:''},Peer:{a:{HostName:'Living Room TV',DNSName:''}}}"
 
 assert_eq "token names this computer by its MagicDNS name when Tailscale has one" \
-    "macbook" \
-    "$(call "t3.tokenName($tailnet, 'Hugos-MacBook-Pro.local')")"
+    "laptop" \
+    "$(call "t3.tokenName($tailnet, 'A-MacBook-Pro.local')")"
 assert_eq "token names this computer by its Tailscale host name without MagicDNS" \
-    "Hugos-MacBook-Pro" \
+    "A-MacBook-Pro" \
     "$(call "t3.tokenName($no_dns, 'other')")"
 assert_eq "token names this computer by its host name without Tailscale" \
-    "Hugos-MacBook-Pro" \
-    "$(call "t3.tokenName(undefined, 'Hugos-MacBook-Pro.local')")"
+    "A-MacBook-Pro" \
+    "$(call "t3.tokenName(undefined, 'A-MacBook-Pro.local')")"
 assert_eq "token passes over a Tailscale host name that is a device label, not a host name" \
-    "Hugos-MacBook-Pro" \
-    "$(call "t3.tokenName($labelled, 'Hugos-MacBook-Pro.local')")"
+    "A-MacBook-Pro" \
+    "$(call "t3.tokenName($labelled, 'A-MacBook-Pro.local')")"
 assert_eq "the peers are named as the Tailscale name of each" \
-    "hugodesktop,zenbook" \
+    "workpc,spare" \
     "$(call "t3.tailscalePeerNames($tailnet).join(',')")"
 assert_eq "a peer known only by a device label is not offered as a name" \
     "" \
@@ -262,28 +312,15 @@ assert_eq "a refused connection is not a name that does not resolve" \
 
 # unresolved <peers expression>: prints "<problem>|<fix>".
 unresolved() {
-    call "(({ message, fix }) => message + '|' + fix)(t3.unresolvedOrigin('macbook-pro', 'http://Hugos-MacBook-Pro:3773', $1))"
+    call "(({ message, fix }) => message + '|' + fix)(t3.unresolvedOrigin('mac', 'http://A-MacBook-Pro:3773', $1))"
 }
 
 assert_eq "an origin that does not resolve says so and lists the Tailscale peers" \
-    "hugos-macbook-pro, the host in macbook-pro's origin http://Hugos-MacBook-Pro:3773, does not resolve on this computer|Change the origin in that entry to a name this computer resolves. Tailscale sees: hugodesktop, zenbook." \
-    "$(unresolved "['hugodesktop', 'zenbook']")"
+    "a-macbook-pro, the host in mac's origin http://A-MacBook-Pro:3773, does not resolve on this computer|Change the origin in that entry to a name this computer resolves. Tailscale sees: workpc, spare." \
+    "$(unresolved "['workpc', 'spare']")"
 assert_eq "an origin that does not resolve, without Tailscale, says to use a name that does" \
-    "hugos-macbook-pro, the host in macbook-pro's origin http://Hugos-MacBook-Pro:3773, does not resolve on this computer|Change the origin in that entry to a name or address this computer resolves, such as its Tailscale name." \
+    "a-macbook-pro, the host in mac's origin http://A-MacBook-Pro:3773, does not resolve on this computer|Change the origin in that entry to a name or address this computer resolves, such as its Tailscale name." \
     "$(unresolved undefined)"
-
-assert_eq "the live thread is picked over the row T3 keeps for an imported session" \
-    "bb2e44fc" \
-    "$(call "t3.sessionThread('s1', ['import:claudeAgent_claude_kealu:s1', 'bb2e44fc'])")"
-assert_eq "an imported session's row is the thread when it is the only one" \
-    "import:claudeAgent:s1" \
-    "$(call "t3.sessionThread('s1', ['import:claudeAgent:s1'])")"
-assert_eq "two live threads for one session are named" \
-    "error: expected one T3 thread for Claude session s1, found 2: a, b" \
-    "$(call "t3.sessionThread('s1', ['a', 'import:x:s1', 'b'])")"
-assert_eq "no thread for the session says none was found" \
-    "error: expected one T3 thread for Claude session s1, found 0" \
-    "$(call "t3.sessionThread('s1', [])")"
 
 # cli <args...>: runs t3.mjs and prints the first line it wrote to stderr. Each case
 # here is refused while the arguments are read, before anything reaches T3 Code.
@@ -291,27 +328,90 @@ cli() {
     node "$module" "$@" 2>&1 >/dev/null | head -n 1
 }
 
-assert_eq "--project needs a folder" \
-    "t3: --project needs a value" \
-    "$(cli continue --prompt-file x --project)"
-assert_eq "--provider needs an instance id" \
-    "t3: --provider needs a value" \
-    "$(cli check --provider --dry-run)"
-assert_eq "--thread needs a thread id" \
-    "t3: --thread needs a value" \
-    "$(cli check --thread)"
+assert_eq "--to needs a computer" \
+    "t3: --to needs a value" \
+    "$(cli check --to --from x)"
+assert_eq "--to needs --from, which says what this thread is" \
+    "t3: --to needs --from, the file of this thread's project and configuration" \
+    "$(cli check --to elsewhere)"
+assert_eq "continue without --to says the MCP tools hand off on this computer" \
+    "t3: continue starts a thread on another computer: --to <computer> is required. On this computer, the agent hands off with its t3-code MCP tools." \
+    "$(cli continue --title x --prompt-file x)"
+assert_eq "continue needs the next title" \
+    "t3: --title <title> is required: the next title \`t3.mjs title\` printed" \
+    "$(cli continue --to elsewhere --from x --prompt-file x)"
+assert_eq "title needs the current title" \
+    "t3: --current <title> is required" \
+    "$(cli title)"
+assert_eq "--key without --description is refused" \
+    "t3: --key and --description go together" \
+    "$(cli title --current x --key KTLO-1)"
+assert_eq "title prints the rename and the next title as JSON" \
+    '{"rename":"RIG - [dotfiles#94] Handoff over MCP","next":"RIG - [dotfiles#94] Handoff over MCP 1"}' \
+    "$(node "$module" title --current 'Move the handoff' --key 'dotfiles#94' --description 'Handoff over MCP')"
+assert_eq "a title may start with a dash, as one T3 drew from a message can" \
+    '{"next":"- fix the build 2"}' \
+    "$(node "$module" title --current '- fix the build')"
+assert_eq "title prints no rename for a standard title" \
+    '{"next":"RIG - [dotfiles#94] Handoff over MCP 2"}' \
+    "$(node "$module" title --current 'RIG - [dotfiles#94] Handoff over MCP 1')"
 
-# check --thread, in an empty home with no T3 Code, so every other requirement fails fast.
-home="$(mktemp -d)"
-native_home="$(cd "$home" && pwd -W 2>/dev/null || pwd)"
-assert_eq "check uses the thread --thread names rather than looking it up" \
-    "  ok    this thread is found" \
-    "$(HOME="$native_home" USERPROFILE="$native_home" T3CODE_HOME="$native_home" T3_EXE="$native_home/none" CLAUDE_CODE_SESSION_ID= \
-        node "$module" check --thread abc 2>/dev/null | grep 'this thread is found')"
-rm -rf "$home"
+# from <json>: prints the project title --from reads out of a file holding the json, or the error.
+from() {
+    printf '%s' "$1" > "$work/from.json"
+    call "t3.readFrom(String.raw\`$(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json\`).project.title"
+}
 
-assert_eq "--project and --to do not go together" \
-    "t3: --project and --provider choose on this computer, so they do not go with --to" \
-    "$(cli continue --prompt-file x --to elsewhere --project .)"
+assert_eq "--from reads the project and configuration the MCP tools gave" \
+    "dotfiles-private" \
+    "$(from '{"project":{"title":"dotfiles-private","workspaceRoot":"/w/here"},"configuration":{"modelSelection":{"instanceId":"claudeAgent","model":"m"},"runtimeMode":"full-access","interactionMode":"default"}}')"
+assert_eq "--from names every field it lacks" \
+    "error: --from $(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json has no project.workspaceRoot, configuration.runtimeMode, configuration.interactionMode" \
+    "$(from '{"project":{"title":"dotfiles-private"},"configuration":{"modelSelection":{"model":"m"}}}')"
+assert_eq "--from needs a model in the model selection" \
+    "error: --from $(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json has no configuration.modelSelection.model" \
+    "$(from '{"project":{"title":"t","workspaceRoot":"/w"},"configuration":{"modelSelection":{"instanceId":"claudeAgent"},"runtimeMode":"full-access","interactionMode":"default"}}')"
 
+configuration="{modelSelection:{instanceId:'claudeAgent_work',model:'m',options:[{id:'effort',value:'max'}]},runtimeMode:'auto',interactionMode:'plan'}"
+launch="t3.launchCommand($configuration, 'mac', 'Next 2', 'Read the handoff.')"
+
+assert_eq "the launch there carries this thread's model selection, options and instance included" \
+    '{"instanceId":"claudeAgent_work","model":"m","options":[{"id":"effort","value":"max"}]}' \
+    "$(call "JSON.stringify(($launch).modelSelection)")"
+assert_eq "the launch there keeps this thread's modes" \
+    "auto|plan" \
+    "$(call "((l) => l.runtimeMode + '|' + l.interactionMode)($launch)")"
+assert_eq "the launch there starts in the project's checkout with the prompt, under the next title" \
+    'mac|Next 2|{"type":"root"}|Read the handoff.' \
+    "$(call "((l) => [l.projectId, l.title, JSON.stringify(l.workspaceStrategy), l.initialMessage.text].join('|'))($launch)")"
+# Node words the parse error itself differently from version to version, so only what t3.mjs says is compared.
+assert_eq "--from that is not JSON says so" \
+    "error: --from $(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json cannot be read as JSON" \
+    "$(from 'not json' | sed 's/ as JSON: .*/ as JSON/')"
+# The fix is how the agent learns which MCP tools write --from, so it must name tools T3 Code offers.
+printf '%s' '{}' > "$work/from.json"
+printf '%s' 'p' > "$work/prompt.txt"
+from_fix="$(node "$module" continue --to elsewhere --title t \
+    --from "$(cd "$work" && (pwd -W 2>/dev/null || pwd))/from.json" \
+    --prompt-file "$(cd "$work" && (pwd -W 2>/dev/null || pwd))/prompt.txt" 2>&1 >/dev/null | sed -n 2p)"
+# Matched outside $(…): bash 3.2, macOS's, ends a command substitution at a case pattern's ")".
+# T3 Code 0.1.2 reads a thread's configuration with t3_thread_configuration, 0.1.6 with t3_thread_configure.
+if [[ "$from_fix" == *"<t3_project_read>"*"t3_thread_configuration"*"t3_thread_configure with no arguments"* ]]; then
+    from_named="names t3_project_read and both configuration tools"
+else
+    from_named="$from_fix"
+fi
+assert_eq "a --from without what it needs names the MCP tools that write it" \
+    "names t3_project_read and both configuration tools" \
+    "$from_named"
+
+assert_eq "--ttl takes a count and a unit, which reach a shell on Windows" \
+    "t3: --ttl must be a count and a unit such as 365d, not 1d & calc" \
+    "$(cli token --ttl '1d & calc')"
+assert_eq "--ttl of nothing is refused" \
+    "t3: --ttl must be a count and a unit such as 365d, not 0d" \
+    "$(cli token --ttl 0d)"
+assert_eq "--ttl takes a unit in words, as T3 does" \
+    "2 weeks" \
+    "$(call "t3.parseArgs(['token', '--ttl', '2 weeks']).flags.ttl")"
 assert_summary "t3-handoff"

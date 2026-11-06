@@ -11,7 +11,12 @@
 # What it manages:
 #   ~/.zshrc               -> macos/zshrc
 #   ~/.gitconfig           -> macos/gitconfig
-#   ~/.aws/config          -> the one aws/config in this repo or an overlay, if any
+#   ~/.ssh/authorized_keys -> the one overlay's ssh/authorized_keys, if any
+#   ~/.aws/config             written: every aws/config in this repo and the overlays, merged
+#                             (ai/helpers/aws-config.sh)
+#   ~/.ssh/config             written: every ssh/config in this repo and the overlays, merged,
+#                             mode 600 in a 700 ~/.ssh; with none, a file of anyone else's is
+#                             left alone (ai/helpers/ssh-config.sh)
 #   ~/.gitconfig-overlays     written: an include of each overlay's git/gitconfig
 #   Brewfiles                 each overlay's macos/Brewfile, then the one overlay's
 #                             machines/<KEY>.Brewfile, KEY being the HostName (else the
@@ -19,6 +24,7 @@
 #                             (docs/adr/0008-a-brewfile-per-overlay.md); each path and checksum
 #                             is kept in ~/Library/Application Support/dotfiles/brewfiles.cksum
 #                             once every bundle succeeded, for --brew-if-changed
+#   node                      checked for, since the agent-guard hook needs it; not installed
 #   ai/install.sh             run, or run with --check
 #
 # Idempotent. A real file where a link goes is backed up first (docs/adr/0003).
@@ -31,11 +37,14 @@ REPO="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 . "$REPO/ai/helpers/output.sh"
 . "$REPO/ai/helpers/managed-link.sh"
 . "$REPO/ai/helpers/overlays.sh"
+. "$REPO/ai/helpers/generated-file.sh"
+. "$REPO/ai/helpers/aws-config.sh"
+. "$REPO/ai/helpers/ssh-config.sh"
 
 show_help() {
     echo "Usage: $0 [--check | --brew-if-changed]"
     echo ""
-    echo "Links ~/.zshrc, ~/.gitconfig and ~/.aws/config, writes ~/.gitconfig-overlays, applies"
+    echo "Links ~/.zshrc, ~/.gitconfig and ~/.ssh/authorized_keys, writes ~/.aws/config, ~/.ssh/config and ~/.gitconfig-overlays, applies"
     echo "each overlay's Brewfile and this Mac's, then runs ai/install.sh."
     echo ""
     echo "  --check            Report what would change without changing anything (exit 1 if anything would)"
@@ -59,43 +68,10 @@ esac
 # What install could not do. --check counts drift in CHECK_FAILED, which managed-link.sh sets.
 FAILED=0
 
-# The overlay directories this machine lists, one per line. One that does not exist is an
-# error, as it is to powershell/overlays.ps1: skipping it would drop everything it carries.
-OVERLAYS="$(psd1_paths "$REPO/ai/secrets/machine.local.psd1" Overlays)"
-while IFS= read -r overlay; do
-    [ -z "$overlay" ] || [ -d "$overlay" ] || die "overlay $overlay listed in ai/secrets/machine.local.psd1 does not exist"
-done <<EOF
-$OVERLAYS
-EOF
+overlays_load "$REPO" || exit 1
 
-# one_source <relative path> <roots, one per line>: the one root's file at that path, or nothing
-# when no root has it. Two roots having it is an error naming both: a link has one target.
-one_source() {
-    found=""
-    while IFS= read -r root; do
-        [ -n "$root" ] && [ -f "$root/$1" ] || continue
-        if [ -n "$found" ]; then
-            error "$1 is provided by more than one source: $found and $root/$1"
-            return 1
-        fi
-        found="$root/$1"
-    done <<EOF
-$2
-EOF
-    printf '%s' "$found"
-}
-
-# The machine key, as an overlay's machines/ names its files: the HostName, uppercased, up to its
-# first dot. The LocalHostName when no HostName is set: Bonjour renames that one on its own (MACBOOK
-# becomes MACBOOK-2) while another Mac on the network has it, as the old Mac does during a rebuild.
-MACHINE="$({ scutil --get HostName 2>/dev/null || scutil --get LocalHostName 2>/dev/null; } | sed 's/\..*//' | tr '[:lower:]' '[:upper:]')"
-
-aws_source="$(one_source aws/config "$REPO
-$OVERLAYS")" || exit 1
-machine_brewfile=""
-if [ -n "$MACHINE" ]; then
-    machine_brewfile="$(one_source "machines/$MACHINE.Brewfile" "$OVERLAYS")" || exit 1
-fi
+ssh_keys_source="$(overlay_sources ssh/authorized_keys)" || exit 1
+machine_brewfile="$(overlay_sources "machines/{KEY}.Brewfile")" || exit 1
 
 # --- Links ---------------------------------------------------------------------------------------
 
@@ -118,10 +94,34 @@ esac
 
 managed "~/.zshrc" "$REPO/macos/zshrc" "$HOME/.zshrc"
 managed "~/.gitconfig" "$REPO/macos/gitconfig" "$HOME/.gitconfig"
-if [ -n "$aws_source" ]; then
-    managed "~/.aws/config" "$aws_source" "$HOME/.aws/config"
+aws_sources="$(overlay_sources aws/config)"
+if [ "$MODE" = "check" ]; then
+    aws_config_check "$HOME/.aws/config" "$aws_sources"
 else
-    info "AWS config: neither this repo nor an overlay has aws/config; skipped"
+    aws_config_apply "$HOME/.aws/config" "$aws_sources" || FAILED=1
+fi
+ssh_keys="$HOME/.ssh/authorized_keys"
+if [ -n "$ssh_keys_source" ]; then
+    managed "~/.ssh/authorized_keys" "$ssh_keys_source" "$ssh_keys"
+elif [ -L "$ssh_keys" ] && case "$(readlink "$ssh_keys")" in */ssh/authorized_keys) true ;; *) false ;; esac; then
+    # A link this made to an overlay no longer listed, or to a file since removed: the keys were
+    # taken away, so they must stop working. A real file is someone's own, and is left alone.
+    if [ "$MODE" = "check" ]; then
+        warning "~/.ssh/authorized_keys links to keys no listed overlay ships ($(readlink "$ssh_keys"))"
+        CHECK_FAILED=1
+    elif rm -f "$ssh_keys"; then
+        success "~/.ssh/authorized_keys removed: no listed overlay ships ssh/authorized_keys"
+    else
+        FAILED=1
+    fi
+else
+    info "SSH keys: no overlay has ssh/authorized_keys; skipped"
+fi
+ssh_config_sources="$(overlay_sources ssh/config)"
+if [ "$MODE" = "check" ]; then
+    ssh_config_check "$HOME/.ssh/config" "$ssh_config_sources"
+else
+    ssh_config_apply "$HOME/.ssh/config" "$ssh_config_sources" || FAILED=1
 fi
 
 # --- ~/.gitconfig-overlays -----------------------------------------------------------------------
@@ -130,13 +130,9 @@ fi
 # overlay order, so a later overlay overrides an earlier one. macos/gitconfig includes it last.
 gitconfig_overlays() {
     printf '# Generated by macos/setup.sh from the Overlays in ai/secrets/machine.local.psd1. Do not edit.\n'
-    while IFS= read -r overlay; do
-        if [ -n "$overlay" ] && [ -f "$overlay/git/gitconfig" ]; then
-            printf '[include]\n\tpath = %s\n' "$overlay/git/gitconfig"
-        fi
-    done <<EOF
-$OVERLAYS
-EOF
+    overlay_sources git/gitconfig | while IFS= read -r fragment; do
+        printf '[include]\n\tpath = %s\n' "$fragment"
+    done
 }
 
 include_file="$HOME/.gitconfig-overlays"
@@ -156,17 +152,12 @@ fi
 
 # --- Brewfiles -----------------------------------------------------------------------------------
 
-# Before ai/install.sh, whose settings merge needs the jq a Brewfile installs.
-brewfiles="$(while IFS= read -r overlay; do
-    [ -n "$overlay" ] && [ -f "$overlay/macos/Brewfile" ] && printf '%s\n' "$overlay/macos/Brewfile"
-done <<EOF
-$OVERLAYS
-EOF
-)"
+# Before ai/install.sh, whose settings merge needs jq, should bootstrap not have installed it.
+brewfiles="$(overlay_sources macos/Brewfile)"
 [ -n "$machine_brewfile" ] && brewfiles="${brewfiles:+$brewfiles
 }$machine_brewfile"
 
-if [ -z "$MACHINE" ]; then
+if [ -z "$OVERLAY_KEY" ]; then
     warning "this Mac has no HostName or LocalHostName, so no machines/<KEY>.Brewfile applies; name it with sudo scutil --set HostName <name>"
     CHECK_FAILED=1
 fi
@@ -222,6 +213,20 @@ EOF
 if [ "$MODE" = "install" ] && [ -n "$brewfiles" ] && [ "$bundle_failed" = "false" ]; then
     mkdir -p "$(dirname "$brew_stamp_file")"
     printf '%s\n' "$brew_stamp" > "$brew_stamp_file"
+fi
+
+# --- node ----------------------------------------------------------------------------------------
+
+# After the Brewfiles, which may install it. The hooks ai/install.sh merges into Claude Code's
+# settings run node, and agent-guard's blocks every Bash call when node cannot start.
+if command -v node > /dev/null 2>&1; then
+    success "node at $(command -v node)"
+elif [ "$MODE" = "check" ]; then
+    warning "node not found, so the agent-guard hook blocks every Bash call; brew install node"
+    CHECK_FAILED=1
+else
+    error "node not found, so the agent-guard hook blocks every Bash call; brew install node, then run this again"
+    FAILED=1
 fi
 
 # --- AI tooling ----------------------------------------------------------------------------------

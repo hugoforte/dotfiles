@@ -8,9 +8,9 @@
 //
 // This is an allowlist, not the stock ruleset minus exceptions. The stock ruleset reports 654
 // issues across 55 files in this repo alone - mostly agent prompts and skill docs written by
-// other tools - and a linter that is always wrong gets ignored, which is how ai/CLAUDE.md's
-// markdown rules ended up unenforced in the first place. So: "default": false, and then only
-// the rules ai/CLAUDE.md actually asks for. Adding a rule here is a deliberate act.
+// other tools - and a linter that is always wrong gets ignored. So: "default": false, and then
+// only the rules below, which are this repo's Markdown conventions; ai/rules/markdown.md tells
+// agents to run md-lint rather than restating them. Adding a rule here is a deliberate act.
 //
 // Do NOT add a "globs" key. markdownlint-cli2 appends config globs to the command line, so a
 // glob here makes `md-lint README.md` lint the whole tree.
@@ -31,7 +31,7 @@
     // "no trailing whitespace"
     "MD009": true
 
-    // Deliberately absent: MD013 (line length) contradicts "never hard-wrap lines"; MD033
+    // Deliberately absent: MD013 (line length) contradicts "write each new paragraph on one line"; MD033
     // (inline HTML) fires on the HTML comments several docs here use for scaffolding notes;
     // MD060 (table column style) fires on every compact table in the repo.
   },

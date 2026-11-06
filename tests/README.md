@@ -38,21 +38,29 @@ testable yet:
 | `powershell/output.ps1` | the result object is data, not console text | #14 |
 | `ai/secrets/check-encrypted.sh` | a pure function of a directory tree | #12 |
 | `powershell/managed-link.ps1` | three verbs, and both paths are arguments | #6 |
+| `powershell/authorized-keys.ps1` | two verbs, and both paths are arguments | this change |
+| `powershell/generated-file.ps1` | through `authorized-keys.ps1` and `aws-config.ps1`, whose tests drive it | #80 |
+| `powershell/aws-config.ps1` | the target and the roots are arguments | #80 |
+| `ai/helpers/aws-config.sh` | through `macos/setup.sh`, whose fixtures list the overlays | #80 |
+| `ai/helpers/generated-file.sh` and `ai/helpers/ssh-config.sh` | through `macos/setup.sh`, whose fixtures list the overlays; `ssh -G` reads the merged file where ssh is installed | #86 |
 | `powershell/git.ps1` | the merge verdict is a function of two refs, and `-Yes` opens the delete | #21 |
 | `ai/helpers/managed-link.sh`'s `link` / `unlink_managed` / `check_link` | the same contract in sh, in a helper that only defines functions, so it is sourced as it is | #6 |
 | `ai/skills/hf-t3-handoff/t3.mjs`'s `handoffTitles` and `matchingProject` | exported, and the script only acts when run directly | #14 |
-| `ai/skills/hf-t3-handoff/t3.mjs`'s `projectForFolder`, `providerInstance`, `destination` and `modelSelectionOn` | exported; projects and settings are arguments, and `destination` reads no server without `--to` | this change |
-| `ai/skills/hf-t3-handoff/t3.mjs`'s `tokenName`, `tailscalePeerNames`, `doesNotResolve`, `unresolvedOrigin` and `sessionThread` | exported; the `tailscale status --json` output, the fetch error and the thread ids are arguments, so neither tailscale nor T3's database is read | #58 |
+| `ai/skills/hf-t3-handoff/t3.mjs`'s `destination`, `readFrom` and `title` | exported, or a command that reads no server; the other computer's projects and the `--from` file are fixtures | hugoforte/dotfiles#94 |
+| `ai/skills/hf-t3-handoff/t3.mjs`'s `tokenName`, `tailscalePeerNames`, `doesNotResolve` and `unresolvedOrigin` | exported; the `tailscale status --json` output and the fetch error are arguments, so tailscale is never run | hugoforte/dotfiles#58 |
 | `powershell/native.ps1` | the command is an argument, and the verdict is the exit code | #15 |
 | `bin/md-lint.mjs`'s `markdownlintArguments` and `hasOwnConfig` | exported, and the script only acts when run directly | this change |
 | `powershell/user-path.ps1`'s `Add-PathEntry` | the PATH list is an argument; `Add-UserPathEntry` applies it and is not run | this change |
 | `powershell/tool-selection.ps1` | which entries a machine gets, the release asset, the installed-program match and the reading of `uv tool list` are functions of their arguments; `install-tools.ps1` reads the registry, runs uv and downloads | this change |
+| `ai/helpers/overlays.sh` and `powershell/overlays.ps1` | the machine.local.psd1, the overlays and the computer name are fixtures; each rule is asked through the interface, and `overlays-parity.test.sh` diffs what both languages read of one fixture, on Windows only | hugoforte/dotfiles#67 |
+| `ai/helpers/leak-check.sh` | the repo is a fixture git repo, the terms are fake (from `LEAK_CHECK_TERMS` or a fixture overlay), and `gh` is a stub that prints a pull request's text | hugoforte/dotfiles#70 |
 | `ai/install.sh`'s extra Claude config folders | `HOME` and the overlay list are fixtures, so the folders it fills are temp directories | this change |
 | `macos/setup.sh` | `HOME` and the overlay list are fixtures, and `uname`, `scutil` and `brew` are stubs on `PATH`, so it runs on any OS and installs nothing | this change |
 | `macos/zshrc` | sourced by `zsh -f` through a fixture `~/.zshrc` link; skipped where zsh is missing | this change |
 | `macos/deploy-secrets.sh` | `HOME`, the registries and the checkouts are fixtures, and `sops` is a stub that "decrypts" by dropping a prefix | this change |
 | `macos/sync.sh` | the repo and the overlay repo are clones of fixture origins, so its pulls are real; `brew` and `sops` are stubs | this change |
 | `macos/install-sync-agent.sh` | `HOME` is a fixture and `launchctl` a stub; where `plutil` exists the plist must pass its lint | this change |
+| `macos/install-cswap-agent.sh` | `HOME` is a fixture, `launchctl` (which remembers what it loaded) and `cswap` are stubs, and `PATH` holds only them and the system's tools; the agent's command is run through `/bin/sh` against the stub; where `plutil` exists the plist must pass its lint | this change |
 
 **Everything else is untestable on purpose, not by oversight.** `setup.ps1`, `sync.ps1`,
 `install-sync-task.ps1`, `install-cswap-task.ps1`, and `install-tools.ps1` / `deploy-secrets.ps1` without `-Check` read

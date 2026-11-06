@@ -57,6 +57,14 @@ assert_eq "a heredoc redirected with an explicit descriptor is refused" "deny" \
     "$(decision Bash "cat <<EOF 1>notes.md${nl}x${nl}EOF")"
 assert_eq "perl -i after another flag is refused" "deny" \
     "$(decision Bash "perl -p -i -e 's/a/b/' f")"
+assert_eq "perl -i after the -e expression is refused" "deny" \
+    "$(decision Bash "perl -e 's/a/b/' -i f")"
+assert_eq "perl -i.bak is refused" "deny" \
+    "$(decision Bash "perl -i.bak -pe 's/a/b/' f")"
+assert_eq "perl running a command whose own flags hold an i is allowed" "allow" \
+    "$(decision Bash "perl -e 'alarm 300; exec @ARGV' pwsh -NoProfile -File tests/Run-Pester.ps1")"
+assert_eq "an -i given to perl's script is allowed" "allow" \
+    "$(decision Bash "perl script.pl -i f")"
 assert_eq "sed -i after another flag is refused" "deny" \
     "$(decision Bash "sed -E -i 's/a/b/' f")"
 assert_eq "sed -i after the expression is refused" "deny" \

@@ -44,18 +44,13 @@ Key points:
 
 ## CLAUDE.md Pattern
 
-`ai/CLAUDE.md` is principle-heavy and should define global operating style.
-
-```markdown
-## Philosophy
-### Core Beliefs
-- **Incremental progress over big bangs**
-```
+`ai/CLAUDE.md` loads in every Claude Code session, so every line must change behaviour against the model's and Claude Code's defaults.
 
 Key points:
 
-- Keep guidance high signal and broadly applicable.
-- Use bold labels for non-negotiable rules.
+- Keep only rules the model would not follow on its own; cut maxims and generic advice.
+- Put guidance for one kind of file in `ai/rules/` with a `paths:` filter, and guidance for one repo in that repo.
+- State a hard limit as "never X, because Z"; leave out capitals and emphasis, which make a rule over-apply.
 - Avoid project-specific external references unless they are intentional and maintained.
 
 ## Markdown Conventions

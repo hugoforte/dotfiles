@@ -8,7 +8,8 @@ Configuration for AI coding agents (Claude Code, Codex, Copilot). Everything is 
 |---|---|
 | `skills/<name>/` | Agent skills. Each folder has a `SKILL.md`. Linked into every tool's skills directory. |
 | `CLAUDE.md` | Global Claude Code instructions, linked to `~/.claude/CLAUDE.md`. |
-| `agents/*.md` | Claude Code sub-agents: `implementation-planner`, `code-reviewer`, `unit-test-writer`, `bug-root-cause-analyzer`, `note-taker`, `prompt-optimizer`, `task-orchestrator`. Referenced from `CLAUDE.md`. |
+| `agents/*.md` | Claude Code sub-agents: `implementation-planner`, `code-reviewer`, `unit-test-writer`, `bug-root-cause-analyzer`, `note-taker`, `prompt-optimizer`, `task-orchestrator`. Each is triggered by its own description. |
+| `rules/*.md` | Claude Code rules for one kind of file, each path-scoped in its frontmatter; linked into `~/.claude/rules/`. |
 | `claude/settings.json` | Fragment merged into `~/.claude/settings.json`: model, plugins, marketplaces, UI prefs, a read-only tool allowlist. |
 | `install.sh` | Installer, checker and uninstaller for all of the above. |
 | `validate-settings.sh` | Prints a summary of `~/.claude/settings.json` (needs `jq`). |
@@ -30,12 +31,14 @@ From Git Bash on Windows, or any POSIX shell:
 | Component | Source | Target | Needs |
 |---|---|---|---|
 | `CLAUDE.md` | `ai/CLAUDE.md` | `~/.claude/CLAUDE.md` | symlinks |
-| Agents | `ai/agents/*.md` | `~/.claude/agents/` | symlinks |
+| Agents | `ai/agents/*.md`, then `<overlay>/ai/agents/*.md` | `~/.claude/agents/` | symlinks; an overlay agent whose name this repo or an earlier overlay already ships is not linked |
+| Rules | `ai/rules/*.md`, then `<overlay>/ai/rules/*.md` for each overlay in `ai/secrets/machine.local.psd1` | `~/.claude/rules/`, which Claude Code reads beside `CLAUDE.md`; a rule with `paths:` in its frontmatter loads only for the files it matches | symlinks; an overlay rule whose name this repo or an earlier overlay already ships is not linked: install warns, `--check` fails |
 | Skills | `ai/skills/*/` | `~/.claude/skills/`, `~/.codex/skills/`, `~/.copilot/skills/` (the last two only when the tool dir exists) | symlinks |
-| Extra Claude config folders | `<overlay>/ai/claude/config-dirs`, one absolute or `~/…` path per line (`#` starts a comment) | each folder named gets what `~/.claude` gets in the `CLAUDE.md`, agents, skills, rig skills, overlay skills and settings rows, once however often it is named; its login, `.claude.json`, history and projects are never touched; a path that is not absolute is skipped with a warning | the same as those rows, and a path that is not absolute fails |
+| Extra Claude config folders | `<overlay>/ai/claude/config-dirs`, one absolute or `~/…` path per line (`#` starts a comment), and `<overlay>/machines/<KEY>.config-dirs`, the same for the one machine whose key is `KEY` (`COMPUTERNAME` on Windows, the `HostName`, else `LocalHostName`, on a Mac; uppercased) | each folder named gets what `~/.claude` gets in the `CLAUDE.md`, agents, rules, skills, rig skills, overlay skills and settings rows, once however often it is named, but none of the MCP servers; its login, `.claude.json`, history and projects are never touched; a path that is not absolute is skipped with a warning | the same as those rows, and a path that is not absolute fails |
 | rig skills | `<rig checkout>/skills/*/`, the checkout being `RIG_ROOT`, else `D:\rig`, `C:\rig`, `~/rig` | the same three skills directories | symlinks; a machine without rig links nothing and is not drifted |
 | Overlay skills | `<overlay>/ai/skills/*/`, for each overlay in `ai/secrets/machine.local.psd1` | the same three skills directories | symlinks; a name this repo, rig or an earlier overlay already ships is not linked: install warns, `--check` fails |
 | Settings | `ai/claude/settings.json` | merged into `~/.claude/settings.json`, backup taken first | `jq` (`winget install jqlang.jq`) |
+| MCP servers | `<overlay>/ai/claude/mcp.json`, shaped like a project's `.mcp.json`; none ships from this repo | each server set by name in `~/.claude.json`'s user scope, never in an extra Claude config folder, which is another account; servers added by hand and the rest of the file are left alone | `jq`; a name an earlier overlay declares is not set: install warns, `--check` fails, as it does on a server missing or changed |
 
 Symlinks on Windows need Developer Mode (Settings > System > For developers) or an elevated shell. On Git Bash the script sets `MSYS=winsymlinks:nativestrict` so `ln -s` makes real symlinks instead of silently copying.
 
@@ -52,14 +55,14 @@ A skill or agent deleted from the repo leaves a dangling symlink on every machin
 | `matt-*` | 25 | [mattpocock/skills](https://github.com/mattpocock/skills), engineering + productivity sets, MIT. Pinned commit in `licenses/mattpocock-skills-VERSION`. |
 | `hf-*` | 4 | Own. One per row below. |
 
-My own skills carry an `hf-` prefix, so a skill list says at a glance which ones this repo wrote and which came from somewhere else.
+My own skills carry an `hf-` prefix, so a skill list says at a glance which ones this repo wrote and which came from somewhere else. A skill whose text names a person, a host or anything else private ships from an overlay instead (the "Overlay skills" row above), so a machine may list more `hf-*` skills than these.
 
 | Skill | What it does |
 |---|---|
 | `hf-adversarial-review` | Sets a subagent on a PR to find what is wrong with it, verifies the findings, fixes the real ones and pushes. Takes a rig work's PRs, or a single PR outside one. |
-| `hf-assign-devs-to-pr` | Asks which of the team should take a PR, then requests their review and assigns them via `gh`. Holds the roster of names and GitHub handles. |
 | `hf-resolve-pr-comments` | Works a PR's review comments to zero: action, reply, resolve, then makes sure the PR is mergeable with its base, merging a moved base in. |
 | `hf-dotfiles-secrets` | The procedures for the encrypted skill secrets under `secrets/`. |
+| `hf-t3-handoff` | Hands the current T3 Code thread over to a fresh one, on this computer or another, in another project or on another provider instance, and archives this one. |
 
 Matt's skills are prefixed `matt-` (folder and `name:`), and their `/slash` cross-references were rewritten to match, so `/matt-triage`, `/matt-grill-with-docs`, and so on. Backticked mentions like "the `research` skill" were left as-is because the same words also name wayfinder ticket types.
 
@@ -67,11 +70,11 @@ A few references were edited by hand. Two name a skill that is not vendored: `/h
 
 ### Adding a skill
 
-1. Put the folder under `ai/skills/<name>/` with a `SKILL.md` whose `name:` matches the folder. Own skills take an `hf-` prefix.
+1. Put the folder under `ai/skills/<name>/` with a `SKILL.md` whose `name:` matches the folder. Own skills take an `hf-` prefix. This repo is public: a skill whose text names a person, a host or anything else private goes under an overlay's `ai/skills/<name>/` instead, and is committed in the overlay's repo.
 2. `./ai/install.sh --skills-only`
 3. Commit and push. Other machines pick it up on their next sync.
 
-To adopt a skill that already lives in `~/.claude/skills/<name>`: move the folder into `ai/skills/` and run the installer.
+To adopt a skill that already lives in `~/.claude/skills/<name>`: move the folder into `ai/skills/`, or an overlay's if it names anything private, and run the installer.
 
 ### Updating Matt's skills
 
@@ -99,8 +102,10 @@ Both write directions union arrays and neither deletes, so:
 - `./ai/install.sh --settings-export` copies the managed leaf paths from the live file back into the repo fragment — live scalars win, arrays union — and leaves every unmanaged key, such as `permissions.deny`, where it is. Review with `git diff`, then commit. This is how a change made through Claude reaches other machines.
 - To remove an allowlist entry everywhere, delete it from the fragment and from each machine's live file; no direction deletes.
 
+Every skill's description is in every session's context, so the fragment keeps that list short. `syncClaudeAiSkills: false` keeps the skills enabled on claude.ai (Office files, browsers, computer use) out of Claude Code; they stay on claude.ai and the desktop app. `skillOverrides` lists a rarely used skill as `name-only`, which keeps its name and drops its description, or `user-invocable-only`, which leaves it to `/name` alone. A skill used often enough that its description must trigger it stays off the list.
+
 Hooks of this repo's are the one value written differently on each side. The fragment declares the `agent-guard` hook in exec form — `"command": "node"`, `"args": ["agent-guard.mjs"]` — with `"onFailure": "block"`, so a guard that cannot start blocks the call rather than letting it through, and no shell, Git Bash or PowerShell, is involved. Merge writes the script into the live file as this checkout's absolute path to `bin/agent-guard.mjs`, so the hook is found whatever PATH the agent was started with; an app started from the Dock gets launchd's PATH, which lacks `bin/`. The fragment owns these hooks: merge replaces each one already in the live file, whichever checkout's path it names, and the shell-form `agent-guard` entry this repo used to write; check reports one the fragment does not hold as `STALE` drift; export never carries one back, so no machine's path reaches the repo. `--check` also runs each one Claude Code would run before a Bash call (a `PreToolUse` hook whose matcher covers `Bash`) on a harmless one, and fails on one that does not exit 0, with this shell's PATH, which may hold more than an app's. `node` still comes from the agent's PATH.
 
 ## Agents and CLAUDE.md
 
-`CLAUDE.md` names the seven agents and when to use them. Agents write plans, notes and reviews under `~/ai-notes/`. Both are plain markdown; edit in the repo and the symlink makes it live.
+Each agent's description says when to use it, so `CLAUDE.md` does not list them; it names only `bug-root-cause-analyzer`, for the hand-off after two failed attempts. Agents write plans, notes, reviews and scratch files under `~/ai-notes/`. Both are plain markdown; edit in the repo and the symlink makes it live.

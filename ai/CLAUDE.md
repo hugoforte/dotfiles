@@ -1,125 +1,47 @@
 # Development Guidelines
 
+<!-- Every line here loads in every session, so each one must change behaviour against the model's and Claude Code's defaults. Guidance for one kind of file goes in ai/rules/ with a `paths:` filter; guidance for one repo goes in that repo. An overlay's ai/rules/*.md are linked into ~/.claude/rules/ beside this repo's. -->
+
 ## Environment
 
-- Windows 11. PowerShell 5.1 is the primary shell; Git Bash is available for POSIX scripts.
-- Prefer `gh` for GitHub operations; never the GitHub MCP tools.
-- Global agent config lives in `~/.claude`, symlinked from the `dotfiles` repo. Edit the repo, not the symlink target.
+- Global agent config lives in `~/.claude`, symlinked from the `dotfiles` repo. Change it in the repo, not through `~/.claude`.
 - Rules that hold in every repo belong here, not in a project's auto-memory: memory is kept per starting folder, so a rule saved from one folder is missing in a session started in another.
-- Write files and scripts with Write and edit them with Edit, then run them. Never write a file or a script through a heredoc, or edit one in place with `perl -i` or `sed -i`: quotes and backslashes break on the way through Git Bash. The `agent-guard` hook refuses those commands in the Bash tool.
-- Git Bash's `/tmp` is not the `/tmp` that Windows-native node, python and gh see. Hand them Windows paths (`cygpath -w`).
-- Wait for CI with `gh pr checks <n> --watch` run in the background, never `sleep`.
+- Write files and scripts with Write and change them with Edit, then run them. Never write one through a heredoc or edit one with `perl -i` or `sed -i`, because quotes and backslashes break on the way through the shell; the `agent-guard` hook refuses those commands.
 - "Continue from where you left off" after a crash, a usage limit or an API error means resume the unfinished task.
 
 ## Acting outside the work
 
 - Inside the work and reversible: take the obvious next step and say so. Do not ask a question that has one answer.
-- Never merge, close, delete or transition a PR, issue, ticket, branch or rig work unless the user named that item for that act. "Check" or "see which can" means report only. The one exception is rig's own: `rig stage --land` merges reviewed stages into the work branch, never further. The `agent-guard` hook asks before `gh pr merge`, `gh stack merge` and merges through `gh api`.
+- Never merge, close, delete or transition a PR, issue, ticket, branch or rig work unless the user named that item for that act; a branch whose PR has merged is the exception in the next bullet. "Check" or "see which can" means report only. The `agent-guard` hook asks before `gh pr merge`, `gh stack merge` and merges through `gh api`.
+- Once a branch's PR has merged and its changes are on the base (a squash merge counts), delete it without asking: locally with `git branch -D`, because a squash merge makes `-d` refuse, and on the remote if it is still there. A branch with commits its PR did not carry stays; say which commits.
 - When asked to look, check or explain, change nothing on disk; propose instead.
 - Send no request to a production host unless asked. Read-only database queries are fine through a skill that says so.
 - Before reporting state — a PR's checks, whether it merged, a stack, a deploy — query it again; never repeat it from earlier in the session. Do not call a failing required check unrelated or pre-existing until you show it fails the same way on the base.
 
-## Philosophy
+## Code
 
-- **Incremental progress over big bangs**: small changes that compile and pass tests.
-- **Learn from existing code**: find three similar things in the codebase before writing a fourth.
-- **Pragmatic over dogmatic**: adapt to the project's reality.
-- **Clear intent over clever code**: be boring and obvious. If it needs explaining, it is too complex.
-- **Simple code** passes the tests, expresses every needed idea, says everything once, and has no superfluous parts. Balance those in favour of future maintainers.
-- Work in three stages: make it work, make it right, make it fast.
-
-## Backwards compatibility
-
-Code added on the current branch is not legacy. Change it freely instead of adding a parallel method to preserve compatibility. Only code already on the main branch counts as legacy.
-
-## Agents
-
-| Situation | Agent |
-|---|---|
-| Complex feature (more than 3 stages or unclear requirements) | `implementation-planner` first |
-| Test-first development | `unit-test-writer` before implementing |
-| Stuck after 2 failed attempts | `bug-root-cause-analyzer` |
-| Before committing | `code-reviewer` |
-| Non-obvious discovery worth keeping | `note-taker` |
-| A prompt or agent definition needs improving | `prompt-optimizer` |
-| Unsure which agents to use | `task-orchestrator` |
-
-**Maximum 2 attempts per issue**, then stop and use `bug-root-cause-analyzer`. It documents what failed, researches alternatives, questions the abstraction, and investigates systematically.
-
-Notes, plans and reviews written by agents go under `~/ai-notes/`:
-
-- `~/ai-notes/plans/{org}/{repo}/{issue-or-branch-or-slug}.md`
-- `~/ai-notes/notes/{org}/{repo}/{area}.md`
-- `~/ai-notes/reviews/{org}/{repo}/{issue-or-branch-or-slug}.md`
-
-Project-local scratch goes in `.notes/` or `notes/`, never the repo root.
-
-## Process
-
-1. **Understand**: read the README and other top-level markdown first. Study existing patterns.
-2. **Test**: write the test first when practical.
-3. **Implement**: minimal code to pass.
-4. **Refactor**: clean up with tests green.
-5. **Commit**: clear message explaining why.
-
-## Technical standards
-
-- Composition over inheritance; interfaces over singletons; explicit over implicit.
-- Fail fast with descriptive errors that include context. Never silently swallow exceptions.
-- Use the project's existing build system, test framework, formatter and linter. Do not introduce new tools without strong justification.
-- Avoid new dependencies for one-liners. Prefer battle-tested libraries over trendy ones. Write down the rationale when adding one.
-- Every commit compiles, passes existing tests, includes tests for new behaviour, and follows the project's formatting.
-- Run the project's formatter before committing.
-
-## Definition of done
-
-- Tests written, passing, and not redundant
-- No dead code; minimal code to get the job done
-- Follows project conventions; no linter or formatter warnings
-- No tool warnings ignored without strong justification
-- Implementation matches the plan, and the plan status is updated
-- No TODOs without issue numbers
+- Find three similar things in the codebase before writing a fourth, and follow them.
+- Code added on the current branch is not legacy: change it freely instead of adding a parallel method to preserve compatibility. Only code already on the main branch counts as legacy.
+- Fail fast with descriptive errors that include context, and let exceptions surface rather than swallowing them.
+- Add a dependency only when it replaces more than a one-liner of your own code, and write down why.
+- A TODO carries an issue number.
+- Fix a linter or tool warning rather than suppressing it, unless you say why.
+- After two failed attempts at one issue, stop and hand it to the `bug-root-cause-analyzer` agent.
 
 ## Testing
 
-- Test behaviour, not implementation.
-- One assertion per test when possible; clear names describing the scenario.
-- Deterministic tests. Never disable a test to make a run green; fix it.
-- Always run tests before calling a task complete.
 - Call a fix verified only once the test that proves it has failed without the fix.
+- A failing test gets fixed, never disabled to make a run green.
 
-## Git
+## Git and GitHub
 
-- Make every change in a rig work's worktree: `rig new` with the repo, even for a one-line follow-up to a work that has closed. Never branch, commit in or edit a repo's own checkout. Setup and the sync run dotfiles and its overlays from theirs, so a branch there runs unmerged code on the machine. A PR opened outside rig gets a worktree of its own, outside rig's work root: `gh pr checkout <n> --worktree <path>`.
-- Commit messages: present tense, imperative ("Add", "Fix", "Remove"). One-line summary, blank line, optional body explaining why.
-- When a commit fixes an issue, add `Fixes #123` on its own line.
-- Keep commits clean. Squash when appropriate; no "WIP" commits unless spiking.
-- Never bypass commit hooks with `--no-verify`. Never commit code that does not compile.
-
-## GitHub
-
-Use the `gh` CLI for everything GitHub: issues, PRs, checks, releases, and `gh api` for anything else. WebFetch is only for public documentation pages.
-
-Write a PR body with the `matt-pr` skill, unless the repo has a PR template; then fill that in. In a rig work, write it into the context doc's `## Pull request` section with its headings at `###` (`rig pr` raises them to `##`; a `##` would end the section), and let `rig pr` lift it; never edit a rig PR's body on GitHub.
-
-Finished rig work ends in a pushed PR. In what you write to the user, every PR, issue, comment or run you create or mention gets its full URL, never a bare `#123`; a commit's `Fixes #123` line stays as it is.
-
-Never post PR review comments without explicit approval. When replying to an existing review thread, reply in-thread rather than creating a root-level comment.
+- Every commit compiles, passes the existing tests, includes tests for new behaviour, and is formatted with the project's formatter.
+- A commit that fixes an issue carries `Fixes #123` on its own line.
+- Post PR review comments only with the user's explicit approval. Reply to an existing review thread in that thread, not at the root.
 
 ## Comments and docs
 
-- Comment on the code as it is, not as it was. Describe what the code does now, not the change that produced it.
-- Do not comment self-explanatory code.
-- Update relevant documentation when behaviour changes, in the same change.
-- Use a real ellipsis (…) rather than three dots in human-facing messages.
-
-## Markdown
-
-- Consistent heading levels, blank lines around headings and code blocks, one list marker style, no trailing whitespace.
-- Never hard-wrap lines when editing markdown; preserve the existing line structure.
-- Run `md-lint <file>` on edited markdown files. It is a command in the dotfiles `bin/`, on PATH in every shell, that wraps `markdownlint-cli2` and supplies the dotfiles default rules; a repo overrides them by shipping its own `.markdownlint-cli2.jsonc`. `markdownlint-cli2` arrives via `powershell/install-tools.ps1`, and `bin/` reaches PATH via `setup.ps1` or the sync task.
-
-## Shell scripts
-
-- Use plain `echo` or the helpers in `ai/helpers/output.sh`; do not invent per-script logging functions.
-- Check optional tools with `command -v` before using them.
+- Comment on the code as it is: say what it does now, not the change that produced it.
+- Comment only what the code cannot say itself.
+- Update the documentation a behaviour change affects, in the same change.
+- Use a real ellipsis (…) rather than three dots in human-facing text.

@@ -1,7 +1,8 @@
 #!/bin/sh
 
 # Installs the AI tooling in this repo into the agents' home directories by symlink.
-# Components: CLAUDE.md, agents, skills, rig skills, overlay skills, Bruno collections, settings.
+# Components: CLAUDE.md, agents and rules (this repo's and the overlays'), skills, rig skills, overlay
+# skills, Bruno collections, settings, MCP servers.
 # The Claude ones apply to ~/.claude and to every extra Claude config folder (see CLAUDE_DIRS).
 # See --help.
 
@@ -27,10 +28,6 @@ if command -v cygpath > /dev/null 2>&1; then
     HOOK_BIN="$(cygpath -m "$HOOK_BIN")"
 fi
 
-# Overlays may name extra Claude config folders (each one a CLAUDE_CONFIG_DIR with its own login),
-# one per line in <overlay>/ai/claude/config-dirs. See config_dir_path.
-CONFIG_DIRS_FILE="ai/claude/config-dirs"
-
 # Overlays ship Bruno collections too, under <overlay>/bruno/<collection>/, each linked into
 # this one home so Bruno opens them all from one place. No collection lives in this public repo;
 # the content is private, the mechanism is not.
@@ -39,9 +36,9 @@ BRUNO_DIR="$HOME/bruno"
 TAB="$(printf '\t')"
 
 # The Claude config folders, one per line: ~/.claude, then each extra folder the overlays name in
-# their ai/claude/config-dirs. Each gets exactly what ~/.claude gets: CLAUDE.md, agents, skills and
-# the managed settings. Nothing else in a folder is touched, so its login (.credentials.json),
-# .claude.json, history and projects stay Claude Code's. Set by resolve_claude_dirs; a path may
+# their ai/claude/config-dirs, or in this machine's machines/<KEY>.config-dirs. Each gets exactly what ~/.claude gets: CLAUDE.md, agents, rules, skills and
+# the managed settings, but not the overlays' MCP servers (see MCP_FILE). Nothing else in a folder
+# is touched, so its login (.credentials.json), .claude.json, history and projects stay Claude Code's. Set by resolve_claude_dirs; a path may
 # hold spaces, so loop over it line by line, never with `for`.
 CLAUDE_DIRS="$CLAUDE_DIR"
 
@@ -76,36 +73,42 @@ config_dir_path() {
 }
 
 # resolve_claude_dirs: add each folder the overlays name to CLAUDE_DIRS, once: a folder already
-# there, ~/.claude included, is not added again. A path that is not absolute is warned about,
-# never created, and is drift to --check.
+# there, ~/.claude included, is not added again. An overlay names them in ai/claude/config-dirs for
+# every machine, and in machines/<KEY>.config-dirs for the one machine whose OVERLAY_KEY is KEY, in
+# the same format. A path that is not absolute is warned about, never created, and is drift to
+# --check.
 resolve_claude_dirs() {
-    overlays="$(overlay_dirs)"
-    [ -n "$overlays" ] || return 0
-    while IFS= read -r overlay; do
-        [ -f "$overlay/$CONFIG_DIRS_FILE" ] || continue
-        # Through a here-document: the last line counts without a newline after it.
-        lines="$(tr -d '\r' < "$overlay/$CONFIG_DIRS_FILE")"
-        while IFS= read -r line; do
-            dir="$(config_dir_path "$line")"
-            case $? in
-                1) continue ;;
-                2) warning "$overlay/$CONFIG_DIRS_FILE: $dir is not an absolute path or ~/..., or is / or ~ itself - skipped"
-                   CHECK_FAILED=1
-                   continue ;;
-            esac
-            known=false
-            while IFS= read -r claude_dir; do
-                same_path "$claude_dir" "$dir" && known=true
-            done <<EOF
+    while IFS= read -r file; do
+        [ -z "$file" ] || add_config_dirs "$file"
+    done <<EOF
+$(overlay_sources ai/claude/config-dirs; overlay_sources "machines/{KEY}.config-dirs")
+EOF
+}
+
+# add_config_dirs <file>: add each folder one config-dirs file names to CLAUDE_DIRS. No file adds
+# nothing.
+add_config_dirs() {
+    [ -f "$1" ] || return 0
+    # Through a here-document: the last line counts without a newline after it.
+    lines="$(tr -d '\r' < "$1")"
+    while IFS= read -r line; do
+        dir="$(config_dir_path "$line")"
+        case $? in
+            1) continue ;;
+            2) warning "$1: $dir is not an absolute path or ~/..., or is / or ~ itself - skipped"
+               CHECK_FAILED=1
+               continue ;;
+        esac
+        known=false
+        while IFS= read -r claude_dir; do
+            same_path "$claude_dir" "$dir" && known=true
+        done <<EOF
 $CLAUDE_DIRS
 EOF
-            [ "$known" = "true" ] || CLAUDE_DIRS="$CLAUDE_DIRS
+        [ "$known" = "true" ] || CLAUDE_DIRS="$CLAUDE_DIRS
 $dir"
-        done <<EOF
-$lines
-EOF
     done <<EOF
-$overlays
+$lines
 EOF
 }
 
@@ -135,7 +138,7 @@ rig_root() {
         case "$root" in
             [A-Za-z]:*) command -v cygpath > /dev/null 2>&1 && root="$(cygpath -u "$root")" ;;
         esac
-        # A trailing separator would never match what readlink reports; see overlay_dirs.
+        # A trailing separator would never match what readlink reports; see _overlay_path.
         root="${root%/}"
         [ -f "$root/bin/rig.mjs" ] && { echo "$root"; return 0; }
         warning "RIG_ROOT=$RIG_ROOT has no bin/rig.mjs - no rig skills linked"
@@ -145,11 +148,6 @@ rig_root() {
         [ -f "$root/bin/rig.mjs" ] && { echo "$root"; return 0; }
     done
     return 1
-}
-
-# The overlay directories this machine lists, one per line, in the order listed.
-overlay_dirs() {
-    psd1_paths "$ZSH/ai/secrets/machine.local.psd1" Overlays
 }
 
 # ---------------------------------------------------------------------------
@@ -190,6 +188,7 @@ install_agents() {
     done <<EOF
 $CLAUDE_DIRS
 EOF
+    overlay_agents install
 }
 uninstall_agents() {
     while IFS= read -r dir; do
@@ -201,6 +200,7 @@ uninstall_agents() {
 $CLAUDE_DIRS
 EOF
     success "Removed agent links"
+    overlay_agents uninstall
 }
 check_agents() {
     while IFS= read -r dir; do
@@ -211,6 +211,12 @@ check_agents() {
     done <<EOF
 $CLAUDE_DIRS
 EOF
+    overlay_agents check
+}
+
+# overlay_agents <mode>: the overlays' agents, beside this repo's, whose names this repo's claim first.
+overlay_agents() {
+    overlay_link "$1" 'ai/agents/*.md' agents "$(claude_subdirs agents)" "$ZSH/ai/agents"
 }
 
 install_skills() {
@@ -301,205 +307,145 @@ $(skill_target_dirs)
 EOF
 }
 
-# Overlays ship skills too, under <overlay>/ai/skills/*/: a skill whose text names something
-# private cannot live in this public repo. Same targets and the same prune rules, with each
-# overlay's ai/skills as a source dir. The link is named after the skill, so a name shipped
-# from two places would have one silently replace the other; a name this repo, rig or an
-# earlier overlay already ships is not linked. Install warns and carries on, so one clash cannot
-# stop the sync that runs it; --check fails on it.
+# Overlays ship four kinds of entry, each linked by name: skills (ai/skills/*/, for a skill whose
+# text names something private), Bruno collections (bruno/*/, into ~/bruno, so Bruno opens every
+# overlay's from one home), rules (ai/rules/*.md, guidance Claude Code reads beside CLAUDE.md) and
+# agents (ai/agents/*.md, beside this repo's). A link is named after its entry, so a name shipped
+# from two places would have one silently replace the other: a name this repo, rig or an earlier
+# overlay already ships is not linked. Install warns and carries on, so one clash cannot stop the
+# sync that runs it; --check fails on it.
 
-# overlay_skills: one line per overlay skill, in overlay order: its directory, a tab, and
-# the directory already shipping that name, or nothing when the name is free. Names compare
-# without case, as they do on the NTFS the links live on.
+# overlay_link <install|uninstall|check> <pattern> <kind> <targets> [claimant...]: link the entries
+# of an entries row (see overlay_entries) into each target folder, one per line, and prune the
+# links into the overlays' folder of that pattern whose source is gone. <kind>, plural, names them
+# in messages. Variables are prefixed ol_, since sh has no local.
+overlay_link() {
+    ol_mode="$1"; ol_pattern="$2"; ol_kind="$3"; ol_targets="$4"; shift 4
+    if [ "$ol_mode" = "uninstall" ]; then
+        # Past a gone overlay there are no entries to ask for, only links to prune, and the load
+        # has already said which overlay is gone.
+        ol_entries="$(overlay_entries "$ol_pattern" "$@" 2> /dev/null)"
+    else
+        ol_entries="$(overlay_entries "$ol_pattern" "$@")"
+    fi
+    ol_folder="${ol_pattern%/}"; ol_folder="${ol_folder%/*}"
+    [ "$ol_mode" = "uninstall" ] || while IFS="$TAB" read -r ol_entry ol_clash; do
+        [ -n "$ol_clash" ] || continue
+        warning "$ol_entry not linked: $ol_clash already ships that name"
+        [ "$ol_mode" = "install" ] || CHECK_FAILED=1
+    done <<EOF
+$ol_entries
+EOF
+    while IFS= read -r ol_target; do
+        [ -n "$ol_target" ] || continue
+        [ "$ol_mode" != "uninstall" ] || [ -d "$ol_target" ] || continue
+        [ "$ol_mode" != "install" ] || [ -z "$ol_entries" ] || mkdir -p "$ol_target"
+        while IFS="$TAB" read -r ol_entry ol_clash; do
+            [ -n "$ol_entry" ] || continue
+            ol_link="$ol_target/${ol_entry##*/}"
+            case $ol_mode in
+                install) [ -n "$ol_clash" ] || link "$ol_entry" "$ol_link" ;;
+                check)   [ -n "$ol_clash" ] || check_link "$ol_entry" "$ol_link" ;;
+                # A refused name may still hold a link install made before the overlays were
+                # reordered; it is ours only if it points here.
+                uninstall) if [ -z "$ol_clash" ] || is_link_to "$ol_entry" "$ol_link"; then unlink_managed "$ol_entry" "$ol_link"; fi ;;
+            esac
+        done <<EOF
+$ol_entries
+EOF
+        if [ "$ol_mode" = "check" ]; then
+            each_overlay_orphans "$ol_target" check_orphans "$ol_folder"
+        else
+            each_overlay_orphans "$ol_target" prune_orphans "$ol_folder"
+        fi
+        [ "$ol_mode" != "install" ] || [ -z "$ol_entries" ] || success "Linked overlay $ol_kind into $ol_target"
+    done <<EOF
+$ol_targets
+EOF
+    [ "$ol_mode" != "uninstall" ] || success "Removed overlay $ol_kind links"
+}
+
+# each_overlay_orphans <dir> <prune_orphans|check_orphans> <folder>: run it against <folder> in
+# every overlay, including one that is gone, so the links into it are still found.
+each_overlay_orphans() {
+    [ -n "$OVERLAYS" ] || return 0
+    while IFS= read -r overlay; do
+        "$2" "$1" "$overlay/$3"
+    done <<EOF
+$OVERLAYS
+EOF
+}
+
+# claude_subdirs <name>: <name> in every Claude config folder, one per line.
+claude_subdirs() {
+    while IFS= read -r dir; do
+        echo "$dir/$1"
+    done <<EOF
+$CLAUDE_DIRS
+EOF
+}
+
+# overlay_skills <mode>: the overlays' skills, whose names this repo's and rig's claim first.
 overlay_skills() {
     rig_skills=""
     root="$(rig_root)" && rig_skills="$root/skills"
-    seen=""
-    overlay_dirs | while IFS= read -r overlay; do
-        for skill in "$overlay"/ai/skills/*/; do
-            skill="${skill%/}"
-            [ -d "$skill" ] || continue
-            name="$(basename "$skill")"
-            key="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
-            clash=""
-            if [ -d "$ZSH/ai/skills/$name" ]; then
-                clash="$ZSH/ai/skills/$name"
-            elif [ -n "$rig_skills" ] && [ -d "$rig_skills/$name" ]; then
-                clash="$rig_skills/$name"
-            else
-                # "/" cannot appear in a skill name, so it ends the key unambiguously.
-                case "$seen" in
-                    *"$TAB$key/"*) clash="${seen#*"$TAB$key/"}"; clash="${clash%%"$TAB"*}" ;;
-                esac
-            fi
-            [ -z "$clash" ] && seen="$seen$TAB$key/$skill$TAB"
-            printf '%s\t%s\n' "$skill" "$clash"
+    overlay_link "$1" 'ai/skills/*/' skills "$(skill_target_dirs)" "$ZSH/ai/skills" ${rig_skills:+"$rig_skills"}
+}
+install_overlay_skills()   { overlay_skills install; }
+uninstall_overlay_skills() { overlay_skills uninstall; }
+check_overlay_skills()     { overlay_skills check; }
+
+# This repo's rules are guidance that holds for one kind of file only, path-scoped in their
+# frontmatter so Claude Code loads them only there; what holds everywhere is CLAUDE.md.
+install_rules() {
+    while IFS= read -r dir; do
+        mkdir -p "$dir/rules"
+        for rule in "$ZSH"/ai/rules/*.md; do
+            [ -f "$rule" ] || continue
+            link "$rule" "$dir/rules/$(basename "$rule")"
         done
-    done
-}
-
-# report_overlay_skill_clashes <overlay_skills output>: warn about each refused skill; false if any.
-report_overlay_skill_clashes() {
-    clashed=0
-    while IFS="$TAB" read -r skill clash; do
-        [ -n "$clash" ] || continue
-        warning "$skill not linked: $clash already ships a skill with that name"
-        clashed=1
+        prune_orphans "$dir/rules" "$ZSH/ai/rules"
+        success "Linked rules into $dir/rules"
     done <<EOF
-$1
+$CLAUDE_DIRS
 EOF
-    [ "$clashed" = "0" ]
+    overlay_rules install
 }
-
-# each_overlay_orphans <dir> <prune_orphans|check_orphans> [subpath]: run it against every
-# overlay. <subpath> is the directory within each overlay that sources the links, ai/skills by
-# default; the Bruno component passes bruno.
-each_overlay_orphans() {
-    subpath="${3:-ai/skills}"
-    overlays="$(overlay_dirs)"
-    [ -n "$overlays" ] || return 0
-    while IFS= read -r overlay; do
-        "$2" "$1" "$overlay/$subpath"
-    done <<EOF
-$overlays
-EOF
-}
-
-install_overlay_skills() {
-    skills="$(overlay_skills)"
-    report_overlay_skill_clashes "$skills" || :
-    while IFS= read -r target; do
-        mkdir -p "$target"
-        while IFS="$TAB" read -r skill clash; do
-            [ -n "$skill" ] && [ -z "$clash" ] || continue
-            link "$skill" "$target/$(basename "$skill")"
-        done <<EOF
-$skills
-EOF
-        each_overlay_orphans "$target" prune_orphans
-        if [ -n "$skills" ]; then success "Linked overlay skills into $target"; fi
-    done <<EOF
-$(skill_target_dirs)
-EOF
-}
-uninstall_overlay_skills() {
-    skills="$(overlay_skills)"
-    while IFS= read -r target; do
-        [ -d "$target" ] || continue
-        while IFS="$TAB" read -r skill clash; do
-            [ -n "$skill" ] || continue
-            # A refused name may still hold a link install made before the overlays were
-            # reordered; it is ours only if it points here.
-            [ -z "$clash" ] || is_link_to "$skill" "$target/$(basename "$skill")" || continue
-            unlink_managed "$skill" "$target/$(basename "$skill")"
-        done <<EOF
-$skills
-EOF
-        each_overlay_orphans "$target" prune_orphans
-    done <<EOF
-$(skill_target_dirs)
-EOF
-    success "Removed overlay skill links"
-}
-check_overlay_skills() {
-    skills="$(overlay_skills)"
-    report_overlay_skill_clashes "$skills" || CHECK_FAILED=1
-    while IFS= read -r target; do
-        while IFS="$TAB" read -r skill clash; do
-            [ -n "$skill" ] && [ -z "$clash" ] || continue
-            check_link "$skill" "$target/$(basename "$skill")"
-        done <<EOF
-$skills
-EOF
-        each_overlay_orphans "$target" check_orphans
-    done <<EOF
-$(skill_target_dirs)
-EOF
-}
-
-# Overlays ship Bruno collections under <overlay>/bruno/<collection>/, linked into ~/bruno so
-# the Bruno app opens every overlay's collections from one home. The link is named after the
-# collection, so a name shipped from two overlays would have one silently replace the other; the
-# earlier overlay in the list keeps the name, the later is refused. Install warns and carries on,
-# so one clash cannot stop the sync that runs it; --check fails on it. No collection lives in this
-# public repo, so there is nothing of this repo's own to link beside them.
-
-# overlay_bruno: one line per overlay Bruno collection, in overlay order: its directory, a tab,
-# and the directory of an earlier overlay already shipping that name, or nothing when the name is
-# free. Names compare without case, as they do on the NTFS the links live on.
-overlay_bruno() {
-    seen=""
-    overlay_dirs | while IFS= read -r overlay; do
-        for coll in "$overlay"/bruno/*/; do
-            coll="${coll%/}"
-            [ -d "$coll" ] || continue
-            name="$(basename "$coll")"
-            key="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
-            clash=""
-            # "/" cannot appear in a collection name, so it ends the key unambiguously.
-            case "$seen" in
-                *"$TAB$key/"*) clash="${seen#*"$TAB$key/"}"; clash="${clash%%"$TAB"*}" ;;
-            esac
-            [ -z "$clash" ] && seen="$seen$TAB$key/$coll$TAB"
-            printf '%s\t%s\n' "$coll" "$clash"
+uninstall_rules() {
+    while IFS= read -r dir; do
+        for rule in "$ZSH"/ai/rules/*.md; do
+            [ -f "$rule" ] || continue
+            unlink_managed "$rule" "$dir/rules/$(basename "$rule")"
         done
-    done
+        prune_orphans "$dir/rules" "$ZSH/ai/rules"
+    done <<EOF
+$CLAUDE_DIRS
+EOF
+    success "Removed rule links"
+    overlay_rules uninstall
+}
+check_rules() {
+    while IFS= read -r dir; do
+        for rule in "$ZSH"/ai/rules/*.md; do
+            [ -f "$rule" ] || continue
+            check_link "$rule" "$dir/rules/$(basename "$rule")"
+        done
+        check_orphans "$dir/rules" "$ZSH/ai/rules"
+    done <<EOF
+$CLAUDE_DIRS
+EOF
+    overlay_rules check
 }
 
-# report_overlay_bruno_clashes <overlay_bruno output>: warn about each refused collection; false
-# if any.
-report_overlay_bruno_clashes() {
-    clashed=0
-    while IFS="$TAB" read -r coll clash; do
-        [ -n "$clash" ] || continue
-        warning "$coll not linked: $clash already ships a Bruno collection with that name"
-        clashed=1
-    done <<EOF
-$1
-EOF
-    [ "$clashed" = "0" ]
+# overlay_rules <mode>: the overlays' rules, beside this repo's, whose names this repo's claim first.
+overlay_rules() {
+    overlay_link "$1" 'ai/rules/*.md' rules "$(claude_subdirs rules)" "$ZSH/ai/rules"
 }
 
-install_bruno() {
-    colls="$(overlay_bruno)"
-    report_overlay_bruno_clashes "$colls" || :
-    [ -n "$colls" ] && mkdir -p "$BRUNO_DIR"
-    while IFS="$TAB" read -r coll clash; do
-        [ -n "$coll" ] && [ -z "$clash" ] || continue
-        link "$coll" "$BRUNO_DIR/$(basename "$coll")"
-    done <<EOF
-$colls
-EOF
-    each_overlay_orphans "$BRUNO_DIR" prune_orphans bruno
-    [ -n "$colls" ] && success "Linked overlay Bruno collections into $BRUNO_DIR"
-    return 0
-}
-uninstall_bruno() {
-    colls="$(overlay_bruno)"
-    [ -d "$BRUNO_DIR" ] || { success "Removed overlay Bruno collection links"; return 0; }
-    while IFS="$TAB" read -r coll clash; do
-        [ -n "$coll" ] || continue
-        # A refused name may still hold a link install made before the overlays were reordered;
-        # it is ours only if it points here.
-        [ -z "$clash" ] || is_link_to "$coll" "$BRUNO_DIR/$(basename "$coll")" || continue
-        unlink_managed "$coll" "$BRUNO_DIR/$(basename "$coll")"
-    done <<EOF
-$colls
-EOF
-    each_overlay_orphans "$BRUNO_DIR" prune_orphans bruno
-    success "Removed overlay Bruno collection links"
-}
-check_bruno() {
-    colls="$(overlay_bruno)"
-    report_overlay_bruno_clashes "$colls" || CHECK_FAILED=1
-    while IFS="$TAB" read -r coll clash; do
-        [ -n "$coll" ] && [ -z "$clash" ] || continue
-        check_link "$coll" "$BRUNO_DIR/$(basename "$coll")"
-    done <<EOF
-$colls
-EOF
-    each_overlay_orphans "$BRUNO_DIR" check_orphans bruno
-}
+# No collection lives in this public repo, so nothing of this repo's own claims a name.
+install_bruno()   { overlay_link install 'bruno/*/' "Bruno collections" "$BRUNO_DIR"; }
+uninstall_bruno() { overlay_link uninstall 'bruno/*/' "Bruno collections" "$BRUNO_DIR"; }
+check_bruno()     { overlay_link check 'bruno/*/' "Bruno collections" "$BRUNO_DIR"; }
 
 # Settings are merged, not linked: each folder's settings.json also holds machine-local state.
 install_settings() {
@@ -560,6 +506,114 @@ $hook_argvs
 EOF
 }
 
+# MCP servers are merged, not linked, into ~/.claude's user scope, MCP_FILE: .claude.json is
+# Claude Code's own file, holding the login's state and every server added with `claude mcp add`.
+# An overlay declares servers in ai/claude/mcp.json, shaped like a project's .mcp.json
+# ({"mcpServers": {"<name>": {...}}}). Each is set by name, so a server added by hand stays; the
+# first overlay to declare a name keeps it. A server no overlay declares any more is left in
+# place, since a hand-added one looks the same: `claude mcp remove -s user <name>` takes it out.
+# No server ships from this repo: which a machine has is the overlays' choice.
+#
+# The extra Claude config folders get none. A server signs in as someone, and each extra folder is
+# another account, kept for other work; one it needs is added there by hand, under its own login.
+MCP_FILE="$HOME/.claude.json"
+
+# load_mcp_servers: set MCP_SERVERS to every overlay's servers as one JSON object. A name an
+# earlier overlay declared, or a file that is not an object of objects, is warned about and fails
+# --check. Sets globals rather than printing, so the warnings and CHECK_FAILED reach this shell.
+load_mcp_servers() {
+    MCP_SERVERS='{}'
+    while IFS= read -r mcp_file; do
+        [ -n "$mcp_file" ] || continue
+        if ! mcp_these="$(jq -ce '.mcpServers | objects | select(all(.[]; type == "object"))' "$mcp_file" 2> /dev/null)"; then
+            warning "$mcp_file: mcpServers is not an object of server objects - skipped"
+            CHECK_FAILED=1
+            continue
+        fi
+        while IFS= read -r mcp_name; do
+            [ -n "$mcp_name" ] || continue
+            warning "$mcp_file: MCP server $mcp_name not set: an earlier overlay declares that name"
+            [ "$MODE" = "install" ] || CHECK_FAILED=1
+        done <<EOF
+$(jq -rn --argjson have "$MCP_SERVERS" --argjson these "$mcp_these" '$these | keys[] | select(in($have))')
+EOF
+        MCP_SERVERS="$(jq -cn --argjson have "$MCP_SERVERS" --argjson these "$mcp_these" '$these + $have')"
+    done <<EOF
+$(overlay_sources ai/claude/mcp.json)
+EOF
+}
+
+# MCP_DRIFT_JQ: the names of the servers in $servers that the file's user scope lacks or holds
+# differently.
+MCP_DRIFT_JQ='(.mcpServers // {}) as $live | $servers | to_entries[] | select($live[.key] != .value) | .key'
+
+install_mcp() {
+    command -v jq > /dev/null 2>&1 || return 0
+    load_mcp_servers
+    [ "$MCP_SERVERS" = '{}' ] || set_mcp_servers "$MCP_FILE"
+}
+
+# set_mcp_servers <file>: set MCP_SERVERS in <file>, a .claude.json, when it lacks or differs on
+# any. One with nothing to change is not written, so the sync seldom races Claude Code for it. A
+# write happens under Claude Code's own lock on the file, a directory beside it, so neither side's
+# read-modify-write loses the other's; a lock held past ten tries is left to the next sync. A file
+# that is not a JSON object, or is a link, is someone's to look at, never replaced.
+set_mcp_servers() {
+    if [ -L "$1" ]; then
+        error "$1 is a link - MCP servers not set; set them where it points with claude mcp add -s user"
+        return 1
+    fi
+    # Private, as Claude Code makes it: it holds the account's state.
+    [ -e "$1" ] || (umask 077; printf '{}\n' > "$1")
+    if ! jq -e 'type == "object"' "$1" > /dev/null 2>&1; then
+        error "$1 is not a JSON object - MCP servers not set"
+        return 1
+    fi
+    [ -n "$(jq -r --argjson servers "$MCP_SERVERS" "$MCP_DRIFT_JQ" "$1" 2> /dev/null || echo invalid)" ] || return 0
+    tries=0
+    until mkdir "$1.lock" 2> /dev/null; do
+        tries=$((tries + 1))
+        if [ "$tries" -ge 10 ]; then
+            warning "$1 is locked ($1.lock) - MCP servers left for the next sync"
+            return 1
+        fi
+        sleep 1
+    done
+    # Staged beside it under a name of this run's own and moved over, so Claude Code never reads half
+    # a file. The copy gives the staged file the original's mode, which the write into it keeps. jq
+    # on Windows writes CRLF, so the carriage returns go.
+    staged="$(mktemp "$(dirname "$1")/.claude.json.XXXXXX")" &&
+        cp -p "$1" "$staged" &&
+        cp -p "$1" "$1.backup.$(date +%Y%m%d_%H%M%S)" &&
+        jq --argjson servers "$MCP_SERVERS" '.mcpServers = ((.mcpServers // {}) + $servers)' "$1" | tr -d '\r' > "$staged" &&
+        [ -s "$staged" ] &&
+        [ -z "$(jq -r --argjson servers "$MCP_SERVERS" "$MCP_DRIFT_JQ" "$staged" 2> /dev/null || echo invalid)" ] &&
+        mv "$staged" "$1"
+    set_rc=$?
+    rmdir "$1.lock"
+    if [ "$set_rc" -eq 0 ]; then
+        success "Set MCP servers $(jq -rn --argjson s "$MCP_SERVERS" '$s | keys | join(", ")') in $1"
+    else
+        rm -f "$staged"
+        error "Could not set MCP servers in $1"
+    fi
+    return "$set_rc"
+}
+uninstall_mcp() {
+    info "MCP servers are merged, not linked; remove one with: claude mcp remove -s user <name>"
+}
+check_mcp() {
+    command -v jq > /dev/null 2>&1 || { warning "jq not found - MCP servers not checked"; CHECK_FAILED=1; return 0; }
+    load_mcp_servers
+    [ "$MCP_SERVERS" != '{}' ] || return 0
+    drift="$(jq -r --argjson servers "$MCP_SERVERS" "$MCP_DRIFT_JQ" "$MCP_FILE" 2> /dev/null)" ||
+        drift="$(jq -rn --argjson servers "$MCP_SERVERS" '$servers | keys[]')"
+    if [ -n "$drift" ]; then
+        warning "$MCP_FILE lacks or differs on MCP servers: $(printf '%s' "$drift" | tr '\n' ' ')"
+        CHECK_FAILED=1
+    fi
+}
+
 # Copy the managed keys from ~/.claude's live file back into the repo fragment. Only ~/.claude:
 # the extra folders get the same keys from the fragment, so they are not a second source.
 export_settings() {
@@ -574,31 +628,38 @@ export_settings() {
 MODE=install
 INSTALL_CLAUDE_MD=true
 INSTALL_AGENTS=true
+INSTALL_RULES=true
 INSTALL_SKILLS=true
 INSTALL_RIG_SKILLS=true
 INSTALL_OVERLAY_SKILLS=true
 INSTALL_BRUNO=true
 INSTALL_SETTINGS=true
+INSTALL_MCP=true
 
 disable_all() {
     INSTALL_CLAUDE_MD=false
     INSTALL_AGENTS=false
+    INSTALL_RULES=false
     INSTALL_SKILLS=false
     INSTALL_RIG_SKILLS=false
     INSTALL_OVERLAY_SKILLS=false
     INSTALL_BRUNO=false
     INSTALL_SETTINGS=false
+    INSTALL_MCP=false
 }
 
 show_help() {
     echo "Usage: $0 [MODE] [COMPONENT FLAGS]"
     echo ""
-    echo "Symlinks CLAUDE.md, agents and skills from this repo into ~/.claude (and skills"
+    echo "Symlinks CLAUDE.md, agents, rules and skills from this repo into ~/.claude (and skills"
     echo "into ~/.codex and ~/.copilot when present), links the skills the rig checkout"
     echo "ships and the skills each overlay in ai/secrets/machine.local.psd1 ships the same way,"
+    echo "links each overlay's agents and rules (<overlay>/ai/rules/*.md) beside this repo's,"
     echo "links each overlay's Bruno collections (<overlay>/bruno/) into ~/bruno, and merges"
-    echo "ai/claude/settings.json into ~/.claude/settings.json. Every extra Claude config folder"
-    echo "an overlay names in <overlay>/ai/claude/config-dirs gets the same as ~/.claude."
+    echo "ai/claude/settings.json into ~/.claude/settings.json, and sets the MCP servers each"
+    echo "overlay declares in <overlay>/ai/claude/mcp.json in ~/.claude.json's user scope. Every"
+    echo "extra Claude config folder an overlay names in <overlay>/ai/claude/config-dirs gets the"
+    echo "same as ~/.claude, but for the MCP servers."
     echo ""
     echo "Modes:"
     echo "  (default)              Install"
@@ -609,22 +670,26 @@ show_help() {
     echo ""
     echo "Component flags:"
     echo "  --claude-md-only       Only CLAUDE.md"
-    echo "  --agents-only          Only agent files"
+    echo "  --agents-only          Only agent files, this repo's and the overlays'"
+    echo "  --rules-only           Only rule files, this repo's and the overlays'"
     echo "  --skills-only          Only skills"
     echo "  --rig-skills-only      Only the skills rig ships (RIG_ROOT, else D:/rig, C:/rig, ~/rig)"
     echo "  --overlay-skills-only  Only the skills overlays ship (<overlay>/ai/skills/)"
     echo "  --bruno-only           Only the Bruno collections overlays ship (<overlay>/bruno/)"
     echo "  --settings-only        Only settings merge"
+    echo "  --mcp-only             Only the MCP servers overlays declare (<overlay>/ai/claude/mcp.json)"
     echo "  --no-claude-md         Skip CLAUDE.md"
     echo "  --no-agents            Skip agents"
+    echo "  --no-rules             Skip rules"
     echo "  --no-skills            Skip skills"
     echo "  --no-rig-skills        Skip the skills rig ships"
     echo "  --no-overlay-skills    Skip the skills overlays ship"
     echo "  --no-bruno             Skip the Bruno collections overlays ship"
     echo "  --no-settings          Skip settings merge"
+    echo "  --no-mcp               Skip the MCP servers overlays declare"
     echo "  -h, --help             Show this help"
     echo ""
-    echo "Needs: Windows Developer Mode or an elevated shell for symlinks; jq for settings."
+    echo "Needs: Windows Developer Mode or an elevated shell for symlinks; jq for settings and MCP servers."
 }
 
 while [ $# -gt 0 ]; do
@@ -634,30 +699,42 @@ while [ $# -gt 0 ]; do
         --settings-export)     MODE=export; disable_all; INSTALL_SETTINGS=true ;;
         --claude-md-only)      disable_all; INSTALL_CLAUDE_MD=true ;;
         --agents-only)         disable_all; INSTALL_AGENTS=true ;;
+        --rules-only)          disable_all; INSTALL_RULES=true ;;
         --skills-only)         disable_all; INSTALL_SKILLS=true ;;
         --rig-skills-only)     disable_all; INSTALL_RIG_SKILLS=true ;;
         --overlay-skills-only) disable_all; INSTALL_OVERLAY_SKILLS=true ;;
         --bruno-only)          disable_all; INSTALL_BRUNO=true ;;
         --settings-only)       disable_all; INSTALL_SETTINGS=true ;;
+        --mcp-only)            disable_all; INSTALL_MCP=true ;;
         --no-claude-md)        INSTALL_CLAUDE_MD=false ;;
         --no-agents)           INSTALL_AGENTS=false ;;
+        --no-rules)            INSTALL_RULES=false ;;
         --no-skills)           INSTALL_SKILLS=false ;;
         --no-rig-skills)       INSTALL_RIG_SKILLS=false ;;
         --no-overlay-skills)   INSTALL_OVERLAY_SKILLS=false ;;
         --no-bruno)            INSTALL_BRUNO=false ;;
         --no-settings)         INSTALL_SETTINGS=false ;;
+        --no-mcp)              INSTALL_MCP=false ;;
         -h|--help)             show_help; exit 0 ;;
         *)                     echo "Unknown option: $1"; show_help; exit 1 ;;
     esac
     shift
 done
 
-if [ "$MODE" = "install" ] && [ "$INSTALL_SETTINGS" = "true" ] && ! command -v jq > /dev/null 2>&1; then
-    warning "jq not found - settings merge will be skipped (winget install jqlang.jq)"
+if [ "$MODE" = "install" ] && { [ "$INSTALL_SETTINGS" = "true" ] || [ "$INSTALL_MCP" = "true" ]; } && ! command -v jq > /dev/null 2>&1; then
+    warning "jq not found - settings merge and MCP servers will be skipped (winget install jqlang.jq)"
 fi
 
-# Export reads ~/.claude alone, so it has no use for the extra folders or a warning about them.
-[ "$MODE" = "export" ] || resolve_claude_dirs
+# A listed overlay that is gone fails an install or a check rather than dropping all it carries.
+# Uninstall carries on, since its prune needs only the overlay's path to take the links into it.
+# Export reads ~/.claude alone, so it has no use for the overlays or the extra folders.
+if [ "$MODE" = "export" ]; then
+    :
+elif overlays_load "$ZSH"; then
+    resolve_claude_dirs
+elif [ "$MODE" != "uninstall" ]; then
+    exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # Run
@@ -672,11 +749,13 @@ esac
 
 [ "$INSTALL_CLAUDE_MD" = "true" ] && ${MODE}_claude_md
 [ "$INSTALL_AGENTS" = "true" ]    && ${MODE}_agents
+[ "$INSTALL_RULES" = "true" ]     && ${MODE}_rules
 [ "$INSTALL_SKILLS" = "true" ]    && ${MODE}_skills
 [ "$INSTALL_RIG_SKILLS" = "true" ] && ${MODE}_rig_skills
 [ "$INSTALL_OVERLAY_SKILLS" = "true" ] && ${MODE}_overlay_skills
 [ "$INSTALL_BRUNO" = "true" ]     && ${MODE}_bruno
 [ "$INSTALL_SETTINGS" = "true" ]  && ${MODE}_settings
+[ "$INSTALL_MCP" = "true" ]       && ${MODE}_mcp
 
 # Secrets under ai/secrets/, here and in every overlay, must never be committed in plaintext;
 # verify on every check.
@@ -687,18 +766,14 @@ if [ "$MODE" = "check" ]; then
         CHECK_FAILED=1
     fi
     # A here-document rather than a pipe, so CHECK_FAILED is set in this shell, not a subshell.
-    overlays="$(overlay_dirs)"
-    [ -n "$overlays" ] && while IFS= read -r overlay; do
-        if [ ! -d "$overlay" ]; then
-            error "overlay $overlay listed in ai/secrets/machine.local.psd1 does not exist"
-            CHECK_FAILED=1
-        elif sh "$ZSH/ai/secrets/check-encrypted.sh" "$overlay/ai/secrets"; then
+    [ -n "$OVERLAYS" ] && while IFS= read -r overlay; do
+        if sh "$ZSH/ai/secrets/check-encrypted.sh" "$overlay/ai/secrets"; then
             success "$overlay/ai/secrets: all files encrypted"
         else
             CHECK_FAILED=1
         fi
     done <<EOF
-$overlays
+$OVERLAYS
 EOF
 fi
 
