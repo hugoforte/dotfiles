@@ -66,7 +66,7 @@ query($owner:String!, $repo:String!, $pr:Int!) {
 gh pr view <number> --json comments --jq '.comments[] | {author: .author.login, body}'
 ```
 
-Skip threads where `isResolved` is true. Skip comments authored by me — my own notes are not feedback to action. Handle `isOutdated` threads: the code they point at has moved, so read the current file before deciding whether the point still stands.
+Skip threads where `isResolved` is true. Skip comments authored by me — my own notes are not feedback to action. Skip a thread whose last comment is yours: it is answered and waits on the reviewer, until someone writes in it again. Handle `isOutdated` threads: the code they point at has moved, so read the current file before deciding whether the point still stands.
 
 Read the PR diff once for context: `gh pr diff <number>`.
 
@@ -109,7 +109,7 @@ For each **action it** comment, in file order so related edits land together:
    Addresses review comment from @reviewer on src/auth/callback.ts."
    ```
 
-Push once, after all the fixes are in, so the replies can cite real SHAs:
+Push once for each batch that goes ahead, the bots' rows and then each approval, after its fixes are in, so the replies can cite real SHAs:
 
 ```bash
 head="$(gh pr view <number> --json headRefName --jq .headRefName)"
@@ -136,7 +136,7 @@ gh api repos/<owner>/<repo>/pulls/<number>/comments/<comment_databaseId>/replies
   -f body="Leaving this as-is: <reason>. Happy to change it if you feel strongly."
 ```
 
-Then resolve the thread, if only automated reviewers wrote in it (Step 4), or the user wrote it and told you to:
+Then run Step 2's query again. A comment that arrived since the plan sends its thread back to Step 3, and a person's makes the thread theirs. Otherwise resolve the thread, if only automated reviewers wrote in it (Step 4), or the user wrote it and told you to:
 
 ```bash
 gh api graphql -f query='
@@ -191,7 +191,7 @@ Close with:
 
 - Comments actioned, each with its commit SHA
 - Comments declined, each with the reason given
-- Threads resolved, and any left open: a person's, answered and waiting on them to resolve it, or an automated reviewer's, with why
+- Threads resolved, and any left open: a person's, answered and waiting on them to resolve it; one not yet answered, waiting on the user's approval; or an automated reviewer's, with why
 - Follow-up issues worth filing for the out-of-scope points
 - Whether the PR is mergeable with its base: `mergeable`, `mergeStateStatus` and each check as last queried, and what was merged in to get there (the base's commits, and the conflicts resolved), or the conflict left for the author
 
