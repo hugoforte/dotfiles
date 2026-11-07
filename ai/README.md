@@ -60,7 +60,7 @@ My own skills carry an `hf-` prefix, so a skill list says at a glance which ones
 | Skill | What it does |
 |---|---|
 | `hf-adversarial-review` | Sets a subagent on a PR to find what is wrong with it, verifies the findings, fixes the real ones and pushes. Takes a rig work's PRs, or a single PR outside one. |
-| `hf-resolve-pr-comments` | Works a PR's review comments to zero: action, reply, resolve, then makes sure the PR is mergeable with its base, merging a moved base in. |
+| `hf-resolve-pr-comments` | Works through a PR's review comments: action and reply, resolving automated reviewers' threads and leaving a person's for them, then makes sure the PR is mergeable with its base, merging a moved base in. |
 | `hf-dotfiles-secrets` | The procedures for the encrypted skill secrets under `secrets/`. |
 | `hf-t3-handoff` | Hands the current T3 Code thread over to a fresh one, on this computer or another, in another project or on another provider instance, and archives this one. |
 

@@ -1,11 +1,11 @@
 ---
 name: hf-resolve-pr-comments
-description: Work through the review comments on a pull request — action the ones worth actioning, reply to every one, resolve the threads, then make sure the PR is mergeable with its base. Use when asked to resolve, address, action or clear PR comments or review feedback.
+description: Work through the review comments on a pull request — action the ones worth actioning, reply to every one, resolve automated reviewers' threads, then make sure the PR is mergeable with its base. Use when asked to resolve, address, action or clear PR comments or review feedback.
 ---
 
 # Resolve PR comments
 
-Take a pull request's review feedback to zero: for each comment, decide whether to action it, do the work if so, reply in the thread, and resolve it. Then make sure the PR is good to go with its base: no threads left is not done while the base has moved on and conflicts with it.
+Work through a pull request's review feedback: for each comment, decide whether to action it, do the work if so, and reply in the thread. Resolve an automated reviewer's thread; a person's thread is theirs to resolve, so it stays open. Then make sure the PR is good to go with its base: no threads left is not done while the base has moved on and conflicts with it.
 
 `$ARGUMENTS` may be a PR number, a PR URL, or empty. Empty means the PR for the current branch.
 
@@ -66,7 +66,7 @@ query($owner:String!, $repo:String!, $pr:Int!) {
 gh pr view <number> --json comments --jq '.comments[] | {author: .author.login, body}'
 ```
 
-Skip threads where `isResolved` is true. Skip comments authored by me — my own notes are not feedback to action. Handle `isOutdated` threads: the code they point at has moved, so read the current file before deciding whether the point still stands.
+Skip threads where `isResolved` is true. Skip comments authored by me — my own notes are not feedback to action. Skip a thread whose last comment is yours: it is answered and waits on the reviewer, until someone writes in it again. Handle `isOutdated` threads: the code they point at has moved, so read the current file before deciding whether the point still stands.
 
 Read the PR diff once for context: `gh pr diff <number>`.
 
@@ -90,7 +90,7 @@ Present a table before changing anything or posting anything:
 
 Say plainly which comments you propose to push back on and why.
 
-A thread only automated reviewers have written in, every comment's author a `Bot` (`__typename` in Step 2's query; CodeRabbit is one) or you, goes ahead without waiting: carry out its row through the steps below, commit, push, reply and resolve, and report it with the rest, even while other rows wait. A push-back on a bot's finding goes ahead too, its reasons in the reply. Two such threads still wait: one with more comments (`totalCount`) than the query fetched, since a human may have written in the rest, and one whose bot asks a question only the author can answer, such as whether a behaviour is intended. For every other row, wait for approval. Do not commit, comment, or resolve a human's thread until the user approves — replies and resolutions are public and hard to take back.
+A thread only automated reviewers have written in, every comment's author a `Bot` (`__typename` in Step 2's query; CodeRabbit is one) or you, goes ahead without waiting: carry out its row through the steps below, commit, push, reply and resolve, and report it with the rest, even while other rows wait. A push-back on a bot's finding goes ahead too, its reasons in the reply. Two such threads still wait: one with more comments (`totalCount`) than the query fetched, since a human may have written in the rest, and one whose bot asks a question only the author can answer, such as whether a behaviour is intended. For every other row, wait for approval. Do not commit or comment in a human's thread until the user approves — replies are public and hard to take back. Approval does not extend to resolving it, so don't offer that in the plan.
 
 If the user disagrees with a decision, re-decide that row and re-present; don't argue past one exchange.
 
@@ -109,7 +109,7 @@ For each **action it** comment, in file order so related edits land together:
    Addresses review comment from @reviewer on src/auth/callback.ts."
    ```
 
-Push once, after all the fixes are in, so the replies can cite real SHAs:
+Push once for each batch that goes ahead, the bots' rows and then each approval, after its fixes are in, so the replies can cite real SHAs:
 
 ```bash
 head="$(gh pr view <number> --json headRefName --jq .headRefName)"
@@ -120,7 +120,7 @@ git push "$remote" "HEAD:refs/heads/$head"
 
 Push to the PR's head by name, never a bare `git push`: in a rig work the branch's upstream is its base, and a bare push either fails or pushes onto the base. The remote is the one the branch tracks, which `gh pr checkout` points at the fork for a cross-repository PR. The branch name comes from the PR's author, so it goes through a quoted variable and never into the command text, where a shell would expand it.
 
-## Step 6: Reply and resolve
+## Step 6: Reply, and resolve an automated reviewer's thread
 
 Only after the push. Per thread, reply to the **last** comment in it so the reply lands in-thread rather than as a new root comment:
 
@@ -136,7 +136,7 @@ gh api repos/<owner>/<repo>/pulls/<number>/comments/<comment_databaseId>/replies
   -f body="Leaving this as-is: <reason>. Happy to change it if you feel strongly."
 ```
 
-Then resolve the thread:
+Then run Step 2's query again. A comment that arrived since the plan sends its thread back to Step 3, and a person's makes the thread theirs. Otherwise resolve the thread, if only automated reviewers wrote in it (Step 4), or the user wrote it and told you to:
 
 ```bash
 gh api graphql -f query='
@@ -144,6 +144,8 @@ mutation($threadId: ID!) {
   resolveReviewThread(input: { threadId: $threadId }) { thread { isResolved } }
 }' -F threadId=<thread node id>
 ```
+
+Leave any other thread open. A person's thread is theirs to resolve once they have read the reply, even when the user approved the plan: the reviewer decides whether the point is settled. A base that requires resolved threads then waits on that person, so say so in the report.
 
 Top-level issue comments cannot be resolved. Reply with `gh pr comment <number> --body "…"` and leave it at that.
 
@@ -189,8 +191,8 @@ Close with:
 
 - Comments actioned, each with its commit SHA
 - Comments declined, each with the reason given
-- Threads resolved, and any left open (with why — an unanswered question, a decision that needs the reviewer)
+- Threads resolved, and any left open: a person's, answered and waiting on them to resolve it; one not yet answered, waiting on the user's approval; or an automated reviewer's, with why
 - Follow-up issues worth filing for the out-of-scope points
 - Whether the PR is mergeable with its base: `mergeable`, `mergeStateStatus` and each check as last queried, and what was merged in to get there (the base's commits, and the conflicts resolved), or the conflict left for the author
 
-Re-run the Step 2 query to confirm nothing unresolved is left behind, and report the count honestly if some remain.
+Re-run the Step 2 query, and report honestly how many threads stay open, and whose.
