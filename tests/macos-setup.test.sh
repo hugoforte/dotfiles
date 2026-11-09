@@ -66,12 +66,13 @@ overlays "$personal" "$second"
 
 # The stubs. `brew bundle check` fails while $work/brew-missing exists, and `brew bundle` while
 # $work/brew-fails does. With STUB_BREW_READS_STDIN set, brew reads its stdin to the end, as the
-# installers a real `brew bundle` runs do.
+# installers a real `brew bundle` runs do. A brew run without HOMEBREW_NO_ASK=1 is also logged to
+# $work/brew-asks: on a terminal, Homebrew 7 asks before it installs anything.
 printf '#!/bin/sh\necho "${STUB_UNAME:-Darwin}"\n' > "$stubs/uname"
 # scutil: LocalHostName is STUB_HOSTNAME, and HostName is STUB_HOST_NAME, unset (exit 1) by default.
 printf '#!/bin/sh\ncase "$*" in\n  "--get LocalHostName") echo "${STUB_HOSTNAME-macbook}" ;;\n  "--get HostName") [ -n "${STUB_HOST_NAME:-}" ] && echo "$STUB_HOST_NAME" ;;\nesac\n' > "$stubs/scutil"
-printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\n[ -z "${STUB_BREW_READS_STDIN:-}" ] || cat > /dev/null\ncase "$*" in "bundle check"*) [ ! -e "%s" ] ;; "bundle --no-upgrade"*) [ ! -e "%s" ] ;; esac\n' \
-    "$brew_log" "$work/brew-missing" "$work/brew-fails" > "$stubs/brew"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\n[ "${HOMEBREW_NO_ASK:-}" = 1 ] || printf "%%s\\n" "$*" >> "%s"\n[ -z "${STUB_BREW_READS_STDIN:-}" ] || cat > /dev/null\ncase "$*" in "bundle check"*) [ ! -e "%s" ] ;; "bundle --no-upgrade"*) [ ! -e "%s" ] ;; esac\n' \
+    "$brew_log" "$work/brew-asks" "$work/brew-missing" "$work/brew-fails" > "$stubs/brew"
 chmod +x "$stubs/uname" "$stubs/scutil" "$stubs/brew"
 
 HOME="$home"; export HOME
@@ -115,6 +116,7 @@ fi
 assert_eq "brew bundle applies each overlay's Brewfile, then the machine's, upgrading nothing" \
     "$(printf 'bundle --no-upgrade --file=%s\nbundle --no-upgrade --file=%s\nbundle --no-upgrade --file=%s' "$personal/macos/Brewfile" "$second/macos/Brewfile" "$personal/machines/MACBOOK.Brewfile")" \
     "$(cat "$brew_log")"
+assert_eq "... with HOMEBREW_NO_ASK set, so it never stops to ask" "" "$(cat "$work/brew-asks" 2> /dev/null)"
 assert_eq "ai/install.sh runs: ~/.claude/CLAUDE.md is linked" "$repo/ai/CLAUDE.md" "$(readlink "$home/.claude/CLAUDE.md")"
 
 # --- check -----------------------------------------------------------------------------------

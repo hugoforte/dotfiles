@@ -29,6 +29,10 @@ DOTFILES_URL="${DOTFILES_URL:-https://github.com/hugoforte/dotfiles.git}"
 DOTFILES_BRANCH="${DOTFILES_BRANCH:-}"
 OVERLAY_BRANCH="${OVERLAY_BRANCH:-}"
 
+# On a terminal, Homebrew 7 asks before installing anything, and its "[y/n]" would be one more
+# thing waiting for a person; so would every brew run under this one, setup.sh's included.
+HOMEBREW_NO_ASK=1; export HOMEBREW_NO_ASK
+
 say()  { printf '\033[0;34m%s\033[0m\n' "$1"; }
 ok()   { printf '\033[0;32m[OK] %s\033[0m\n' "$1"; }
 warn() { printf '\033[1;33m[!!] %s\033[0m\n' "$1"; }

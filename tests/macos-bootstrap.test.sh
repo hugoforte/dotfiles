@@ -52,8 +52,10 @@ printf '#!/bin/sh\ncase "$1" in\n  --get) cat "%s" 2>/dev/null ;;\n  --set) echo
 # sudo -v asks for a password, so fails here, while $work/nopasswd exists: as real sudo does when
 # the user's rule says NOPASSWD but another rule matching them does not.
 printf '#!/bin/sh\ncase "$1" in\n  -v) [ ! -e "%s" ] ;;\n  -n) exit 0 ;;\n  *) exec "$@" ;;\nesac\n' "$work/nopasswd" > "$stubs/sudo"
-printf '#!/bin/sh\ncase "$1" in --prefix) echo /stub ;; install) echo "brew $*" >> "%s" ;; esac\nexit 0\n' \
-    "$log" > "$stubs/brew"
+# brew logs each install, and "brew would ask" for one run without HOMEBREW_NO_ASK=1: on a terminal,
+# Homebrew 7 asks before installing.
+printf '#!/bin/sh\ncase "$1" in --prefix) echo /stub ;; install) echo "brew $*" >> "%s"; [ "${HOMEBREW_NO_ASK:-}" = 1 ] || echo "brew would ask" >> "%s" ;; esac\nexit 0\n' \
+    "$log" "$log" > "$stubs/brew"
 printf '#!/bin/sh\nexit 0\n' > "$stubs/jq"
 printf '#!/bin/sh\nexit 0\n' > "$stubs/node"
 # gh repo clone <url> <dir> [-- <git clone options>]: logs the url, then clones with those options.
@@ -134,6 +136,7 @@ assert_eq "a Mac without node succeeds" "0" "$rc"
 assert_eq "... and has brew install node, before setup runs" \
     "$(printf 'brew install node\nsetup.sh ')" \
     "$(grep '^brew \|^setup.sh' "$log" | head -2)"
+assert_eq "... without brew stopping to ask" "" "$(grep '^brew would ask' "$log")"
 printf '#!/bin/sh\nexit 0\n' > "$stubs/node"
 chmod +x "$stubs/node"
 

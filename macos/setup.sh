@@ -153,6 +153,8 @@ fi
 # --- Brewfiles -----------------------------------------------------------------------------------
 
 # Before ai/install.sh, whose settings merge needs jq, should bootstrap not have installed it.
+# On a terminal, Homebrew 7 asks before installing anything; a run of this script never stops to ask.
+HOMEBREW_NO_ASK=1; export HOMEBREW_NO_ASK
 brewfiles="$(overlay_sources macos/Brewfile)"
 [ -n "$machine_brewfile" ] && brewfiles="${brewfiles:+$brewfiles
 }$machine_brewfile"
