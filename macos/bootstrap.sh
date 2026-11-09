@@ -202,7 +202,7 @@ while IFS= read -r script <&3; do
     [ -n "$script" ] || continue
     say "Running ${script}…"
     sh "$script" || FAILED=1
-done 3<<EOF
+done 3<<EOF || FAILED=1
 $(overlay_sources macos/bootstrap.sh)
 EOF
 

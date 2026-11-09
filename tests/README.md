@@ -55,6 +55,7 @@ testable yet:
 | `ai/helpers/overlays.sh` and `powershell/overlays.ps1` | the machine.local.psd1, the overlays and the computer name are fixtures; each rule is asked through the interface, and `overlays-parity.test.sh` diffs what both languages read of one fixture, on Windows only | hugoforte/dotfiles#67 |
 | `ai/helpers/leak-check.sh` | the repo is a fixture git repo, the terms are fake (from `LEAK_CHECK_TERMS` or a fixture overlay), and `gh` is a stub that prints a pull request's text | hugoforte/dotfiles#70 |
 | `ai/install.sh`'s extra Claude config folders | `HOME` and the overlay list are fixtures, so the folders it fills are temp directories | this change |
+| `ai/install.sh`'s failure reporting | `HOME` and the overlay list are fixtures; an unwritable directory, a settings fragment that is not JSON and a file size limit of zero (which makes bash's here-documents fail as a full disk does) are the failures | this change |
 | `macos/setup.sh` | `HOME` and the overlay list are fixtures, and `uname`, `scutil` and `brew` are stubs on `PATH`, so it runs on any OS and installs nothing | this change |
 | `macos/zshrc` | sourced by `zsh -f` through a fixture `~/.zshrc` link; skipped where zsh is missing | this change |
 | `macos/deploy-secrets.sh` | `HOME`, the registries and the checkouts are fixtures, and `sops` is a stub that "decrypts" by dropping a prefix | this change |

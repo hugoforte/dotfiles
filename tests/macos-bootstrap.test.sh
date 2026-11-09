@@ -33,7 +33,7 @@ fixture_dotfiles="$work/fixture-dotfiles"
 mkdir -p "$fixture_dotfiles/macos" "$fixture_dotfiles/ai/helpers" "$fixture_dotfiles/ai/secrets"
 cp "$REPO_ROOT/ai/helpers/overlays.sh" "$REPO_ROOT/ai/helpers/generated-file.sh" "$REPO_ROOT/ai/helpers/aws-config.sh" "$fixture_dotfiles/ai/helpers/"
 for script in setup.sh install-sync-agent.sh deploy-secrets.sh; do
-    printf 'echo "%s $*" >> "%s"\n' "$script" "$log" > "$fixture_dotfiles/macos/$script"
+    printf 'echo "%s $*" >> "%s"\nexit 0\n' "$script" "$log" > "$fixture_dotfiles/macos/$script"
 done
 cp "$REPO_ROOT/ai/secrets/machine.local.psd1.example" "$fixture_dotfiles/ai/secrets/"
 printf '/ai/secrets/machine.local.psd1\n' > "$fixture_dotfiles/.gitignore"
@@ -171,5 +171,25 @@ rm -rf "$src" "$log"
 out="$(run --overlays "$fixture_overlays" --dir "$src")"; rc=$?
 assert_eq "overlay bootstraps run" "0" "$rc"
 assert_eq "an overlay bootstrap that reads stdin does not stop the next from running" "y" "$(grep -q 'personal bootstrap' "$log" && echo y || echo n)"
+
+# A here-document that cannot be created, as on a full disk, skips the loop that runs the overlays'
+# bootstraps. That fails the run. A file size limit of zero (with SIGXFSZ ignored) makes bash fail
+# so; a shell that keeps here-documents in memory (bash 5.1 and later) cannot, and skips this.
+no_files() { (ulimit -f 0 && trap '' XFSZ && "$@"); }
+probe="$(no_files sh -c 'cat <<EOF > /dev/null
+x
+EOF' 2>&1)"
+if [ -z "$probe" ]; then
+    echo "  SKIP  this shell's here-documents do not fail with a file size limit of zero"
+else
+    # git writes files, so under the limit it is a stub that pulls nothing; the clones are in place.
+    mkdir "$work/git-stub"
+    printf '#!/bin/sh\nexit 0\n' > "$work/git-stub/git"
+    chmod +x "$work/git-stub/git"
+    out="$(PATH="$work/git-stub:$PATH" no_files run --overlays "$fixture_overlays" --dir "$src")"; rc=$?
+    assert_eq "a here-document that cannot be created fails the run" "1" "$rc"
+    assert_eq "... which says so" "y" "$(says "$out" "Bootstrap finished with failures")"
+    assert_eq "... and does not say it is complete" "n" "$(says "$out" "Bootstrap complete")"
+fi
 
 assert_summary "macos-bootstrap"

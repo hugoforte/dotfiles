@@ -185,7 +185,7 @@ install_agents() {
         done
         prune_orphans "$dir/agents" "$ZSH/ai/agents"
         success "Linked agents into $dir/agents"
-    done <<EOF
+    done <<EOF || FAILED=1
 $CLAUDE_DIRS
 EOF
     overlay_agents install
@@ -406,7 +406,7 @@ install_rules() {
         done
         prune_orphans "$dir/rules" "$ZSH/ai/rules"
         success "Linked rules into $dir/rules"
-    done <<EOF
+    done <<EOF || FAILED=1
 $CLAUDE_DIRS
 EOF
     overlay_rules install
@@ -452,10 +452,14 @@ install_settings() {
     while IFS= read -r dir; do
         mkdir -p "$dir"
         if [ -f "$dir/settings.json" ]; then
-            cp "$dir/settings.json" "$dir/settings.json.backup.$(date +%Y%m%d_%H%M%S)"
+            cp "$dir/settings.json" "$dir/settings.json.backup.$(date +%Y%m%d_%H%M%S)" ||
+                { error "Could not back up $dir/settings.json - not merged"; FAILED=1; continue; }
         fi
         if reconcile_settings merge "$dir/settings.json" "$SETTINGS_FRAGMENT" "$HOOK_BIN"; then
             success "Merged ai/claude/settings.json into $dir/settings.json"
+        else
+            error "Could not merge ai/claude/settings.json into $dir/settings.json"
+            FAILED=1
         fi
     done <<EOF
 $CLAUDE_DIRS
@@ -747,15 +751,27 @@ case $MODE in
     export)    info "Exporting settings…" ;;
 esac
 
-[ "$INSTALL_CLAUDE_MD" = "true" ] && ${MODE}_claude_md
-[ "$INSTALL_AGENTS" = "true" ]    && ${MODE}_agents
-[ "$INSTALL_RULES" = "true" ]     && ${MODE}_rules
-[ "$INSTALL_SKILLS" = "true" ]    && ${MODE}_skills
-[ "$INSTALL_RIG_SKILLS" = "true" ] && ${MODE}_rig_skills
-[ "$INSTALL_OVERLAY_SKILLS" = "true" ] && ${MODE}_overlay_skills
-[ "$INSTALL_BRUNO" = "true" ]     && ${MODE}_bruno
-[ "$INSTALL_SETTINGS" = "true" ]  && ${MODE}_settings
-[ "$INSTALL_MCP" = "true" ]       && ${MODE}_mcp
+# What an install could not do. link sets it too, since a loop loses the status of each link it makes.
+FAILED=0
+
+# component <flag> <name>: run <mode>_<name> when <flag> is true. An install step that returns
+# non-zero failed, which includes a loop whose here-document could not be created: the shell skips
+# the loop and returns 1.
+component() {
+    [ "$1" = "true" ] || return 0
+    "${MODE}_$2" && return 0
+    [ "$MODE" != "install" ] || { error "Could not install: $2"; FAILED=1; }
+}
+
+component "$INSTALL_CLAUDE_MD" claude_md
+component "$INSTALL_AGENTS" agents
+component "$INSTALL_RULES" rules
+component "$INSTALL_SKILLS" skills
+component "$INSTALL_RIG_SKILLS" rig_skills
+component "$INSTALL_OVERLAY_SKILLS" overlay_skills
+component "$INSTALL_BRUNO" bruno
+component "$INSTALL_SETTINGS" settings
+component "$INSTALL_MCP" mcp
 
 # Secrets under ai/secrets/, here and in every overlay, must never be committed in plaintext;
 # verify on every check.
@@ -779,7 +795,13 @@ fi
 
 echo ""
 case $MODE in
-    install)   success "Done" ;;
+    install)
+        if [ "$FAILED" = "1" ]; then
+            error "Install finished with failures (above)"
+            exit 1
+        fi
+        success "Done"
+        ;;
     uninstall) success "Done" ;;
     export)    success "Done" ;;
     check)
