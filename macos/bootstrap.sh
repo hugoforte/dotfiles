@@ -18,10 +18,16 @@
 # deploy the skill secrets when this Mac can decrypt them. It asks for the password once, and gh
 # signs in through the browser when it is not signed in; nothing else waits for a person. Safe to
 # re-run: each step skips what is already done.
+#
+# DOTFILES_BRANCH and OVERLAY_BRANCH, when set, clone dotfiles and the overlay repo at those branches
+# instead of their default ones, so a branch is tried on a new Mac before it merges (dotfiles-private's
+# personal/machines/drill/mac-drill.sh --branch). A checkout already there is pulled as it stands.
 
 set -u
 
 DOTFILES_URL="${DOTFILES_URL:-https://github.com/hugoforte/dotfiles.git}"
+DOTFILES_BRANCH="${DOTFILES_BRANCH:-}"
+OVERLAY_BRANCH="${OVERLAY_BRANCH:-}"
 
 say()  { printf '\033[0;34m%s\033[0m\n' "$1"; }
 ok()   { printf '\033[0;32m[OK] %s\033[0m\n' "$1"; }
@@ -103,15 +109,19 @@ fi
 
 # --- Clones ------------------------------------------------------------------------------------------
 
-# fetch <url> <folder>: clone the repo there, or pull it when it is already there
+# fetch <url> <folder> [branch]: clone the repo there, at the branch when one is given, or pull it
+# when it is already there
 fetch() {
     if [ -d "$2/.git" ]; then
         git -C "$2" pull --ff-only --quiet || die "git pull in $2 failed"
         ok "$2 is up to date"
     elif [ -e "$2" ]; then
         die "$2 exists and is not a git checkout"
-    else
+    elif [ -n "${3:-}" ]; then
         # gh, so a private repo clones with its sign-in.
+        gh repo clone "$1" "$2" -- --quiet --branch "$3" || die "could not clone $1 at $3 to $2"
+        ok "Cloned $1 at $3 to $2"
+    else
         gh repo clone "$1" "$2" -- --quiet || die "could not clone $1 to $2"
         ok "Cloned $1 to $2"
     fi
@@ -120,7 +130,7 @@ fetch() {
 mkdir -p "$DIR" || die "could not create $DIR"
 DIR="$(cd "$DIR" && pwd -P)"
 DOTFILES="$DIR/dotfiles"
-fetch "$DOTFILES_URL" "$DOTFILES"
+fetch "$DOTFILES_URL" "$DOTFILES" "$DOTFILES_BRANCH"
 
 case "$OVERLAY_REPO" in
     *://*|git@*|/*) overlay_url="$OVERLAY_REPO" ;;
@@ -128,7 +138,7 @@ case "$OVERLAY_REPO" in
 esac
 overlay_name="$(basename "$OVERLAY_REPO" .git)"
 OVERLAY_DIR="$DIR/$overlay_name"
-fetch "$overlay_url" "$OVERLAY_DIR"
+fetch "$overlay_url" "$OVERLAY_DIR" "$OVERLAY_BRANCH"
 
 # --- machine.local.psd1 ------------------------------------------------------------------------------
 

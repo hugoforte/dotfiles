@@ -56,7 +56,8 @@ printf '#!/bin/sh\ncase "$1" in --prefix) echo /stub ;; install) echo "brew $*" 
     "$log" > "$stubs/brew"
 printf '#!/bin/sh\nexit 0\n' > "$stubs/jq"
 printf '#!/bin/sh\nexit 0\n' > "$stubs/node"
-printf '#!/bin/sh\ncase "$1 $2" in\n  "auth status") exit 0 ;;\n  "repo clone") echo "clone $3" >> "%s"; exec git clone --quiet "$3" "$4" ;;\nesac\nexit 1\n' \
+# gh repo clone <url> <dir> [-- <git clone options>]: logs the url, then clones with those options.
+printf '#!/bin/sh\ncase "$1 $2" in\n  "auth status") exit 0 ;;\n  "repo clone") echo "clone $3" >> "%s"; url="$3"; dir="$4"; shift 4; [ "${1:-}" = -- ] && shift; exec git clone "$@" "$url" "$dir" ;;\nesac\nexit 1\n' \
     "$log" > "$stubs/gh"
 chmod +x "$stubs"/*
 
@@ -102,6 +103,20 @@ out="$(run --overlays "$fixture_overlays" --only personal --dir "$src")"; rc=$?
 assert_eq "--only lists just the overlays it names" \
     "$(printf "        '%s/private/personal'" "$src")" \
     "$(grep "^        '" "$src/dotfiles/ai/secrets/machine.local.psd1")"
+
+# DOTFILES_BRANCH and OVERLAY_BRANCH clone each repo at its branch.
+git -C "$fixture_dotfiles" branch --quiet feat/try
+git -C "$fixture_overlays" branch --quiet feat/try
+rm -rf "$src"
+out="$(DOTFILES_BRANCH=feat/try OVERLAY_BRANCH=feat/try run --overlays "$fixture_overlays" --only personal --dir "$src")"; rc=$?
+assert_eq "with DOTFILES_BRANCH and OVERLAY_BRANCH a first run succeeds" "0" "$rc"
+[ "$rc" = 0 ] || printf "%s\n" "$out"
+assert_eq "... dotfiles is cloned at DOTFILES_BRANCH" "feat/try" "$(git -C "$src/dotfiles" branch --show-current)"
+assert_eq "... and the overlay repo at OVERLAY_BRANCH" "feat/try" "$(git -C "$src/private" branch --show-current)"
+rm -rf "$src"
+out="$(run --overlays "$fixture_overlays" --only personal --dir "$src")"; rc=$?
+assert_eq "without them, each is cloned at its default branch" \
+    "$(git -C "$fixture_dotfiles" branch --show-current)" "$(git -C "$src/dotfiles" branch --show-current)"
 
 rm -rf "$src"
 out="$(run --overlays "$fixture_overlays" --only missing --dir "$src")"; rc=$?
