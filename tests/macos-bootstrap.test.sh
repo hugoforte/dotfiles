@@ -161,4 +161,15 @@ rm -rf "$src"
 out="$(run --overlays "$fixture_overlays" --dir "$src")"; rc=$?
 assert_eq "a failing overlay bootstrap fails the run" "1" "$rc"
 
+# An overlay bootstrap that reads stdin, as an installer does, must not swallow the next one.
+mkdir -p "$fixture_overlays/company/macos"
+printf 'echo "personal bootstrap" >> "%s"\n' "$log" > "$fixture_overlays/personal/macos/bootstrap.sh"
+printf 'cat > /dev/null\necho "company bootstrap" >> "%s"\n' "$log" > "$fixture_overlays/company/macos/bootstrap.sh"
+git -C "$fixture_overlays" add -A
+git -C "$fixture_overlays" -c user.name=t -c user.email=t@example.com commit --quiet -m "two bootstraps"
+rm -rf "$src" "$log"
+out="$(run --overlays "$fixture_overlays" --dir "$src")"; rc=$?
+assert_eq "overlay bootstraps run" "0" "$rc"
+assert_eq "an overlay bootstrap that reads stdin does not stop the next from running" "y" "$(grep -q 'personal bootstrap' "$log" && echo y || echo n)"
+
 assert_summary "macos-bootstrap"

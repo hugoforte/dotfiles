@@ -190,7 +190,9 @@ fi
 bundle_failed=false
 # --no-upgrade both ways: an entry is installed when missing and never upgraded, as a manifest's
 # is on Windows, so an outdated formula is neither drift nor something a run replaces.
-while IFS= read -r brewfile; do
+# The list is read from fd 3, not stdin: the installers a bundle runs read stdin, and one that
+# did would swallow the Brewfiles still to come.
+while IFS= read -r brewfile <&3; do
     [ -n "$brewfile" ] || continue
     if [ "$MODE" = "check" ]; then
         if brew bundle check --no-upgrade --file="$brewfile" > /dev/null 2>&1; then
@@ -206,7 +208,7 @@ while IFS= read -r brewfile; do
         bundle_failed=true
         FAILED=1
     fi
-done <<EOF
+done 3<<EOF
 $brewfiles
 EOF
 

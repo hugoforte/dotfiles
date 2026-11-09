@@ -197,11 +197,12 @@ sh "$DOTFILES/macos/setup.sh" || FAILED=1
 sh "$DOTFILES/macos/install-sync-agent.sh" || FAILED=1
 
 # Each overlay's own steps: what is one person's or one employer's, so dotfiles cannot name it.
-while IFS= read -r script; do
+# The list is read from fd 3, so a script that reads stdin cannot swallow the scripts after it.
+while IFS= read -r script <&3; do
     [ -n "$script" ] || continue
     say "Running ${script}…"
     sh "$script" || FAILED=1
-done <<EOF
+done 3<<EOF
 $(overlay_sources macos/bootstrap.sh)
 EOF
 
