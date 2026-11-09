@@ -84,8 +84,9 @@ if ! sudo -n true 2> /dev/null; then
     chmod 700 "$askpass_dir" || die "could not restrict $askpass_dir"
     attempts=0
     while :; do
-        printf 'Password: ' >&2
+        # Echo off before the prompt shows, so an answer typed the moment it appears is not echoed.
         [ ! -t 0 ] || stty -echo 2> /dev/null
+        printf 'Password: ' >&2
         IFS= read -r password; read_status=$?
         [ ! -t 0 ] || { stty echo 2> /dev/null; echo >&2; }
         [ "$read_status" = 0 ] || die "sudo is needed to install Homebrew and name the Mac: no password was given"
