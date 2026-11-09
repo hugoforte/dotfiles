@@ -35,6 +35,8 @@ cp "$REPO_ROOT/ai/helpers/overlays.sh" "$REPO_ROOT/ai/helpers/generated-file.sh"
 for script in setup.sh install-sync-agent.sh deploy-secrets.sh; do
     printf 'echo "%s $*" >> "%s"\nexit 0\n' "$script" "$log" > "$fixture_dotfiles/macos/$script"
 done
+# setup.sh installs a cask, which runs sudo.
+printf 'echo "setup.sh $*" >> "%s"\nbrew cask-install || exit 1\nexit 0\n' "$log" > "$fixture_dotfiles/macos/setup.sh"
 cp "$REPO_ROOT/ai/secrets/machine.local.psd1.example" "$fixture_dotfiles/ai/secrets/"
 printf '/ai/secrets/machine.local.psd1\n' > "$fixture_dotfiles/.gitignore"
 git_repo "$fixture_dotfiles"
@@ -49,12 +51,15 @@ git_repo "$fixture_overlays"
 printf '#!/bin/sh\necho Darwin\n' > "$stubs/uname"
 printf '#!/bin/sh\ncase "$1" in\n  --get) cat "%s" 2>/dev/null ;;\n  --set) echo "scutil $*" >> "%s"; [ "$2" = LocalHostName ] && printf "%%s" "$3" > "%s" ;;\nesac\nexit 0\n' \
     "$work/hostname" "$log" "$work/hostname" > "$stubs/scutil"
-# sudo -v asks for a password, so fails here, while $work/nopasswd exists: as real sudo does when
-# the user's rule says NOPASSWD but another rule matching them does not.
-printf '#!/bin/sh\ncase "$1" in\n  -v) [ ! -e "%s" ] ;;\n  -n) exit 0 ;;\n  *) exec "$@" ;;\nesac\n' "$work/nopasswd" > "$stubs/sudo"
+# sudo: see the stub's own comment for the state it keeps in $STUB_STATE.
+STUB_STATE="$work/sudo-state"; export STUB_STATE
+mkdir -p "$STUB_STATE"
+cp "$SCRIPT_DIR/macos-bootstrap-sudo-stub.sh" "$stubs/sudo"
 # brew logs each install, and "brew would ask" for one run without HOMEBREW_NO_ASK=1: on a terminal,
-# Homebrew 7 asks before installing.
-printf '#!/bin/sh\ncase "$1" in --prefix) echo /stub ;; install) echo "brew $*" >> "%s"; [ "${HOMEBREW_NO_ASK:-}" = 1 ] || echo "brew would ask" >> "%s" ;; esac\nexit 0\n' \
+# Homebrew 7 asks before installing. "brew cask-install" runs sudo as Homebrew does for a cask's
+# installer: it forgets the cached credentials first (utils/sudo.sh runs sudo --reset-timestamp), and
+# passes -A when SUDO_ASKPASS is set (system_command.rb).
+printf '#!/bin/sh\ncase "$1" in --prefix) echo /stub ;; install) echo "brew $*" >> "%s"; [ "${HOMEBREW_NO_ASK:-}" = 1 ] || echo "brew would ask" >> "%s" ;;\n  cask-install) sudo -k; if [ -n "${SUDO_ASKPASS:-}" ]; then sudo -A -E -- true; else sudo -E -- true; fi || exit 1 ;; esac\nexit 0\n' \
     "$log" "$log" > "$stubs/brew"
 printf '#!/bin/sh\nexit 0\n' > "$stubs/jq"
 printf '#!/bin/sh\nexit 0\n' > "$stubs/node"
@@ -140,11 +145,30 @@ assert_eq "... without brew stopping to ask" "" "$(grep '^brew would ask' "$log"
 printf '#!/bin/sh\nexit 0\n' > "$stubs/node"
 chmod +x "$stubs/node"
 
-touch "$work/nopasswd"
+touch "$STUB_STATE/nopasswd"
 rm -rf "$src"
 out="$(run --overlays "$fixture_overlays" --dir "$src")"; rc=$?
 assert_eq "passwordless sudo, where sudo -v would still ask, does not stop it" "0" "$rc"
-rm "$work/nopasswd"
+rm "$STUB_STATE/nopasswd"
+
+# A Mac whose sudo wants a password: asked once, on stdin; Homebrew then forgets sudo's cached
+# credentials before each cask's installer, which would ask again but for SUDO_ASKPASS.
+touch "$STUB_STATE/pwreq"
+rm -rf "$src"; : > "$STUB_STATE/log"
+out="$(printf 'secret\n' | run --overlays "$fixture_overlays" --dir "$src")"; rc=$?
+assert_eq "a password sudo accepts lets the run finish" "0" "$rc"
+[ "$rc" = 0 ] || printf "%s\n" "$out"
+assert_eq "sudo asks nobody again, though Homebrew forgot its cached credentials" "" "$(grep '^sudo asked' "$STUB_STATE/log")"
+askpass="$(sed -n 's/^sudo askpass //p' "$STUB_STATE/log" | head -1)"
+assert_eq "Homebrew's sudo asked through a SUDO_ASKPASS helper" "y" "$([ -n "$askpass" ] && echo y || echo n)"
+assert_eq "the helper and the password it hands out are gone when the run ends" "n" \
+    "$([ -n "$askpass" ] && { [ -e "$askpass" ] || [ -e "$(dirname "$askpass")" ]; } && echo y || echo n)"
+
+rm -rf "$src"
+out="$(printf 'wrong\nwrong\nwrong\n' | run --overlays "$fixture_overlays" --dir "$src")"; rc=$?
+assert_eq "a password sudo refuses three times fails the run" "1" "$rc"
+assert_eq "... which says sudo is needed" "y" "$(says "$out" "sudo is needed")"
+rm "$STUB_STATE/pwreq"
 
 # Two overlays whose aws/config both declare one section, which the merged ~/.aws/config cannot hold.
 mkdir -p "$fixture_overlays/personal/aws" "$fixture_overlays/company/aws"

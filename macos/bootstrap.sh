@@ -15,7 +15,8 @@
 # In order: name the Mac, install Homebrew (with the Xcode command-line tools), gh, jq and node,
 # sign gh in, clone or pull dotfiles and the overlay repo, write ai/secrets/machine.local.psd1, run
 # macos/setup.sh and macos/install-sync-agent.sh, then each overlay's own macos/bootstrap.sh, and
-# deploy the skill secrets when this Mac can decrypt them. It asks for the password once, and gh
+# deploy the skill secrets when this Mac can decrypt them. It asks for the password once, on stdin
+# (and hands it to Homebrew's sudo for the run, through SUDO_ASKPASS, so no cask installer asks), and gh
 # signs in through the browser when it is not signed in; nothing else waits for a person. Safe to
 # re-run: each step skips what is already done.
 #
@@ -63,12 +64,50 @@ done
 
 # --- The password, once ------------------------------------------------------------------------------
 
-# Ask now, then keep sudo's memory of it fresh until this script ends, so no installer asks again.
-# Not when sudo needs no password: -v still asks then, unless every sudoers rule says NOPASSWD.
-sudo -n true 2> /dev/null || sudo -v || die "sudo is needed to install Homebrew and name the Mac"
-( while kill -0 $$ 2> /dev/null; do sudo -n true; sleep 50; done ) > /dev/null 2>&1 &
+# sudo's cached credentials do not last: Homebrew runs `sudo --reset-timestamp` before its first sudo
+# of each run (Library/Homebrew/utils/sudo.sh), so the first cask whose installer needs root asks
+# again. Homebrew runs sudo -A, which asks a helper, when SUDO_ASKPASS is set. So ask here, once, and
+# hand the password to a helper kept in a folder only this user can open, until this script ends.
+# Not when sudo needs no password (sudo -v would still ask then, unless every sudoers rule says NOPASSWD).
+keepalive="" askpass_dir=""
+cleanup() {
+    [ -z "$keepalive" ] || kill "$keepalive" 2> /dev/null
+    [ -z "$askpass_dir" ] || rm -rf "$askpass_dir"
+    [ ! -t 0 ] || stty echo 2> /dev/null
+}
+trap cleanup EXIT
+trap 'exit 1' INT TERM HUP
+
+sudo -k
+if ! sudo -n true 2> /dev/null; then
+    askpass_dir="$(mktemp -d "${TMPDIR:-/tmp}/bootstrap-askpass.XXXXXX")" || die "could not create a folder for the sudo password helper"
+    chmod 700 "$askpass_dir" || die "could not restrict $askpass_dir"
+    attempts=0
+    while :; do
+        printf 'Password: ' >&2
+        [ ! -t 0 ] || stty -echo 2> /dev/null
+        IFS= read -r password; read_status=$?
+        [ ! -t 0 ] || { stty echo 2> /dev/null; echo >&2; }
+        [ "$read_status" = 0 ] || die "sudo is needed to install Homebrew and name the Mac: no password was given"
+        if printf '%s\n' "$password" | sudo -S -p '' -v 2> /dev/null; then break; fi
+        attempts=$((attempts + 1))
+        [ "$attempts" -lt 3 ] || die "sudo is needed to install Homebrew and name the Mac: 3 passwords were refused"
+        warn "Sorry, try again."
+    done
+    ( umask 077 && printf '%s' "$password" > "$askpass_dir/password" ) || die "could not write the sudo password helper"
+    unset password
+    printf '#!/bin/sh\nexec cat "%s/password"\n' "$askpass_dir" > "$askpass_dir/askpass" || die "could not write the sudo password helper"
+    chmod 700 "$askpass_dir/askpass" || die "could not restrict the sudo password helper"
+    SUDO_ASKPASS="$askpass_dir/askpass"; export SUDO_ASKPASS
+fi
+
+# Refresh the cached credentials until this script ends: Homebrew forgets them, and plain sudo
+# elsewhere in the run uses them.
+( while kill -0 $$ 2> /dev/null; do
+      if [ -n "$askpass_dir" ]; then sudo -A -v; else sudo -n true; fi
+      sleep 50
+  done ) > /dev/null 2>&1 &
 keepalive=$!
-trap 'kill "$keepalive" 2> /dev/null' EXIT
 
 # --- Name ---------------------------------------------------------------------------------------------
 
