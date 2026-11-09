@@ -72,6 +72,9 @@ HOME="$work/home"; export HOME
 PATH="$stubs:$PATH"; export PATH
 DOTFILES_URL="$fixture_dotfiles"; export DOTFILES_URL
 
+# bootstrap.sh reads the password from stdin when sudo needs one, so a run that is not handed one
+# reads an empty stdin rather than waiting on the terminal this suite was started from.
+exec < /dev/null
 run() { sh "$REPO_ROOT/macos/bootstrap.sh" "$@" 2>&1; }
 says() { case "$1" in *"$2"*) echo y ;; *) echo n ;; esac; }
 

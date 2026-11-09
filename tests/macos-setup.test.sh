@@ -81,6 +81,9 @@ PATH="$stubs:$PATH"; export PATH
 # A Mac has no COMPUTERNAME; on Windows it would name the machine over the scutil stub.
 unset COMPUTERNAME
 
+# With STUB_BREW_READS_STDIN, brew reads its stdin to the end, so the suite's own stdin is empty
+# rather than the terminal or pipe it was started from, which may never end.
+exec < /dev/null
 run()       { (cd "$work" && sh "$repo/macos/setup.sh" "$@" 2>&1); }
 install()   { run > /dev/null; }
 check()     { run --check; }
