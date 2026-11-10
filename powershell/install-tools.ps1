@@ -31,6 +31,7 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "tool-selection.ps1")
 . (Join-Path $PSScriptRoot "overlays.ps1")
 . (Join-Path $PSScriptRoot "native.ps1")
+. (Join-Path $PSScriptRoot "github-release.ps1")
 
 $manifestPath = Join-Path $PSScriptRoot "tools.psd1"
 $localPath = Join-Path (Split-Path $PSScriptRoot -Parent) "ai\secrets\machine.local.psd1"
@@ -174,32 +175,30 @@ function Install-UvTool {
 }
 
 # Downloads an installer and runs it with the entry's InstallArgs: for a github-release entry, the
-# latest release's asset; for a download entry, its Url. The reason for a failure is printed; the
-# caller records the one outcome.
+# latest release's asset, through the signed-in gh when the repo is private (github-release.ps1);
+# for a download entry, its Url. The reason for a failure is printed; the caller records the one
+# outcome.
 function Install-Downloaded {
     param([hashtable]$Tool)
     # 5.1 redraws its progress bar per chunk, which makes a large download crawl.
     $ProgressPreference = 'SilentlyContinue'
     $installer = $null
     try {
-        if ($Tool.Source -eq 'download') {
-            $name = [IO.Path]::GetFileName(([Uri]$Tool.Url).AbsolutePath)
-            $url = $Tool.Url
-        } else {
-            $release = Invoke-RestMethod "https://api.github.com/repos/$($Tool.Id)/releases/latest" -UseBasicParsing
-            $asset = Select-ReleaseAsset -Assets @($release.assets) -Pattern $Tool.Asset
-            $name = $asset.name
-            $url = $asset.browser_download_url
-        }
         $downloadDir = Join-Path $env:TEMP "dotfiles-tools"
         if (-not (Test-Path $downloadDir)) { New-Item -ItemType Directory -Path $downloadDir | Out-Null }
-        $installer = Join-Path $downloadDir $name
-        Invoke-WebRequest $url -OutFile $installer -UseBasicParsing
+        if ($Tool.Source -eq 'download') {
+            $from = $Tool.Url
+            $installer = Join-Path $downloadDir ([IO.Path]::GetFileName(([Uri]$Tool.Url).AbsolutePath))
+            Invoke-WebRequest $Tool.Url -OutFile $installer -UseBasicParsing
+        } else {
+            $from = "the latest release of $($Tool.Id)"
+            $installer = Save-GitHubReleaseAsset -Repo $Tool.Id -Pattern $Tool.Asset -Directory $downloadDir
+        }
         # A fixed address can start serving something else; only the installer the entry names runs.
         if ($Tool.Sha256) {
             $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
             if ($actual -ne $Tool.Sha256) {
-                Say "  $($Tool.Id): $url has SHA-256 $actual, not the entry's $($Tool.Sha256); not run" Yellow
+                Say "  $($Tool.Id): $from has SHA-256 $actual, not the entry's $($Tool.Sha256); not run" Yellow
                 return $false
             }
         }
