@@ -77,11 +77,10 @@ Personal, symlink-based setup for Windows and macOS development machines: shell 
 One command, on a Mac with nothing installed:
 
 ```sh
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/hugoforte/dotfiles/main/macos/bootstrap.sh)" \
-    bootstrap --overlays <owner>/<private-repo> --name <NAME>
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/hugoforte/dotfiles/main/macos/bootstrap.sh)" bootstrap --overlays <owner>/<private-repo> --name <NAME>
 ```
 
-`macos/bootstrap.sh` asks for the password once, and signs `gh` in through the browser if it is not signed in. Then it does the steps below in order: it names the Mac, installs Homebrew (with the Xcode Command Line Tools), `gh`, `jq` and `node`, clones this repo and the overlay repo into `~/source` (`--dir` for elsewhere), and writes `ai/secrets/machine.local.psd1` listing every overlay in the repo (`--only` for some). It then runs `setup.sh`, the sync agent, each overlay's own `macos/bootstrap.sh`, and the secrets deploy, and ends with the check. It is safe to re-run. By hand, the steps are:
+`macos/bootstrap.sh` asks for the password once, on its standard input, so run it as above rather than piping it into `sh`. It hands the password to Homebrew's sudo for the run, through `SUDO_ASKPASS`, because Homebrew forgets sudo's cached credentials before each cask's installer. It signs `gh` in through the browser if it is not signed in. `DOTFILES_BRANCH` and `OVERLAY_BRANCH` clone the two repos at those branches, to try a branch on a new Mac before it merges; a checkout already there is pulled as it stands. Then it does the steps below in order: it names the Mac, installs Homebrew (with the Xcode Command Line Tools), `gh`, `jq` and `node`, clones this repo and the overlay repo into `~/source` (`--dir` for elsewhere), and writes `ai/secrets/machine.local.psd1` listing every overlay in the repo (`--only` for some). It then runs `setup.sh`, the sync agent, each overlay's own `macos/bootstrap.sh`, and the secrets deploy, and ends with the check. It is safe to re-run. By hand, the steps are:
 
 1. Name the Mac. Its files in an overlay's `machines/` are found by its `HostName` (else its `LocalHostName`), uppercased:
 

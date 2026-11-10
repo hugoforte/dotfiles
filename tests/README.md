@@ -57,6 +57,7 @@ testable yet:
 | `ai/install.sh`'s extra Claude config folders | `HOME` and the overlay list are fixtures, so the folders it fills are temp directories | this change |
 | `ai/install.sh`'s failure reporting | `HOME` and the overlay list are fixtures; an unwritable directory, a settings fragment that is not JSON and a file size limit of zero (which makes bash's here-documents fail as a full disk does) are the failures | this change |
 | `macos/setup.sh` | `HOME` and the overlay list are fixtures, and `uname`, `scutil` and `brew` are stubs on `PATH`, so it runs on any OS and installs nothing | this change |
+| `macos/bootstrap.sh` | dotfiles and the overlay repo are fixture repos cloned with plain git, `gh`, `brew`, `scutil`, `jq` and `node` are stubs, and `sudo` is `macos-bootstrap-sudo-stub.sh`, which remembers a password until `sudo -k` as a tty timestamp does, so the suite can tell a run that asks once from one that asks again | hugoforte/dotfiles#106 |
 | `macos/zshrc` | sourced by `zsh -f` through a fixture `~/.zshrc` link; skipped where zsh is missing | this change |
 | `macos/deploy-secrets.sh` | `HOME`, the registries and the checkouts are fixtures, and `sops` is a stub that "decrypts" by dropping a prefix | this change |
 | `macos/sync.sh` | the repo and the overlay repo are clones of fixture origins, so its pulls are real; `brew` and `sops` are stubs | this change |
