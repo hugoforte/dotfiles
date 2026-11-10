@@ -45,8 +45,8 @@ esac
 # xml <text>: text escaped for a plist string
 xml() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
 
-mkdir -p "$(dirname "$PLIST")" "$(dirname "$LOG")"
-cat > "$PLIST" <<EOF
+mkdir -p "$(dirname "$PLIST")" "$(dirname "$LOG")" || die "could not create $(dirname "$PLIST") or $(dirname "$LOG")"
+cat > "$PLIST" <<EOF || die "could not write $PLIST"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">

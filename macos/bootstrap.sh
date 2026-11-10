@@ -15,13 +15,24 @@
 # In order: name the Mac, install Homebrew (with the Xcode command-line tools), gh, jq and node,
 # sign gh in, clone or pull dotfiles and the overlay repo, write ai/secrets/machine.local.psd1, run
 # macos/setup.sh and macos/install-sync-agent.sh, then each overlay's own macos/bootstrap.sh, and
-# deploy the skill secrets when this Mac can decrypt them. It asks for the password once, and gh
+# deploy the skill secrets when this Mac can decrypt them. It asks for the password once, on stdin
+# (and hands it to Homebrew's sudo for the run, through SUDO_ASKPASS, so no cask installer asks), and gh
 # signs in through the browser when it is not signed in; nothing else waits for a person. Safe to
 # re-run: each step skips what is already done.
+#
+# DOTFILES_BRANCH and OVERLAY_BRANCH, when set, clone dotfiles and the overlay repo at those branches
+# instead of their default ones, so a branch is tried on a new Mac before it merges (dotfiles-private's
+# personal/machines/drill/mac-drill.sh --branch). A checkout already there is pulled as it stands.
 
 set -u
 
 DOTFILES_URL="${DOTFILES_URL:-https://github.com/hugoforte/dotfiles.git}"
+DOTFILES_BRANCH="${DOTFILES_BRANCH:-}"
+OVERLAY_BRANCH="${OVERLAY_BRANCH:-}"
+
+# On a terminal, Homebrew 7 asks before installing anything, and its "[y/n]" would be one more
+# thing waiting for a person; so would every brew run under this one, setup.sh's included.
+HOMEBREW_NO_ASK=1; export HOMEBREW_NO_ASK
 
 say()  { printf '\033[0;34m%s\033[0m\n' "$1"; }
 ok()   { printf '\033[0;32m[OK] %s\033[0m\n' "$1"; }
@@ -53,12 +64,57 @@ done
 
 # --- The password, once ------------------------------------------------------------------------------
 
-# Ask now, then keep sudo's memory of it fresh until this script ends, so no installer asks again.
-# Not when sudo needs no password: -v still asks then, unless every sudoers rule says NOPASSWD.
-sudo -n true 2> /dev/null || sudo -v || die "sudo is needed to install Homebrew and name the Mac"
-( while kill -0 $$ 2> /dev/null; do sudo -n true; sleep 50; done ) > /dev/null 2>&1 &
+# sudo's cached credentials do not last: Homebrew runs `sudo --reset-timestamp` before its first sudo
+# of each run (Library/Homebrew/utils/sudo.sh), so the first cask whose installer needs root asks
+# again. Homebrew runs sudo -A, which asks a helper, when SUDO_ASKPASS is set. So ask here, once, and
+# hand the password to a helper kept in a folder only this user can open, until this script ends.
+# Not when sudo needs no password (sudo -v would still ask then, unless every sudoers rule says NOPASSWD).
+keepalive="" askpass_dir=""
+cleanup() {
+    [ -z "$keepalive" ] || kill "$keepalive" 2> /dev/null
+    [ -z "$askpass_dir" ] || rm -rf "$askpass_dir"
+    [ ! -t 0 ] || stty echo 2> /dev/null
+}
+trap cleanup EXIT
+trap 'exit 1' INT TERM HUP
+
+sudo -k
+if ! sudo -n true 2> /dev/null; then
+    askpass_dir="$(mktemp -d "${TMPDIR:-/tmp}/bootstrap-askpass.XXXXXX")" || die "could not create a folder for the sudo password helper"
+    chmod 700 "$askpass_dir" || die "could not restrict $askpass_dir"
+    attempts=0
+    while :; do
+        # Echo off before the prompt shows, so an answer typed the moment it appears is not echoed.
+        [ ! -t 0 ] || stty -echo 2> /dev/null
+        printf 'Password: ' >&2
+        # A last line without a newline still counts: read fails on it, but keeps what it read.
+        password="" read_status=0
+        IFS= read -r password || [ -n "$password" ] || read_status=1
+        [ ! -t 0 ] || { stty echo 2> /dev/null; echo >&2; }
+        [ "$read_status" = 0 ] || die "sudo is needed to install Homebrew and name the Mac: no password was given"
+        if refusal="$(printf '%s\n' "$password" | sudo -S -p '' -v 2>&1 > /dev/null)"; then break; fi
+        # A user sudo will not take at all is told why at once, not asked twice more.
+        case "$refusal" in
+            *sudoers*|*"may not run sudo"*) die "sudo is needed to install Homebrew and name the Mac: $refusal" ;;
+        esac
+        attempts=$((attempts + 1))
+        [ "$attempts" -lt 3 ] || die "sudo is needed to install Homebrew and name the Mac: 3 passwords were refused${refusal:+ ($refusal)}"
+        warn "Sorry, try again."
+    done
+    ( umask 077 && printf '%s' "$password" > "$askpass_dir/password" ) || die "could not write the sudo password helper"
+    unset password
+    printf '#!/bin/sh\nexec cat "%s/password"\n' "$askpass_dir" > "$askpass_dir/askpass" || die "could not write the sudo password helper"
+    chmod 700 "$askpass_dir/askpass" || die "could not restrict the sudo password helper"
+    SUDO_ASKPASS="$askpass_dir/askpass"; export SUDO_ASKPASS
+fi
+
+# Refresh the cached credentials until this script ends: Homebrew forgets them, and plain sudo
+# elsewhere in the run uses them.
+( while kill -0 $$ 2> /dev/null; do
+      if [ -n "$askpass_dir" ]; then sudo -A -v; else sudo -n true; fi
+      sleep 50
+  done ) > /dev/null 2>&1 &
 keepalive=$!
-trap 'kill "$keepalive" 2> /dev/null' EXIT
 
 # --- Name ---------------------------------------------------------------------------------------------
 
@@ -103,15 +159,23 @@ fi
 
 # --- Clones ------------------------------------------------------------------------------------------
 
-# fetch <url> <folder>: clone the repo there, or pull it when it is already there
+# fetch <url> <folder> [branch]: clone the repo there, at the branch when one is given, or pull it
+# when it is already there
 fetch() {
     if [ -d "$2/.git" ]; then
+        # A branch asked for is only cloned at: a checkout already here is pulled where it stands.
+        if [ -n "${3:-}" ] && [ "$(git -C "$2" branch --show-current)" != "$3" ]; then
+            warn "$2 is on $(git -C "$2" branch --show-current), not $3: running what is there; switch it to $3 to try that branch"
+        fi
         git -C "$2" pull --ff-only --quiet || die "git pull in $2 failed"
         ok "$2 is up to date"
     elif [ -e "$2" ]; then
         die "$2 exists and is not a git checkout"
-    else
+    elif [ -n "${3:-}" ]; then
         # gh, so a private repo clones with its sign-in.
+        gh repo clone "$1" "$2" -- --quiet --branch "$3" || die "could not clone $1 at $3 to $2"
+        ok "Cloned $1 at $3 to $2"
+    else
         gh repo clone "$1" "$2" -- --quiet || die "could not clone $1 to $2"
         ok "Cloned $1 to $2"
     fi
@@ -120,7 +184,7 @@ fetch() {
 mkdir -p "$DIR" || die "could not create $DIR"
 DIR="$(cd "$DIR" && pwd -P)"
 DOTFILES="$DIR/dotfiles"
-fetch "$DOTFILES_URL" "$DOTFILES"
+fetch "$DOTFILES_URL" "$DOTFILES" "$DOTFILES_BRANCH"
 
 case "$OVERLAY_REPO" in
     *://*|git@*|/*) overlay_url="$OVERLAY_REPO" ;;
@@ -128,7 +192,7 @@ case "$OVERLAY_REPO" in
 esac
 overlay_name="$(basename "$OVERLAY_REPO" .git)"
 OVERLAY_DIR="$DIR/$overlay_name"
-fetch "$overlay_url" "$OVERLAY_DIR"
+fetch "$overlay_url" "$OVERLAY_DIR" "$OVERLAY_BRANCH"
 
 # --- machine.local.psd1 ------------------------------------------------------------------------------
 
@@ -197,11 +261,12 @@ sh "$DOTFILES/macos/setup.sh" || FAILED=1
 sh "$DOTFILES/macos/install-sync-agent.sh" || FAILED=1
 
 # Each overlay's own steps: what is one person's or one employer's, so dotfiles cannot name it.
-while IFS= read -r script; do
+# The list is read from fd 3, so a script that reads stdin cannot swallow the scripts after it.
+while IFS= read -r script <&3; do
     [ -n "$script" ] || continue
     say "Running ${script}…"
     sh "$script" || FAILED=1
-done <<EOF
+done 3<<EOF || FAILED=1
 $(overlay_sources macos/bootstrap.sh)
 EOF
 

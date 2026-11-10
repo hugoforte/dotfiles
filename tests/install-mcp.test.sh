@@ -123,8 +123,9 @@ rm "$file" && printf '{}\n' > "$file"
 
 # Claude Code's lock on the file is held: the sync waits, then leaves it for the next one.
 mkdir "$file.lock"
-out="$(run)"
+out="$(run)"; rc=$?
 assert_eq "install leaves a locked ~/.claude.json alone" '{}' "$(jq -c . "$file")"
+assert_eq "and still succeeds, so the sync goes on to its other steps" "0" "$rc"
 assert_eq "and says it is locked" "y" "$(says "$out" "is locked")"
 assert_eq "and leaves Claude Code's lock in place" "y" "$(if [ -d "$file.lock" ]; then echo y; else echo n; fi)"
 rmdir "$file.lock"

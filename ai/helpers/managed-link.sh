@@ -5,7 +5,8 @@
 # same policy in PowerShell (docs/adr/0003-back-up-then-link.md).
 #
 # POSIX sh has no `local`: these assign src, dst, backup and actual in the caller's shell.
-# check_link and check_orphans set CHECK_FAILED=1 on drift; the caller reads it.
+# check_link and check_orphans set CHECK_FAILED=1 on drift; the caller reads it. link sets FAILED=1
+# when it could not link, for a caller that runs it in a loop and so loses its return status.
 
 # On Git Bash (MSYS), `ln -s` silently copies unless native symlinks are enabled.
 # Native symlinks need Windows Developer Mode or an elevated shell.
@@ -47,10 +48,10 @@ link() {
     if [ -L "$dst" ]; then
         rm -f "$dst"
     elif [ -e "$dst" ]; then
-        move_aside "$dst" "$3" || return 1
+        move_aside "$dst" "$3" || { FAILED=1; return 1; }
         warning "$dst was not a symlink - backed it up to $backup"
     fi
-    ln -s "$src" "$dst"
+    ln -s "$src" "$dst" || { error "Could not link $dst to $src"; FAILED=1; return 1; }
 }
 
 # same_path <a> <b>: true when both spell the same path (without case on Windows)

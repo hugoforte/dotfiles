@@ -112,6 +112,24 @@ assert_eq "when launchctl cannot load the agent, install fails" "1" "$rc"
 assert_eq "and says so" "y" "$(says "could not load")"
 rm "$work/bootstrap-fails"
 
+# A write that fails, such as a full disk, fails the install, naming the plist. A LaunchAgents
+# directory nobody can write into stands in for the disk; skipped where that cannot fail (root).
+ro_home="$work/ro home"
+ro_agents="$ro_home/Library/LaunchAgents"
+mkdir -p "$ro_agents"
+chmod 500 "$ro_agents"
+if [ -w "$ro_agents" ]; then
+    echo "  SKIP  an unwritable LaunchAgents directory cannot be made here"
+else
+    rm -f "$work/launchctl.log"
+    out="$(cd "$work" && HOME="$ro_home" sh "$REPO_ROOT/macos/install-cswap-agent.sh" 2>&1)"; rc=$?
+    assert_eq "when the plist cannot be written, install fails" "1" "$rc"
+    assert_eq "and names the plist it could not write" "y" "$(says "could not write $ro_agents/local.dotfiles.cswap-auto.plist")"
+    assert_eq "and does not report the agent installed" "n" "$(says "Installed the LaunchAgent")"
+    assert_eq "and loads nothing" "" "$(calls | grep '^bootstrap')"
+fi
+chmod 700 "$ro_agents"
+
 out="$(agent --bogus)"; rc=$?
 assert_eq "an unknown option fails" "1" "$rc"
 assert_eq "and names it" "y" "$(says "Unknown option: --bogus")"

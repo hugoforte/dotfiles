@@ -69,4 +69,34 @@ assert_eq "--uninstall unloads the agent" "bootout gui/$uid/local.dotfiles.sync"
 assert_eq "--uninstall removes an older checkout's agent too" "n" "$(exists "$old")"
 assert_eq "--uninstall removes the plist" "n" "$(exists "$plist")"
 
+# A write that fails, such as a full disk, is a failed install: no success line, a non-zero exit, and
+# the path it could not write. A LaunchAgents directory nobody can write into stands in for the disk.
+# Skipped where that cannot be made to fail (root writes anywhere).
+says() { case "$1" in *"$2"*) echo y ;; *) echo n ;; esac; }
+ro_home="$work/ro home"
+ro_agents="$ro_home/Library/LaunchAgents"
+mkdir -p "$ro_agents"
+chmod 500 "$ro_agents"
+if [ -w "$ro_agents" ]; then
+    echo "  SKIP  an unwritable LaunchAgents directory cannot be made here"
+else
+    : > "$work/launchctl.log"
+    out="$(cd "$work" && HOME="$ro_home" sh "$REPO_ROOT/macos/install-sync-agent.sh" 2>&1)"; rc=$?
+    assert_eq "when the plist cannot be written, install fails" "1" "$rc"
+    assert_eq "and names the plist it could not write" "y" "$(says "$out" "could not write $ro_agents/local.dotfiles.sync.plist")"
+    assert_eq "and does not report the agent installed" "n" "$(says "$out" "Installed the LaunchAgent")"
+    assert_eq "and loads nothing" "" "$(grep '^bootstrap' "$work/launchctl.log")"
+fi
+chmod 700 "$ro_agents"
+
+# launchctl refusing the plist fails the install too.
+fail_stubs="$work/fail-stubs"
+mkdir -p "$fail_stubs"
+printf '#!/bin/sh\n[ "$1" != bootstrap ] && [ "$1" != print ]\n' > "$fail_stubs/launchctl"
+chmod +x "$fail_stubs/launchctl"
+out="$(cd "$work" && PATH="$fail_stubs:$PATH" sh "$REPO_ROOT/macos/install-sync-agent.sh" 2>&1)"; rc=$?
+assert_eq "when launchctl cannot load the agent, install fails" "1" "$rc"
+assert_eq "and says so" "y" "$(says "$out" "launchctl could not load")"
+assert_eq "and does not report the agent installed" "n" "$(says "$out" "Installed the LaunchAgent")"
+
 assert_summary "macos/install-sync-agent.sh"
