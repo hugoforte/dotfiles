@@ -127,6 +127,9 @@ rm -rf "$src"
 out="$(run --overlays "$fixture_overlays" --only personal --dir "$src")"; rc=$?
 assert_eq "without them, each is cloned at its default branch" \
     "$(git -C "$fixture_dotfiles" branch --show-current)" "$(git -C "$src/dotfiles" branch --show-current)"
+out="$(DOTFILES_BRANCH=feat/try run --overlays "$fixture_overlays" --only personal --dir "$src")"
+assert_eq "DOTFILES_BRANCH over a checkout on another branch says it runs what is there" "y" \
+    "$(says "$out" "not feat/try: running what is there")"
 
 rm -rf "$src"
 out="$(run --overlays "$fixture_overlays" --only missing --dir "$src")"; rc=$?
@@ -166,6 +169,16 @@ askpass="$(sed -n 's/^sudo askpass //p' "$STUB_STATE/log" | head -1)"
 assert_eq "Homebrew's sudo asked through a SUDO_ASKPASS helper" "y" "$([ -n "$askpass" ] && echo y || echo n)"
 assert_eq "the helper and the password it hands out are gone when the run ends" "n" \
     "$([ -n "$askpass" ] && { [ -e "$askpass" ] || [ -e "$(dirname "$askpass")" ]; } && echo y || echo n)"
+if [ -z "${MSYS:-}" ]; then
+    assert_eq "... and while it ran, only this user could open the folder or read the password" \
+        "$(printf 'drwx------\n-rw-------')" "$(cat "$STUB_STATE/modes" 2> /dev/null)"
+fi
+# As a word: the output names ai/secrets/, which is no leak.
+assert_eq "the password never reaches the output" "n" "$(printf '%s' "$out" | grep -qw secret && echo y || echo n)"
+
+rm -rf "$src"; : > "$STUB_STATE/log"
+out="$(printf 'secret' | run --overlays "$fixture_overlays" --dir "$src")"; rc=$?
+assert_eq "a password piped in without a newline is taken" "0" "$rc"
 
 rm -rf "$src"
 out="$(printf 'wrong\nwrong\nwrong\n' | run --overlays "$fixture_overlays" --dir "$src")"; rc=$?

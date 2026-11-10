@@ -17,6 +17,9 @@ authenticated() {
     [ -e "$cache" ] && return 0
     if [ "$1" = A ] && [ -n "${SUDO_ASKPASS:-}" ]; then
         echo "sudo askpass $SUDO_ASKPASS" >> "$log"
+        # The helper's folder and the password file beside it, as `ls -l` shows their modes.
+        ls -ld "$(dirname "$SUDO_ASKPASS")" "$(dirname "$SUDO_ASKPASS")/password" 2> /dev/null \
+            | cut -c1-10 > "$STUB_STATE/modes"
         [ "$("$SUDO_ASKPASS")" = secret ] && : > "$cache" && return 0
     fi
     [ "$1" = Q ] || echo "sudo asked" >> "$log"

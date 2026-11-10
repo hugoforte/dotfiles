@@ -87,12 +87,18 @@ if ! sudo -n true 2> /dev/null; then
         # Echo off before the prompt shows, so an answer typed the moment it appears is not echoed.
         [ ! -t 0 ] || stty -echo 2> /dev/null
         printf 'Password: ' >&2
-        IFS= read -r password; read_status=$?
+        # A last line without a newline still counts: read fails on it, but keeps what it read.
+        password="" read_status=0
+        IFS= read -r password || [ -n "$password" ] || read_status=1
         [ ! -t 0 ] || { stty echo 2> /dev/null; echo >&2; }
         [ "$read_status" = 0 ] || die "sudo is needed to install Homebrew and name the Mac: no password was given"
-        if printf '%s\n' "$password" | sudo -S -p '' -v 2> /dev/null; then break; fi
+        if refusal="$(printf '%s\n' "$password" | sudo -S -p '' -v 2>&1 > /dev/null)"; then break; fi
+        # A user sudo will not take at all is told why at once, not asked twice more.
+        case "$refusal" in
+            *sudoers*|*"may not run sudo"*) die "sudo is needed to install Homebrew and name the Mac: $refusal" ;;
+        esac
         attempts=$((attempts + 1))
-        [ "$attempts" -lt 3 ] || die "sudo is needed to install Homebrew and name the Mac: 3 passwords were refused"
+        [ "$attempts" -lt 3 ] || die "sudo is needed to install Homebrew and name the Mac: 3 passwords were refused${refusal:+ ($refusal)}"
         warn "Sorry, try again."
     done
     ( umask 077 && printf '%s' "$password" > "$askpass_dir/password" ) || die "could not write the sudo password helper"
@@ -157,6 +163,10 @@ fi
 # when it is already there
 fetch() {
     if [ -d "$2/.git" ]; then
+        # A branch asked for is only cloned at: a checkout already here is pulled where it stands.
+        if [ -n "${3:-}" ] && [ "$(git -C "$2" branch --show-current)" != "$3" ]; then
+            warn "$2 is on $(git -C "$2" branch --show-current), not $3: running what is there; switch it to $3 to try that branch"
+        fi
         git -C "$2" pull --ff-only --quiet || die "git pull in $2 failed"
         ok "$2 is up to date"
     elif [ -e "$2" ]; then
