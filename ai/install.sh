@@ -578,8 +578,9 @@ set_mcp_servers() {
     until mkdir "$1.lock" 2> /dev/null; do
         tries=$((tries + 1))
         if [ "$tries" -ge 10 ]; then
+            # Not a failure: Claude Code is writing the file, and the next sync sets the servers.
             warning "$1 is locked ($1.lock) - MCP servers left for the next sync"
-            return 1
+            return 0
         fi
         sleep 1
     done
