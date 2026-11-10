@@ -210,7 +210,7 @@ while IFS= read -r brewfile <&3; do
         bundle_failed=true
         FAILED=1
     fi
-done 3<<EOF
+done 3<<EOF || FAILED=1
 $brewfiles
 EOF
 
