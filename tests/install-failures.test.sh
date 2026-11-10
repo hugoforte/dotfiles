@@ -81,6 +81,8 @@ no_files() { (ulimit -f 0 && trap '' XFSZ && "$@"); }
 probe="$(no_files sh -c 'cat <<EOF > /dev/null
 x
 EOF' 2>&1)"
+# Only a here-document's own failure counts: Git Bash refuses the ulimit itself.
+case "$probe" in *"here-document"*|*"here document"*) ;; *) probe="" ;; esac
 if [ -z "$probe" ]; then
     echo "  SKIP  this shell's here-documents do not fail with a file size limit of zero"
 else

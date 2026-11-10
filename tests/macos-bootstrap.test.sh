@@ -169,10 +169,12 @@ askpass="$(sed -n 's/^sudo askpass //p' "$STUB_STATE/log" | head -1)"
 assert_eq "Homebrew's sudo asked through a SUDO_ASKPASS helper" "y" "$([ -n "$askpass" ] && echo y || echo n)"
 assert_eq "the helper and the password it hands out are gone when the run ends" "n" \
     "$([ -n "$askpass" ] && { [ -e "$askpass" ] || [ -e "$(dirname "$askpass")" ]; } && echo y || echo n)"
-if [ -z "${MSYS:-}" ]; then
+# Git Bash keeps no POSIX modes, so there they cannot be checked. /usr/bin/uname, since uname on
+# PATH is the stub that says Darwin.
+case "$(/usr/bin/uname -s)" in MINGW*|MSYS*|CYGWIN*) ;; *)
     assert_eq "... and while it ran, only this user could open the folder or read the password" \
-        "$(printf 'drwx------\n-rw-------')" "$(cat "$STUB_STATE/modes" 2> /dev/null)"
-fi
+        "$(printf 'drwx------\n-rw-------')" "$(cat "$STUB_STATE/modes" 2> /dev/null)" ;;
+esac
 # As a word: the output names ai/secrets/, which is no leak.
 assert_eq "the password never reaches the output" "n" "$(printf '%s' "$out" | grep -qw secret && echo y || echo n)"
 
@@ -237,6 +239,8 @@ no_files() { (ulimit -f 0 && trap '' XFSZ && "$@"); }
 probe="$(no_files sh -c 'cat <<EOF > /dev/null
 x
 EOF' 2>&1)"
+# Only a here-document's own failure counts: Git Bash refuses the ulimit itself.
+case "$probe" in *"here-document"*|*"here document"*) ;; *) probe="" ;; esac
 if [ -z "$probe" ]; then
     echo "  SKIP  this shell's here-documents do not fail with a file size limit of zero"
 else
