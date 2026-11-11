@@ -16,7 +16,8 @@
 #
 # A 'github-release' entry installs its repo's latest release. The release is read without signing
 # in, so a public repo needs no gh; a private repo, which GitHub answers 404 without signing in, is
-# read through the signed-in gh instead (the gh-auth step below). It also needs:
+# read through the signed-in gh instead (the gh-auth step below), as is any repo while GitHub
+# rate-limits anonymous calls. It also needs:
 #   Asset        -like pattern naming the installer among the release's assets
 #   InstallArgs  arguments for a silent install
 #   Present      -like pattern for its display name under Installed apps, which is how it is found;

@@ -93,7 +93,7 @@ Describe 'Save-GitHubReleaseAsset' {
         }
     }
 
-    Context 'GitHub fails some other way than 404' {
+    Context 'GitHub refuses or fails the anonymous call some other way than 404' {
 
         It 'names the repo and does not fall back to gh' {
             Mock Invoke-RestMethod { throw (New-HttpError 500) }
@@ -102,6 +102,28 @@ Describe 'Save-GitHubReleaseAsset' {
             { Save-GitHubReleaseAsset -Repo 'example/private-app' -Pattern 'App-Setup_*_x64.exe' -Directory $dir } |
                 Should -Throw '*example/private-app*500*'
             Should -Invoke Invoke-Native -Times 0 -Exactly
+        }
+
+        It 'falls back to the signed-in gh when GitHub rate-limits the anonymous call with <_>' -ForEach 403, 429 {
+            $status = $_
+            Mock Invoke-RestMethod { throw (New-HttpError $status) }
+            Mock Invoke-Native { New-NativeResult 0 $ghRelease } -ParameterFilter { $args[2] -eq 'view' }
+            Mock Invoke-Native {
+                Set-Content -LiteralPath (Join-Path $dir $setup) -Value 'installer'
+                New-NativeResult 0
+            } -ParameterFilter { $args[2] -eq 'download' }
+
+            Save-GitHubReleaseAsset -Repo 'example/public-app' -Pattern 'App-Setup_*_x64.exe' -Directory $dir |
+                Should -Be (Join-Path $dir $setup)
+        }
+
+        It 'says it was rate limited with <_> when gh is not on PATH to fall back to' -ForEach 403, 429 {
+            $status = $_
+            Mock Invoke-RestMethod { throw (New-HttpError $status) }
+            Mock Invoke-Native { New-NativeResult $null 'gh is not a program on PATH' }
+
+            { Save-GitHubReleaseAsset -Repo 'example/public-app' -Pattern 'App-Setup_*_x64.exe' -Directory $dir } |
+                Should -Throw "*$status*example/public-app*rate limited*gh is not on PATH*"
         }
 
         It 'names the repo when there is no network at all' {
@@ -170,11 +192,11 @@ Describe 'Save-GitHubReleaseAsset' {
                 Should -Throw '*example/private-app*did not answer JSON*Welcome to GitHub CLI!*'
         }
 
-        It 'refuses, naming the repo and what to do, when gh is not on PATH' {
+        It 'refuses, naming the repo, both reasons for the 404 and what to do, when gh is not on PATH' {
             Mock Invoke-Native { New-NativeResult $null 'gh is not a program on PATH' }
 
             { Save-GitHubReleaseAsset -Repo 'example/private-app' -Pattern 'App-Setup_*_x64.exe' -Directory $dir } |
-                Should -Throw '*example/private-app*gh is not on PATH*gh auth login*'
+                Should -Throw '*example/private-app*no published release*private repo*gh is not on PATH*gh auth login*open a new shell if GitHub.cli was just installed*'
         }
 
         It 'refuses, naming the repo and saying what gh said, when gh cannot see it either' {
