@@ -11,11 +11,13 @@ BeforeAll {
     . (Join-Path $powershell 'github-release.ps1')
 
     # What Invoke-RestMethod throws for an HTTP error: an exception carrying the response, whose
-    # StatusCode 5.1 and 7 both expose.
+    # StatusCode 5.1 and 7 both expose. Through Enum.ToObject, because .NET Framework's
+    # HttpStatusCode has no member for 429, which a cast refuses and a real response carries anyway.
     function New-HttpError {
         param([int]$Status)
         $exception = [Exception]::new("Response status code does not indicate success: $Status.")
-        $exception | Add-Member -NotePropertyName Response -NotePropertyValue ([pscustomobject]@{ StatusCode = [Net.HttpStatusCode]$Status })
+        $code = [Enum]::ToObject([Net.HttpStatusCode], $Status)
+        $exception | Add-Member -NotePropertyName Response -NotePropertyValue ([pscustomobject]@{ StatusCode = $code })
         return $exception
     }
 
@@ -70,7 +72,8 @@ Describe 'Get-HttpStatusCode' {
             }
         }
 
-        It 'reads <_> from the error' -ForEach 404, 403 {
+        # 429 too: .NET Framework's HttpStatusCode names no such member.
+        It 'reads <_> from the error' -ForEach 404, 403, 429 {
             $status = $_
             try {
                 $listener = New-LocalListener
