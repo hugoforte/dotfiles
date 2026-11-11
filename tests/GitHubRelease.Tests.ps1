@@ -18,9 +18,10 @@ BeforeAll {
         return $exception
     }
 
+    # What Invoke-Native returns. StdOut is Output unless the command also wrote to stderr.
     function New-NativeResult {
-        param([object]$ExitCode, [string]$Output = '')
-        return [pscustomobject]@{ Ok = ($ExitCode -eq 0); ExitCode = $ExitCode; Output = $Output }
+        param([object]$ExitCode, [string]$Output = '', [string]$StdOut = $Output)
+        return [pscustomobject]@{ Ok = ($ExitCode -eq 0); ExitCode = $ExitCode; Output = $Output; StdOut = $StdOut }
     }
 
     # The value a native command was given for a flag: the argument after it, wherever it stands.
@@ -147,6 +148,26 @@ Describe 'Save-GitHubReleaseAsset' {
                 (Get-ArgumentAfter $args '--pattern') -eq $setup -and
                 (Get-ArgumentAfter $args '--dir') -eq $dir
             }
+        }
+
+        It 'reads the release from what gh wrote to stdout, whatever it logged to stderr (GH_DEBUG)' {
+            Mock Invoke-Native {
+                New-NativeResult 0 "[git] debug: GET /repos/example/private-app/releases/latest`n$ghRelease" $ghRelease
+            } -ParameterFilter { $args[2] -eq 'view' }
+            Mock Invoke-Native {
+                Set-Content -LiteralPath (Join-Path $dir $setup) -Value 'installer'
+                New-NativeResult 0
+            } -ParameterFilter { $args[2] -eq 'download' }
+
+            Save-GitHubReleaseAsset -Repo 'example/private-app' -Pattern 'App-Setup_*_x64.exe' -Directory $dir |
+                Should -Be (Join-Path $dir $setup)
+        }
+
+        It 'refuses, naming the repo and what gh answered, when gh release view does not answer JSON' {
+            Mock Invoke-Native { New-NativeResult 0 'Welcome to GitHub CLI!' }
+
+            { Save-GitHubReleaseAsset -Repo 'example/private-app' -Pattern 'App-Setup_*_x64.exe' -Directory $dir } |
+                Should -Throw '*example/private-app*did not answer JSON*Welcome to GitHub CLI!*'
         }
 
         It 'refuses, naming the repo and what to do, when gh is not on PATH' {

@@ -70,10 +70,14 @@ function Save-GitHubReleaseAssetSignedIn {
     if (-not $view.Ok) {
         throw "$anonymous, and the signed-in gh could not read it either (is gh auth login done, with access to $($Repo)?): $($view.Output)"
     }
+    # StdOut alone: with GH_DEBUG set, gh logs to stderr on a run that succeeds.
     try {
-        $release = $view.Output | ConvertFrom-Json
+        $release = $view.StdOut | ConvertFrom-Json -ErrorAction Stop
     } catch {
         throw "gh release view --repo $Repo did not answer JSON: $($view.Output)"
+    }
+    if ($null -eq $release) {
+        throw "gh release view --repo $Repo did not answer JSON, only: $($view.Output)"
     }
 
     $asset = Select-ReleaseAsset -Assets @($release.assets) -Pattern $Pattern

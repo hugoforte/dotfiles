@@ -17,6 +17,15 @@ Describe 'Invoke-Native' {
         (Invoke-Native cmd /c 'echo From https://example 1>&2').Output | Should -Be 'From https://example'
     }
 
+    It 'keeps stdout apart from stderr, so a caller can parse what the command answered' {
+        # The PowerShell running this test, as a native program both platforms have.
+        $shell = (Get-Process -Id $PID).Path
+        $run = Invoke-Native $shell -NoProfile -NonInteractive -Command "[Console]::Error.WriteLine('debug noise'); [Console]::Out.WriteLine('{}')"
+
+        $run.StdOut | Should -Be '{}'
+        $run.Output | Should -Match 'debug noise'
+    }
+
     It 'is not Ok when the command exits non-zero' {
         (Invoke-Native cmd /c 'exit 3').Ok | Should -BeFalse
     }
