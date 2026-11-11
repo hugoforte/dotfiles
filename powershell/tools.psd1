@@ -150,7 +150,7 @@
 
         @{ Id = 'gh-auth'
            Source = 'manual'
-           Note = 'Authenticate the GitHub CLI: gh auth login. Needed to clone private repos and by the git credential helper' }
+           Note = 'Authenticate the GitHub CLI: gh auth login. Needed to clone private repos, by the git credential helper, and to install a github-release entry from a private repo' }
 
         @{ Id = 'node-via-nvm'
            Source = 'manual'
