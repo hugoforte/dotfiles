@@ -50,11 +50,15 @@ function Save-GitHubReleaseAsset {
 
     $asset = Select-ReleaseAsset -Assets @($release.assets) -Pattern $Pattern
     $path = Join-Path $Directory $asset.name
+    # The partial file goes in finally, not catch: Ctrl+C runs no catch block.
+    $saved = $false
     try {
         Invoke-WebRequest $asset.browser_download_url -OutFile $path -UseBasicParsing
+        $saved = $true
     } catch {
-        Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
         throw "could not download $($asset.name) from the latest release of $Repo`: $($_.Exception.Message)"
+    } finally {
+        if (-not $saved) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
     }
     return $path
 }
@@ -96,14 +100,20 @@ function Save-GitHubReleaseAssetSignedIn {
     }
 
     $asset = Select-ReleaseAsset -Assets @($release.assets) -Pattern $Pattern
-    $download = Invoke-Native gh release download $release.tagName --repo $Repo --pattern $asset.name --dir $Directory --clobber
-    if (-not $download.Ok) {
-        Remove-Item -LiteralPath (Join-Path $Directory $asset.name) -Force -ErrorAction SilentlyContinue
-        throw "gh release download of $($asset.name) from $Repo $($release.tagName) failed: $($download.Output)"
-    }
     $path = Join-Path $Directory $asset.name
-    if (-not (Test-Path -LiteralPath $path)) {
-        throw "gh release download of $($asset.name) from $Repo $($release.tagName) reported success, but $path is not there"
+    # The partial file goes in finally, which runs on a failure and on Ctrl+C alike.
+    $saved = $false
+    try {
+        $download = Invoke-Native gh release download $release.tagName --repo $Repo --pattern $asset.name --dir $Directory --clobber
+        if (-not $download.Ok) {
+            throw "gh release download of $($asset.name) from $Repo $($release.tagName) failed: $($download.Output)"
+        }
+        if (-not (Test-Path -LiteralPath $path)) {
+            throw "gh release download of $($asset.name) from $Repo $($release.tagName) reported success, but $path is not there"
+        }
+        $saved = $true
+    } finally {
+        if (-not $saved) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
     }
     return $path
 }

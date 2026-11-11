@@ -91,6 +91,15 @@ Describe 'Save-GitHubReleaseAsset' {
                 Should -Throw '*example/public-app*connection reset*'
             Join-Path $dir $setup | Should -Not -Exist
         }
+
+        It 'removes the partial file when the download is interrupted, as by Ctrl+C, which no catch sees' {
+            Mock Invoke-WebRequest { Set-Content -LiteralPath $OutFile -Value 'half'; break interrupted }
+
+            :interrupted foreach ($once in 1) {
+                Save-GitHubReleaseAsset -Repo 'example/public-app' -Pattern 'App-Setup_*_x64.exe' -Directory $dir
+            }
+            Join-Path $dir $setup | Should -Not -Exist
+        }
     }
 
     Context 'GitHub refuses or fails the anonymous call some other way than 404' {
@@ -232,6 +241,31 @@ Describe 'Save-GitHubReleaseAsset' {
 
             { Save-GitHubReleaseAsset -Repo 'example/private-app' -Pattern 'App-Setup_*_x64.exe' -Directory $dir } |
                 Should -Throw "*$setup*example/private-app*HTTP 502*"
+        }
+
+        It 'removes the partial file gh leaves when its download fails' {
+            Mock Invoke-Native { New-NativeResult 0 $ghRelease } -ParameterFilter { $args[2] -eq 'view' }
+            Mock Invoke-Native {
+                Set-Content -LiteralPath (Join-Path $dir $setup) -Value 'half'
+                New-NativeResult 1 'connection reset'
+            } -ParameterFilter { $args[2] -eq 'download' }
+
+            { Save-GitHubReleaseAsset -Repo 'example/private-app' -Pattern 'App-Setup_*_x64.exe' -Directory $dir } |
+                Should -Throw '*connection reset*'
+            Join-Path $dir $setup | Should -Not -Exist
+        }
+
+        It 'removes the partial file when the gh download is interrupted, as by Ctrl+C' {
+            Mock Invoke-Native { New-NativeResult 0 $ghRelease } -ParameterFilter { $args[2] -eq 'view' }
+            Mock Invoke-Native {
+                Set-Content -LiteralPath (Join-Path $dir $setup) -Value 'half'
+                break interrupted
+            } -ParameterFilter { $args[2] -eq 'download' }
+
+            :interrupted foreach ($once in 1) {
+                Save-GitHubReleaseAsset -Repo 'example/private-app' -Pattern 'App-Setup_*_x64.exe' -Directory $dir
+            }
+            Join-Path $dir $setup | Should -Not -Exist
         }
 
         It 'refuses when gh says it downloaded but the file is not there' {
