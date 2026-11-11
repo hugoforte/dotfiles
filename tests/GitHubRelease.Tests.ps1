@@ -1,7 +1,8 @@
 # powershell/github-release.ps1: fetching a github-release entry's installer, anonymously for a
 # public repo and through the signed-in gh for a private one. GitHub and gh are mocks
-# (Invoke-RestMethod, Invoke-WebRequest and Invoke-Native), so no request is made and gh is never
-# run; a "download" writes a file under TestDrive:.
+# (Invoke-RestMethod, Invoke-WebRequest and Invoke-Native), so no request reaches GitHub and gh is
+# never run; a "download" writes a file under TestDrive:. Get-HttpStatusCode alone is also asked of
+# a real Invoke-RestMethod against an HttpListener on localhost.
 
 BeforeAll {
     $powershell = Join-Path (Split-Path $PSScriptRoot -Parent) 'powershell'
@@ -48,6 +49,58 @@ Describe 'Get-HttpStatusCode' {
 
     It 'is null for a failure that was not an HTTP answer, such as no network' {
         try { throw 'No such host is known.' } catch { Get-HttpStatusCode -ErrorRecord $_ | Should -BeNullOrEmpty }
+    }
+
+    # What 5.1 throws (a WebException) and what 7 throws (an HttpResponseException) differ, and a
+    # hand-built exception proves neither, so these ask a real local server.
+    Context 'what a real Invoke-RestMethod throws' {
+
+        BeforeAll {
+            # An HttpListener on a free localhost port. Throws where the platform will not let this
+            # user bind one, such as http.sys on Windows without a URL reservation.
+            function New-LocalListener {
+                $probe = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+                $probe.Start()
+                $port = $probe.LocalEndpoint.Port
+                $probe.Stop()
+                $listener = [Net.HttpListener]::new()
+                $listener.Prefixes.Add("http://localhost:$port/")
+                $listener.Start()
+                return $listener
+            }
+        }
+
+        It 'reads <_> from the error' -ForEach 404, 403 {
+            $status = $_
+            try {
+                $listener = New-LocalListener
+            } catch [Net.HttpListenerException] {
+                Set-ItResult -Skipped -Because "an HttpListener cannot bind localhost on this platform: $($_.Exception.Message)"
+                return
+            }
+            # The answer comes from another runspace, because Invoke-RestMethod blocks this one.
+            $server = [powershell]::Create().AddScript({
+                param($Listener, $Status)
+                $context = $Listener.GetContext()
+                $context.Response.StatusCode = $Status
+                $context.Response.Close()
+            }).AddArgument($listener).AddArgument($status)
+            $handle = $server.BeginInvoke()
+            try {
+                $read = 'no error thrown'
+                try {
+                    Invoke-RestMethod ($listener.Prefixes | Select-Object -First 1) -UseBasicParsing -TimeoutSec 10 | Out-Null
+                } catch {
+                    $read = Get-HttpStatusCode -ErrorRecord $_
+                }
+                $read | Should -Be $status
+            } finally {
+                # Closing the listener ends a GetContext no request reached.
+                $listener.Close()
+                $null = $handle.AsyncWaitHandle.WaitOne(5000)
+                $server.Dispose()
+            }
+        }
     }
 }
 
