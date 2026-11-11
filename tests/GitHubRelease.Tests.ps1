@@ -199,11 +199,23 @@ Describe 'Save-GitHubReleaseAsset' {
                 Should -Throw '*example/private-app*no published release*private repo*gh is not on PATH*gh auth login*open a new shell if GitHub.cli was just installed*'
         }
 
-        It 'refuses, naming the repo and saying what gh said, when gh cannot see it either' {
-            Mock Invoke-Native { New-NativeResult 1 'release not found' }
+        It 'says the repo has no published release when gh can see the repo but not a latest release' {
+            Mock Invoke-Native { New-NativeResult 1 'release not found' } -ParameterFilter { $args[2] -eq 'view' }
+            Mock Invoke-Native { New-NativeResult 0 } -ParameterFilter { $args[1] -eq 'api' }
 
             { Save-GitHubReleaseAsset -Repo 'example/private-app' -Pattern 'App-Setup_*_x64.exe' -Directory $dir } |
-                Should -Throw '*example/private-app*gh auth login done, with access to example/private-app?*release not found*'
+                Should -Throw '*gh can see example/private-app but it has no published latest release*release not found*'
+            Should -Invoke Invoke-Native -Times 1 -Exactly -ParameterFilter {
+                $args[1] -eq 'api' -and $args[2] -eq 'repos/example/private-app' -and $args -contains '--silent'
+            }
+        }
+
+        It 'says the signed-in account cannot see the repo, and how to fix it, when gh cannot see the repo either' {
+            Mock Invoke-Native { New-NativeResult 1 'release not found' } -ParameterFilter { $args[2] -eq 'view' }
+            Mock Invoke-Native { New-NativeResult 1 'HTTP 404: Not Found' } -ParameterFilter { $args[1] -eq 'api' }
+
+            { Save-GitHubReleaseAsset -Repo 'example/private-app' -Pattern 'App-Setup_*_x64.exe' -Directory $dir } |
+                Should -Throw '*the signed-in gh account cannot see example/private-app*gh auth status*gh auth login*gh auth switch*release not found*'
         }
 
         It 'refuses a pattern no asset of the release matches, naming the pattern' {

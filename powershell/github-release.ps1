@@ -76,7 +76,14 @@ function Save-GitHubReleaseAssetSignedIn {
         throw "$Refusal. gh is not on PATH to ask signed in: install GitHub.cli and run gh auth login, or open a new shell if GitHub.cli was just installed"
     }
     if (-not $view.Ok) {
-        throw "$Refusal. The signed-in gh could not read it either (is gh auth login done, with access to $($Repo)?): $($view.Output)"
+        # gh release view fails alike for a repo with no release, a repo the signed-in account
+        # cannot see and a token GitHub refuses; whether gh can read the repo itself tells the first
+        # from the other two.
+        $repoCheck = Invoke-Native gh api "repos/$Repo" --silent
+        if ($repoCheck.Ok) {
+            throw "$Refusal. gh can see $Repo but it has no published latest release: $($view.Output)"
+        }
+        throw "$Refusal. The signed-in gh account cannot see $Repo`: check gh auth status, then gh auth login or gh auth switch. gh said: $($view.Output)"
     }
     # StdOut alone: with GH_DEBUG set, gh logs to stderr on a run that succeeds.
     try {
