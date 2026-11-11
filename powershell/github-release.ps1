@@ -32,7 +32,9 @@ function Save-GitHubReleaseAsset {
     $release = $null
     $refusal = $null
     try {
-        $release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -UseBasicParsing
+        # A timeout on this small call only, so a GitHub that never answers fails the entry; the
+        # download below has none, because a healthy installer of hundreds of MB can take minutes.
+        $release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -UseBasicParsing -TimeoutSec 30
     } catch {
         $status = Get-HttpStatusCode -ErrorRecord $_
         if ($status -eq 404) {

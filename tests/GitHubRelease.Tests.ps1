@@ -126,6 +126,13 @@ Describe 'Save-GitHubReleaseAsset' {
             Should -Invoke Invoke-WebRequest -Times 1 -Exactly -ParameterFilter { $Uri -eq "https://example/$setup" }
         }
 
+        It 'gives up on the release lookup after 30 seconds, but lets the download take as long as it takes' {
+            Save-GitHubReleaseAsset -Repo 'example/public-app' -Pattern 'App-Setup_*_x64.exe' -Directory $dir | Out-Null
+
+            Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter { $TimeoutSec -eq 30 }
+            Should -Invoke Invoke-WebRequest -Times 1 -Exactly -ParameterFilter { -not $TimeoutSec }
+        }
+
         It 'never runs gh, so a machine without it still installs public entries' {
             Save-GitHubReleaseAsset -Repo 'example/public-app' -Pattern 'App-Setup_*_x64.exe' -Directory $dir | Out-Null
 
