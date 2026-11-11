@@ -23,6 +23,14 @@ BeforeAll {
         return [pscustomobject]@{ Ok = ($ExitCode -eq 0); ExitCode = $ExitCode; Output = $Output }
     }
 
+    # The value a native command was given for a flag: the argument after it, wherever it stands.
+    function Get-ArgumentAfter {
+        param([object[]]$Arguments, [string]$Flag)
+        $index = [array]::IndexOf($Arguments, $Flag)
+        if ($index -lt 0) { return $null }
+        return $Arguments[$index + 1]
+    }
+
     $setup = 'App-Setup_1.2.0_x64.exe'
     $assets = @(
         @{ name = 'latest.json'; browser_download_url = 'https://example/latest.json' }
@@ -133,12 +141,11 @@ Describe 'Save-GitHubReleaseAsset' {
             Save-GitHubReleaseAsset -Repo 'example/private-app' -Pattern 'App-Setup_*_x64.exe' -Directory $dir | Out-Null
 
             Should -Invoke Invoke-Native -Times 1 -Exactly -ParameterFilter {
-                $line = $args -join ' '
                 $args[2] -eq 'download' -and
-                $line -like "* v1.2.0 *" -and
-                $line -like "*--repo example/private-app *" -and
-                $line -like "*--pattern $setup *" -and
-                $line -like "*--dir $dir *"
+                $args[3] -eq 'v1.2.0' -and
+                (Get-ArgumentAfter $args '--repo') -eq 'example/private-app' -and
+                (Get-ArgumentAfter $args '--pattern') -eq $setup -and
+                (Get-ArgumentAfter $args '--dir') -eq $dir
             }
         }
 
