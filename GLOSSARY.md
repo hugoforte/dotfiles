@@ -72,6 +72,10 @@ _Avoid_: host, box, device
 The name a machine's own files in an overlay's `machines/` go by: the Windows computer name, or a Mac's `HostName` (else its `LocalHostName`), uppercased (`MACBOOK`). Set once, as the first step of rebuilding a machine.
 _Avoid_: hostname (a Mac has three names), machine name
 
+**Data drive**:
+The drive a Windows machine keeps its profile's caches and tool stores on instead of the system drive, named as `DataDrive` in its `machines/<KEY>.psd1`, or in its `machine.local.psd1`, which can also turn it off with `''`. A store moves to the same path on it, with a junction left at the old one.
+_Avoid_: D: (the letter is the machine's choice), cache drive
+
 **Checkout**:
 A working copy of *another* project's repo, found one level under a search root, which may host a project skill needing secrets. This repo's own working copy is "the repo" or "the dotfiles checkout" — never a bare "checkout".
 _Avoid_: clone, workspace, project (unqualified)
