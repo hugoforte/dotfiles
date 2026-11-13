@@ -155,6 +155,13 @@ try {
     $toolsFailed = $toolsExit -ne 0
     if ($toolsFailed) { Write-Log "install-tools.ps1 exited $toolsExit" }
 
+    # The stores that fill the system drive, on the machine's DataDrive: after the tools, so a
+    # store a tool installed just now moves on this sync. A store in use waits for the next one.
+    $dataDriveResult = & (Join-Path $PSScriptRoot "install-data-drive.ps1") -Quiet -PassThru
+    $dataDriveExit = $LASTEXITCODE
+    Write-ResultLog $dataDriveResult
+    if ($dataDriveExit -ne 0) { Write-Log "install-data-drive.ps1 exited $dataDriveExit" }
+
     # A link into this repo whose source the repo no longer ships is left over from a file that
     # moved out, to an overlay or away entirely.
     foreach ($path in @(Get-ChildItem -LiteralPath $env:USERPROFILE -Filter ".gitconfig-*" -Force | ForEach-Object { $_.FullName })) {
