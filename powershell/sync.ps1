@@ -160,7 +160,8 @@ try {
     $dataDriveResult = & (Join-Path $PSScriptRoot "install-data-drive.ps1") -Quiet -PassThru
     $dataDriveExit = $LASTEXITCODE
     Write-ResultLog $dataDriveResult
-    if ($dataDriveExit -ne 0) { Write-Log "install-data-drive.ps1 exited $dataDriveExit" }
+    $dataDriveFailed = $dataDriveExit -ne 0
+    if ($dataDriveFailed) { Write-Log "install-data-drive.ps1 exited $dataDriveExit" }
 
     # A link into this repo whose source the repo no longer ships is left over from a file that
     # moved out, to an overlay or away entirely.
@@ -230,6 +231,10 @@ try {
     }
     if ($toolsFailed) {
         Write-Log "sync finished, but install-tools.ps1 failed (above)"
+        exit 1
+    }
+    if ($dataDriveFailed) {
+        Write-Log "sync finished, but install-data-drive.ps1 failed (above)"
         exit 1
     }
     if ($rigFailed) {

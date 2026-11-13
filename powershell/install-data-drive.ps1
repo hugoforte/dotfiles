@@ -22,75 +22,98 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "output.ps1")
 . (Join-Path $PSScriptRoot "overlays.ps1")
+. (Join-Path $PSScriptRoot "native.ps1")
 . (Join-Path $PSScriptRoot "data-drive.ps1")
 
 $result = New-ScriptResult -Name "install-data-drive.ps1" -Quiet:$Quiet -PassThru:$PassThru
 $localPath = Join-Path (Split-Path $PSScriptRoot -Parent) "ai\secrets\machine.local.psd1"
 
-if ($DataDrive) {
-    $dataDrive = $DataDrive.TrimEnd('\')
-} else {
-    try {
+try {
+    if ($DataDrive) {
+        $drive = ConvertTo-DataDrive -Value $DataDrive -Source '-DataDrive'
+    } else {
         $overlaySet = Get-Overlays -RepoPath (Split-Path $PSScriptRoot -Parent)
         $machinePath = Get-OverlaySource -Set $overlaySet -Path "machines/{KEY}.psd1"
-        $dataDrive = Get-DataDrive -Path (@($localPath) + @($machinePath | Where-Object { $_ }))
-    } catch {
-        Fail "could not read this machine's DataDrive: $($_.Exception.Message)"
-        Exit-WithResult $result 1
+        $drive = Get-DataDrive -Path (@($localPath) + @($machinePath | Where-Object { $_ }))
     }
+} catch {
+    Fail "could not read this machine's DataDrive: $($_.Exception.Message)"
+    Exit-WithResult $result 1
 }
 
-if (-not $dataDrive) {
+if (-not $drive) {
     Say "no DataDrive for this machine; every store stays where its tool puts it" DarkGray
     Exit-WithResult $result 0
 }
-if (-not (Test-Path -LiteralPath "$dataDrive\")) {
-    Fail "DataDrive is $dataDrive, and this machine has no $dataDrive drive"
+if (-not (Test-Path -LiteralPath "$drive\")) {
+    Fail "DataDrive is $drive, and this machine has no $drive drive"
     Exit-WithResult $result 1
 }
-if ($env:USERPROFILE -like "$dataDrive\*") {
-    Say "the profile is already on $dataDrive; nothing to move" DarkGray
+if ($env:USERPROFILE -like "$drive\*") {
+    Say "the profile is already on $drive; nothing to move" DarkGray
     Exit-WithResult $result 0
 }
 
 $pending = 0
+$root = Get-DataDriveTarget -DataDrive $drive -ProfilePath $env:USERPROFILE -Relative ''
+switch (Initialize-DataDriveProfile -ProfilePath $env:USERPROFILE -Root $root -Check:$Check) {
+    'AlreadySecure' { Ok "$root has the profile's access list" }
+    'Created'       { Change "made $root with the profile's access list" }
+    'Secured'       { Change "gave $root the profile's access list in place of the drive's" }
+    'Unsecured'     { Warn "$root inherits $drive's access list; would give it the profile's"; $pending++ }
+    'Missing'       { Say "$root not made yet" DarkGray }
+}
+
 foreach ($store in (Get-DataDriveStores)) {
     $path = Join-Path $env:USERPROFILE $store.Relative
-    $target = Get-DataDriveTarget -DataDrive $dataDrive -ProfilePath $env:USERPROFILE -Relative $store.Relative
-
-    # Before the move, so a program started while it runs already uses the data drive.
-    if ($store.Variable) {
-        $current = [Environment]::GetEnvironmentVariable($store.Variable, 'User')
-        if ($current -ine $target) {
-            if ($Check) {
-                Warn "$($store.Variable) is '$current', not '$target'"
-                $pending++
-            } else {
-                [Environment]::SetEnvironmentVariable($store.Variable, $target, 'User')
-                Change "set $($store.Variable)=$target; programs started from now on use it"
-            }
-        }
-    }
+    $target = Get-DataDriveTarget -DataDrive $drive -ProfilePath $env:USERPROFILE -Relative $store.Relative
 
     try {
         $state = Get-StoreState -Path $path -Target $target
-        if ($Check) {
+
+        # Before the move, so a program started while it runs already uses the data drive.
+        if ($store.Variable -and $state -ne 'LinkedElsewhere') {
+            $current = [Environment]::GetEnvironmentVariable($store.Variable, 'User')
+            $action = Get-StoreVariableAction -Current $current -Path $path -Target $target
+            if ($action -eq 'Foreign') {
+                Warn "$($store.Variable) is '$current', which someone chose; left alone, so $path is not moved"
+                continue
+            }
+            if ($action -eq 'Set') {
+                if ($Check) { Warn "$($store.Variable) is '$current', not '$target'"; $pending++ }
+                else {
+                    [Environment]::SetEnvironmentVariable($store.Variable, $target, 'User')
+                    Change "set $($store.Variable)=$target; programs started from now on use it"
+                }
+            }
+        }
+
+        $holder = $null
+        if ($state -in 'OnSystem', 'Interrupted') { $holder = Get-StoreHolder -Path $path -Processes $store.Processes }
+        if ($Check -or $holder) {
             switch ($state) {
                 'Moved'           { Ok "$path -> $target" }
                 'Absent'          { Say "$path not made on this machine" DarkGray }
-                'OnSystem'        { Warn "$path is on the system drive; would move it to $target"; $pending++ }
                 'LinkedElsewhere' { Warn "$path links somewhere other than $target; left alone" }
+                'Broken'          { Warn "$path is a junction to $target, which is gone"; $pending++ }
+                'OnBoth'          { Warn "$path and $target both hold the store; keep one and delete the other"; $pending++ }
+                default {
+                    if ($holder) { Todo "$path is in use by $holder; it moves on a run once $holder has stopped" }
+                    else { Warn "$path is $state; would move it to $target" }
+                    $pending++
+                }
             }
-        } elseif ($state -eq 'OnSystem' -and ($holder = Get-StoreHolder -Path $path -Processes $store.Processes)) {
-            Todo "$path is in use by $holder; it moves on a run once $holder has stopped"
-            $pending++
-        } else {
-            switch (Move-StoreToDataDrive -Path $path -Target $target) {
-                'Moved'  { if ($state -eq 'Moved') { Ok "$path -> $target" } else { Change "moved $path to $target" } }
-                'Absent' { Say "$path not made on this machine" DarkGray }
-                'InUse'  { Todo "$path is in use; it moves once the program holding it has stopped"; $pending++ }
-                'Recreated' { Todo "moved $path to $target, but a program made $path again meanwhile; the next run merges it"; $pending++ }
-            }
+            continue
+        }
+
+        switch (Move-StoreToDataDrive -Path $path -Target $target) {
+            'Moved'     { if ($state -eq 'Moved') { Ok "$path -> $target" } else { Change "moved $path to $target" } }
+            'Relinked'  { Change "linked $path to $target, which already held the store" }
+            'Absent'    { Say "$path not made on this machine" DarkGray }
+            'InUse'     { Todo "$path is in use; it moves once the program holding it has stopped"; $pending++ }
+            'Recreated' { Warn "moved $path to $target, but a program made $path again meanwhile; keep one and delete the other"; $pending++ }
+            'Broken'    { Warn "$path is a junction to $target, which is gone"; $pending++ }
+            'OnBoth'    { Warn "$path and $target both hold the store; keep one and delete the other"; $pending++ }
         }
     } catch {
         Fail $_.Exception.Message
