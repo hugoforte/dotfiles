@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- A machine with a data drive keeps its profile's caches and tool stores there. `DataDrive = 'D:'` in an overlay's `machines/<KEY>.psd1` (or `machine.local.psd1`) has `install-data-drive.ps1`, run by setup and every sync, move each store (npm, NuGet, Hugging Face, uv, pip, Playwright, Puppeteer, Gradle, Cargo, rustup, Codex runtimes, VS Code extensions, Hermes, T3) to the same path on that drive, leave a junction at the old path, and set the tool's location variable where it has one.
+  - The data drive's copy of the profile folder gets the profile's own access list, not the drive's.
+  - Links inside a store move as links.
+  - A store whose program is running waits for a later sync.
+  - A move that stopped partway resumes.
+  - A store found on both drives, or a variable someone pointed elsewhere, is reported and left alone.
+  - A failed run fails the sync.
+
 - A `github-release` entry can install from a private repo. `install-tools.ps1` read the latest release without signing in, which GitHub answers 404 for a private repo, so such an entry could never install. `powershell/github-release.ps1`'s `Save-GitHubReleaseAsset` still asks without signing in first, so a public entry such as `hugoforte/openwhispr` needs no `gh`; on a 404, or on the 403 or 429 GitHub rate-limits anonymous calls with, it asks the signed-in `gh` (`gh release view`, then `gh release download` of the one matching asset). Any other failure, `gh` missing or not signed in, or a release with no matching asset fails the entry with a message naming the repo; when `gh` cannot read the release either, the message says whether `gh` can see the repo (it has no published release) or not (check `gh auth status`). `tests/GitHubRelease.Tests.ps1` covers both paths with GitHub and `gh` mocked.
 
 - A brand-new Mac goes through `macos/bootstrap.sh` with nobody at it but for the password and the browser sign-in (#106). dotfiles-private's MacBook drill, which runs a fresh macOS VM through the bootstrap, found five failures:

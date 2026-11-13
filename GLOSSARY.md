@@ -73,7 +73,7 @@ The name a machine's own files in an overlay's `machines/` go by: the Windows co
 _Avoid_: hostname (a Mac has three names), machine name
 
 **Data drive**:
-The drive a Windows machine keeps its profile's caches and tool stores on instead of the system drive, named as `DataDrive` in its `machines/<KEY>.psd1`. A store moves to the same path on it, with a junction left at the old one.
+The drive a Windows machine keeps its profile's caches and tool stores on instead of the system drive, named as `DataDrive` in its `machines/<KEY>.psd1`, or in its `machine.local.psd1`, which can also turn it off with `''`. A store moves to the same path on it, with a junction left at the old one.
 _Avoid_: D: (the letter is the machine's choice), cache drive
 
 **Checkout**:
