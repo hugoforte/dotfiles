@@ -210,16 +210,20 @@ function New-StoreLink {
     )
     $at = Join-Path $Root $Link.Relative
     New-Item -ItemType Directory -Path (Split-Path $at) -Force | Out-Null
-    if ($Link.Kind -eq 'Junction') {
-        New-Item -ItemType Junction -Path $at -Target $Link.Target | Out-Null
-        return
-    }
-    $mklink = if ($Link.IsDirectory) {
+    # mklink, not New-Item, for junctions too: New-Item refuses a target that does not exist, and a
+    # junction into the store by its own path (an npm workspace's node_modules) points at a path that
+    # only exists again once the store's own junction is made.
+    $mklink = if ($Link.Kind -eq 'Junction') {
+        Invoke-Native cmd /c mklink /J "`"$at`"" "`"$($Link.Target)`""
+    } elseif ($Link.IsDirectory) {
         Invoke-Native cmd /c mklink /D "`"$at`"" "`"$($Link.Target)`""
     } else {
         Invoke-Native cmd /c mklink "`"$at`"" "`"$($Link.Target)`""
     }
-    if (-not $mklink.Ok) { throw "could not make the symlink $at -> $($Link.Target) (enable Developer Mode or run elevated): $($mklink.Output)" }
+    if (-not $mklink.Ok) {
+        $what = if ($Link.Kind -eq 'Junction') { 'junction' } else { 'symlink (enable Developer Mode or run elevated)' }
+        throw "could not make the $what $at -> $($Link.Target): $($mklink.Output)"
+    }
 }
 
 # Moves Source's whole tree into Target, junctions and symlinks moved as links rather than followed

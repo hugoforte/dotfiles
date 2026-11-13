@@ -170,6 +170,19 @@ Describe 'Move-StoreToDataDrive' {
         }
     }
 
+    It 'moves a junction that points into the store by its own path' {
+        # An npm workspace links node_modules\<pkg> to a folder beside it by absolute path; while
+        # the store is renamed aside, that path does not exist.
+        New-Item -ItemType Directory -Path "$path\app\ui", "$path\app\node_modules" -Force | Out-Null
+        Set-Content "$path\app\ui\index.js" 'ui'
+        New-Item -ItemType Junction -Path "$path\app\node_modules\ui" -Target "$path\app\ui" | Out-Null
+
+        Move-StoreToDataDrive -Path $path -Target $target | Should -Be 'Moved'
+
+        Get-JunctionTarget -Path "$target\app\node_modules\ui" | Should -Be "$path\app\ui"
+        Get-Content "$path\app\node_modules\ui\index.js" | Should -Be 'ui'
+    }
+
     It 'finishes a move that stopped partway' {
         New-Item -ItemType Directory -Path "$path.moving-to-data-drive", $target -Force | Out-Null
         Set-Content "$path.moving-to-data-drive\rest.txt" 'not yet moved'
