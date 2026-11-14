@@ -287,6 +287,9 @@ Write-Host ""
 Write-Host "Installing declared tools..." -ForegroundColor Green
 & (Join-Path $PSScriptRoot "install-tools.ps1")
 Write-Host ""
+Write-Host "Moving stores to the data drive..." -ForegroundColor Green
+& (Join-Path $PSScriptRoot "install-data-drive.ps1")
+Write-Host ""
 
 Write-Host "=== Setup Complete ===" -ForegroundColor Cyan
 Write-Host ""
