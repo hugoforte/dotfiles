@@ -154,7 +154,7 @@
 
         @{ Id = 'node-via-nvm'
            Source = 'manual'
-           Note = 'Install and select a Node.js once NVM for Windows is in, from an elevated terminal (nvm refuses to run without a console): nvm install lts, then nvm use lts. Then keep global npm packages in one place for every Node version: npm config set prefix "$env:APPDATA\npm" --location=user. The npm entries need both. A machine set up when this manifest declared OpenJS.NodeJS still has it, and its C:\Program Files\nodejs is where NVM puts its link: winget uninstall OpenJS.NodeJS first, elevated. Its MSI set that same prefix, so the npm entries it installed are still there once the prefix is set' }
+           Note = 'Install and select a Node.js once NVM for Windows is in, from an elevated terminal (nvm refuses to run without a console): nvm install lts, then nvm use lts. Then keep global npm packages in one place for every Node version: npm config set prefix "$env:APPDATA\npm" --location=user. From the dotfiles powershell directory, run: . .\user-path.ps1; Add-UserPathEntry -Directory (Join-Path $env:APPDATA "npm"). Open a new terminal from Start (restart existing terminal apps), then verify Get-Command npm.cmd before installing npm tools and Get-Command claude.cmd,codex.cmd after installation. The prefix and its user PATH entry are both required. A machine set up when this manifest declared OpenJS.NodeJS still has it, and its C:\Program Files\nodejs is where NVM puts its link: winget uninstall OpenJS.NodeJS first, elevated. Its MSI set that same prefix, so the npm entries it installed are still there once the prefix is set' }
 
         @{ Id = 'sops-recipient'
            Source = 'manual'
