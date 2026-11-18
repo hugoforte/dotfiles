@@ -16,7 +16,7 @@
 - Once a branch's PR has merged and its changes are on the base (a squash merge counts), delete it without asking: locally with `git branch -D`, because a squash merge makes `-d` refuse, and on the remote if it is still there. A branch with commits its PR did not carry stays; say which commits.
 - When asked to look, check or explain, change nothing on disk; propose instead.
 - Send no request to a production host unless asked. Read-only database queries are fine through a skill that says so.
-- Before reporting state — a PR's checks, whether it merged, a stack, a deploy — query it again; never repeat it from earlier in the session. Do not call a failing required check unrelated or pre-existing until you show it fails the same way on the base.
+- Before reporting state (a PR's checks, whether it merged, a stack, a deploy), query it again; never repeat it from earlier in the session. Do not call a failing required check unrelated or pre-existing until you show it fails the same way on the base.
 
 ## Code
 
@@ -46,3 +46,4 @@
 - Comment only what the code cannot say itself.
 - Update the documentation a behaviour change affects, in the same change.
 - Use a real ellipsis (…) rather than three dots in human-facing text.
+- Never use an em dash (—) in anything you write, chat replies included; use a colon, comma, parentheses or a new sentence instead.
