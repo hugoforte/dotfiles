@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- An agent writes no em dash. The global `ai/CLAUDE.md` says never to use one in anything it writes (chat replies, files, commits, PR bodies, review comments) and to use a colon, comma, parentheses or a new sentence instead; the file's own em dashes are gone, so it no longer contradicts the rule.
+
 - A machine with a data drive keeps its profile's caches and tool stores there. `DataDrive = 'D:'` in an overlay's `machines/<KEY>.psd1` (or `machine.local.psd1`) has `install-data-drive.ps1`, run by setup and every sync, move each store (npm, NuGet, Hugging Face, uv, pip, Playwright, Puppeteer, Gradle, Cargo, rustup, Codex runtimes, VS Code extensions, Hermes, T3) to the same path on that drive, leave a junction at the old path, and set the tool's location variable where it has one.
   - The data drive's copy of the profile folder gets the profile's own access list, not the drive's.
   - Links inside a store move as links.
