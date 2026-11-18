@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The em dash rule covers prose only, and says why. `ai/CLAUDE.md` now says never to put an em dash in prose an agent writes (chat replies, docs, commits, PR bodies, comments), because it reads as machine-written, while exact data and quotations keep theirs. Read literally, the earlier wording had an agent alter a file name, log line or quoted text that contains one.
+
 - An agent writes no em dash. The global `ai/CLAUDE.md` says never to use one in anything it writes (chat replies, files, commits, PR bodies, review comments) and to use a colon, comma, parentheses or a new sentence instead; the file's own em dashes are gone, so it no longer contradicts the rule.
 
 - A machine with a data drive keeps its profile's caches and tool stores there. `DataDrive = 'D:'` in an overlay's `machines/<KEY>.psd1` (or `machine.local.psd1`) has `install-data-drive.ps1`, run by setup and every sync, move each store (npm, NuGet, Hugging Face, uv, pip, Playwright, Puppeteer, Gradle, Cargo, rustup, Codex runtimes, VS Code extensions, Hermes, T3) to the same path on that drive, leave a junction at the old path, and set the tool's location variable where it has one.

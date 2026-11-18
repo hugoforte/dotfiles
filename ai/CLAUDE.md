@@ -46,4 +46,4 @@
 - Comment only what the code cannot say itself.
 - Update the documentation a behaviour change affects, in the same change.
 - Use a real ellipsis (…) rather than three dots in human-facing text.
-- Never use an em dash (—) in anything you write, chat replies included; use a colon, comma, parentheses or a new sentence instead.
+- Never put an em dash (—) in prose you write (chat replies, docs, commits, PR bodies, comments), because it reads as machine-written; use a colon, comma, parentheses or a new sentence instead. Exact data and quotations keep theirs.
