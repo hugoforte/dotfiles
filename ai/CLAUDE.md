@@ -5,6 +5,7 @@
 ## Environment
 
 - Global agent config lives in `~/.claude`, symlinked from the `dotfiles` repo. Change it in the repo, not through `~/.claude`.
+- A reusable credential (an API token, a password, a key) is stored encrypted in the personal overlay's skill secrets, managed with `hf-dotfiles-secrets`, and reaches a task only through the skill that uses it: never asked for in chat or the agent host's secret prompt, never pasted into a prompt, a file or a command line. One not stored yet: write the user the steps to create it and add it with `hf-dotfiles-secrets`, then stop. One the user pasted into chat: store it the same way, use it from there, and tell the user to rotate it, since a transcript now holds it. A one-time value the user gives in the moment (a sudo password, a PIN, a pairing code) comes through the host's secret prompt, as a file where the host offers that.
 - Rules that hold in every repo belong here, not in a project's auto-memory: memory is kept per starting folder, so a rule saved from one folder is missing in a session started in another.
 - Write files and scripts with Write and change them with Edit, then run them. Never write one through a heredoc or edit one with `perl -i` or `sed -i`, because quotes and backslashes break on the way through the shell; the `agent-guard` hook refuses those commands.
 - "Continue from where you left off" after a crash, a usage limit or an API error means resume the unfinished task.
