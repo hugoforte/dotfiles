@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `agent-guard` sends elevated steps to the elevated-runs runner. From either shell tool it refuses, with "Elevated steps go through the hf-elevate skill (`elevate request`)":
+  - `Start-Process`, `saps` or `start` with `-Verb RunAs` or `RunAsUser`, in any case and as `-Verb:RunAs`;
+  - `runas`, `gsudo` and `sudo.exe`, and `sudo` on Windows only, since on macOS and Linux it is the ordinary way to an admin step and there is no runner to send it to;
+  - running, changing, replacing or removing the `Elevated runs` scheduled task (`schtasks /run`, `/change`, `/delete`, `/create`; `Start-`, `Set-`, `Register-`, `Unregister-`, `Enable-` and `Disable-ScheduledTask`), named, by wildcard, piped in or kept in a variable; reading it and ending a run are allowed;
+  - `ssh` on Windows to the machine itself: a loopback name or address, one of its own addresses, its own name, or a name under it such as a MagicDNS name, as destination or jump host, since an admin signing in over ssh gets a full token with no UAC prompt;
+  - anything but a read, or the runner's client `elevate`, given a path in `C:\ProgramData\ElevatedRuns` (any case, either slash, `/c/…`, `%ProgramData%`, `$env:ProgramData`), or a redirect into it.
+
+  It asks before `elevate enable`, which turns a disabled runner back on. Code handed to `powershell` or `pwsh` (`-Command`, `-File`, `-EncodedCommand`, or a bare command), `cmd /c`, `bash -c` and `Invoke-Expression` is judged too, and quoted strings stay one word, so a commit message that names these commands passes. It is a soft control: it sees only the commands Claude Code's tools are given, not what a script does, a path built at run time or an ssh `Host` alias; the runner's approval is the gate. `tests/agent-guard.test.sh` covers each rule with a refused case, a near miss and a quoted one
+
 - The em dash rule covers prose only, and says why. `ai/CLAUDE.md` now says never to put an em dash in prose an agent writes (chat replies, docs, commits, PR bodies, comments), because it reads as machine-written, while exact data and quotations keep theirs. Read literally, the earlier wording had an agent alter a file name, log line or quoted text that contains one.
 
 - An agent writes no em dash. The global `ai/CLAUDE.md` says never to use one in anything it writes (chat replies, files, commits, PR bodies, review comments) and to use a colon, comma, parentheses or a new sentence instead; the file's own em dashes are gone, so it no longer contradicts the rule.
