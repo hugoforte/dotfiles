@@ -329,6 +329,113 @@ assert_eq "a commit message naming elevate enable is allowed" "allow" \
     "$(decision Bash "git commit -m \"elevate enable asks first\"")"
 assert_eq "a refused elevation wins over elevate enable" "deny" \
     "$(decision PowerShell "elevate enable; runas /user:admin cmd")"
+assert_eq "elevate enable after an option asks first" "ask" \
+    "$(decision PowerShell "elevate --thread t1 enable")"
+
+# PowerShell's own syntax: here-strings, script blocks, groups, escapes and continuations.
+assert_eq "a here-string commit message with an apostrophe, naming runas, is allowed" "allow" \
+    "$(decision PowerShell "git commit -m @'${nl}agent-guard: don't miss it${nl}runas /user:x is refused${nl}'@")"
+assert_eq "a double-quoted here-string body naming the runner's root is allowed" "allow" \
+    "$(decision PowerShell "gh pr create --body @\"${nl}It's here:${nl}Writes into C:\ProgramData\ElevatedRuns go through elevate${nl}\"@")"
+assert_eq "a here-string kept in a variable, naming ssh localhost, is allowed" "allow" \
+    "$(decision_on win32 PowerShell "\$m = @'${nl}Don't:${nl}ssh localhost${nl}'@${nl}git commit -m \$m")"
+assert_eq "Start-Process -Verb RunAs in a script block is refused" "deny" \
+    "$(decision PowerShell "if (-not \$isAdmin) { Start-Process pwsh -Verb RunAs -ArgumentList \"-File x.ps1\"; exit }")"
+assert_eq "Start-Process -Verb RunAs after the call operator on a block is refused" "deny" \
+    "$(decision PowerShell "powershell -Command \"& {Start-Process pwsh -Verb RunAs}\"")"
+assert_eq "Start-Process -Verb RunAs in a group is refused" "deny" \
+    "$(decision PowerShell "\$p = (Start-Process pwsh -Verb RunAs)")"
+assert_eq "Start-Process -Verb RunAs assigned with no spaces is refused" "deny" \
+    "$(decision PowerShell "\$p=Start-Process pwsh -Verb RunAs -PassThru")"
+assert_eq "Start-Process with typographic dash and quotes is refused" "deny" \
+    "$(decision PowerShell "Start-Process pwsh –Verb ‘RunAs’")"
+assert_eq "Start-Process -Verb RunAs in a double-quoted subexpression is refused" "deny" \
+    "$(decision PowerShell "Write-Output \"\$(Start-Process pwsh -Verb RunAs)\"")"
+assert_eq "a PowerShell line ending in a backslash does not join the next" "deny" \
+    "$(decision PowerShell "Set-Location D:\\${nl}Start-Process pwsh -Verb RunAs")"
+assert_eq "a backslash before a PowerShell closing quote does not escape it" "deny" \
+    "$(decision PowerShell "Get-ChildItem \"C:\Temp\\\"; Remove-Item \"C:\ProgramData\ElevatedRuns\inbox\r.json\"")"
+assert_eq "an unquoted \${env:ProgramData} path into the runner's root is refused" "deny" \
+    "$(decision PowerShell "Remove-Item \${env:ProgramData}\ElevatedRuns\inbox\r.json")"
+assert_eq "a doubled quote inside a PowerShell string keeps it one word" "allow" \
+    "$(decision PowerShell "git commit -m 'it''s: runas /user:x is refused'")"
+
+# The more ways in: interpreters, pipes, wrappers' redirects, assignments, ssh's other forms.
+assert_eq "node writing into the runner's root is refused" "deny" \
+    "$(decision Bash "node -e \"require('fs').writeFileSync('C:/ProgramData/ElevatedRuns/inbox/r.json', '{}')\"")"
+assert_eq "python writing into the runner's root is refused" "deny" \
+    "$(decision Bash "python -c \"open(r'C:\\ProgramData\\ElevatedRuns\\inbox\\r.json','w').write('x')\"")"
+assert_eq "a listing piped into Remove-Item is refused" "deny" \
+    "$(decision PowerShell "Get-ChildItem C:\ProgramData\ElevatedRuns\inbox | Remove-Item -Force")"
+assert_eq "a listing piped into a ForEach-Object block that removes is refused" "deny" \
+    "$(decision PowerShell "gci C:\ProgramData\ElevatedRuns\inbox | ForEach-Object { Remove-Item \$_ }")"
+assert_eq "a listing piped into xargs is refused" "deny" \
+    "$(decision Bash "ls /c/ProgramData/ElevatedRuns/inbox/* | xargs rm")"
+assert_eq "a listing piped into a reader is allowed" "allow" \
+    "$(decision PowerShell "Get-ChildItem C:\ProgramData\ElevatedRuns -Recurse | Sort-Object LastWriteTime | Select-Object -Last 5")"
+assert_eq "a wrapper's own redirect into the runner's root is refused" "deny" \
+    "$(decision Bash "bash -c \"echo hi\" > C:/ProgramData/ElevatedRuns/inbox/r.json")"
+assert_eq "the task named in a variable, then started, is refused" "deny" \
+    "$(decision PowerShell "\$n = 'Elevated runs'; Start-ScheduledTask -TaskName \$n")"
+assert_eq "Disable-ScheduledTask on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "Disable-ScheduledTask -TaskName 'Elevated runs'")"
+assert_eq "schtasks /create over Elevated runs is refused" "deny" \
+    "$(decision PowerShell "schtasks /create /tn \"Elevated runs\" /tr x.exe /sc once /st 00:00 /f")"
+assert_eq "ssh through -o ProxyJump to the machine is refused" "deny" \
+    "$(decision_on win32 Bash "ssh -o ProxyJump=localhost other")"
+assert_eq "ssh to the machine under timeout is refused" "deny" \
+    "$(decision_on win32 Bash "timeout 10 ssh localhost whoami")"
+assert_eq "ssh to the machine in a quoted command substitution is refused" "deny" \
+    "$(decision_on win32 Bash "echo \"\$(ssh localhost whoami)\"")"
+assert_eq "sudo on Windows in an assignment's command substitution is refused" "deny" \
+    "$(decision_on win32 Bash "x=\"\$(sudo whoami)\"")"
+assert_eq "ssh to a bracketed IPv6 loopback is refused" "deny" \
+    "$(decision_on win32 Bash "ssh -p 22 admin@[::1]")"
+assert_eq "ssh to the machine's name with a trailing dot is refused" "deny" \
+    "$(decision_on win32 Bash "ssh box1.")"
+assert_eq "scp to the machine is refused" "deny" \
+    "$(decision_on win32 Bash "scp x.ps1 admin@localhost:C:/Temp/")"
+assert_eq "sftp to the machine is refused" "deny" \
+    "$(decision_on win32 Bash "sftp admin@box1:/c/Temp")"
+assert_eq "scp from a Windows drive path to another machine is allowed" "allow" \
+    "$(decision_on win32 Bash "scp C:/Temp/x.ps1 admin@box2:C:/Temp/")"
+assert_eq "runas under env is refused" "deny" \
+    "$(decision Bash "env FOO=1 runas //user:admin cmd")"
+assert_eq "runas after an assignment is refused" "deny" \
+    "$(decision Bash "FOO=1 runas //user:admin cmd")"
+assert_eq "a dot-sourced elevate enable asks first" "ask" \
+    "$(decision PowerShell ". ./elevate.ps1 enable")"
+assert_eq "Start-Process -Verb RunAs through iex is refused" "deny" \
+    "$(decision PowerShell "iex 'Start-Process pwsh -Verb RunAs'")"
+encoded_short="$(node -e "process.stdout.write(Buffer.from('runas /user:admin cmd', 'utf16le').toString('base64'))")"
+assert_eq "runas in an -ec encoded command is refused" "deny" \
+    "$(decision PowerShell "powershell -ec $encoded_short")"
+assert_eq "Start-Process -Verb RunAs through cmd /k is refused" "deny" \
+    "$(decision Bash "cmd //k powershell -c Start-Process pwsh -Verb RunAs")"
+
+# The runner's root spelled every way the shells spell it, and the reads around it.
+assert_eq "a write into the runner's root by its short name is refused" "deny" \
+    "$(decision PowerShell "Set-Content C:\PROGRA~3\ElevatedRuns\inbox\r.json x")"
+assert_eq "a write into %ALLUSERSPROFILE%'s runner root is refused" "deny" \
+    "$(decision Bash "cmd //c del %ALLUSERSPROFILE%\\\\ElevatedRuns\\\\inbox\\\\r.json")"
+assert_eq "a write into the runner's root by its long-path prefix is refused" "deny" \
+    "$(decision PowerShell "Remove-Item '\\\\?\C:\ProgramData\ElevatedRuns\inbox\r.json'")"
+assert_eq "a write into the runner's root under /mnt/c is refused" "deny" \
+    "$(decision Bash "touch /mnt/c/ProgramData/ElevatedRuns/inbox/r.json")"
+assert_eq "a write into the runner's root under /cygdrive/c is refused" "deny" \
+    "$(decision Bash "touch /cygdrive/c/ProgramData/ElevatedRuns/inbox/r.json")"
+assert_eq "a write into the runner's root given as --opt=path is refused" "deny" \
+    "$(decision Bash "rsync x --temp-dir=/c/ProgramData/ElevatedRuns/inbox y")"
+assert_eq "copying a result out of the runner's root is allowed" "allow" \
+    "$(decision PowerShell "Copy-Item C:\ProgramData\ElevatedRuns\results\r.json .")"
+assert_eq "copying into the runner's root with cp -t is refused" "deny" \
+    "$(decision Bash "cp -t /c/ProgramData/ElevatedRuns/inbox r.json")"
+assert_eq "reading the runner's results with jq is allowed" "allow" \
+    "$(decision Bash "jq . /c/ProgramData/ElevatedRuns/results/r.json")"
+assert_eq "icacls reading the runner's root is allowed" "allow" \
+    "$(decision PowerShell "icacls C:\ProgramData\ElevatedRuns")"
+assert_eq "icacls granting on the runner's root is refused" "deny" \
+    "$(decision PowerShell "icacls C:\ProgramData\ElevatedRuns /grant Users:F")"
 
 assert_eq "a call with no command is allowed" "allow" \
     "$(echo '{"tool_name":"Read","tool_input":{"file_path":"a"}}' | node "$guard" | wc -c | tr -d ' ' | sed 's/^0$/allow/')"
