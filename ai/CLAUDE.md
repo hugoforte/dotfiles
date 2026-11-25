@@ -9,6 +9,7 @@
 - Rules that hold in every repo belong here, not in a project's auto-memory: memory is kept per starting folder, so a rule saved from one folder is missing in a session started in another.
 - Write files and scripts with Write and change them with Edit, then run them. Never write one through a heredoc or edit one with `perl -i` or `sed -i`, because quotes and backslashes break on the way through the shell; the `agent-guard` hook refuses those commands.
 - "Continue from where you left off" after a crash, a usage limit or an API error means resume the unfinished task.
+- On Windows, an elevated step goes through the `hf-elevate` skill (`elevate request`), and only there, because its runner binds the user's approval to exactly what runs. Never elevate any other way: no `Start-Process -Verb RunAs`, `runas`, `sudo` or `gsudo`, no running or changing the `Elevated runs` task, no ssh to the machine itself, no writes into `C:\ProgramData\ElevatedRuns`. The `agent-guard` hook refuses those, and asks before `elevate enable`, which turns a disabled runner back on and is the user's call. Where the runner is not installed, hand the step to the user.
 
 ## Acting outside the work
 

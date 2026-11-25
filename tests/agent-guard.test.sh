@@ -437,6 +437,16 @@ assert_eq "icacls reading the runner's root is allowed" "allow" \
 assert_eq "icacls granting on the runner's root is refused" "deny" \
     "$(decision PowerShell "icacls C:\ProgramData\ElevatedRuns /grant Users:F")"
 
+# The hook sees only the shell tools, so the settings fragment keeps Claude Code's file tools out
+# of the runner's root with deny rules. An Edit rule covers Write and NotebookEdit too; Windows
+# paths match in POSIX form, and the docs do not say whether that is case-sensitive.
+fragment="$REPO_ROOT/ai/claude/settings.json"
+denies() { jq -r --arg rule "$1" '[.permissions.deny // [] | .[] | select(. == $rule)] | length' "$fragment"; }
+assert_eq "the file tools are denied the runner's root" "1" \
+    "$(denies 'Edit(//c/ProgramData/ElevatedRuns/**)')"
+assert_eq "the file tools are denied the runner's root in lower case" "1" \
+    "$(denies 'Edit(//c/programdata/elevatedruns/**)')"
+
 assert_eq "a call with no command is allowed" "allow" \
     "$(echo '{"tool_name":"Read","tool_input":{"file_path":"a"}}' | node "$guard" | wc -c | tr -d ' ' | sed 's/^0$/allow/')"
 
