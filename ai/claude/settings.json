@@ -70,7 +70,7 @@
     ],
     "deny": [
       "Edit(//c/ProgramData/ElevatedRuns/**)",
-      "Edit(//c/programdata/elevatedruns/**)"
+      "Edit(//**/ProgramData/ElevatedRuns/**)"
     ]
   }
 }

@@ -266,9 +266,12 @@ function sshToSelf(argv, machine) {
 // copy whose destination is elsewhere, or icacls without a switch that changes access. An
 // interpreter counts when its code or arguments name the root anywhere. Moving into the root
 // with cd counts, since what follows would write there by a relative path.
-const rootPattern = String.raw`(?:(?:\\\\\?\\)?[a-z]:[\\/]+(?:programdata|progra~3)`
-    + String.raw`|\/(?:mnt\/|cygdrive\/)?[a-z]\/+(?:programdata|progra~3)|%(?:programdata|allusersprofile)%`
-    + String.raw`|\$(?:env:|\{env:|\{|\(\$env:)?(?:programdata|allusersprofile)[})]?)[\\/]+elevatedruns(?![\w.-])`;
+// ProgramData is also reached through its short name and the `All Users` and `Application Data`
+// junctions, and a path may carry the `\\?\` or `\\.\` prefix.
+const programData = String.raw`(?:programdata(?:[\\/]+application data)?|progra~\d|users[\\/]+all users)`;
+const rootPattern = String.raw`(?:(?:\\\\[?.]\\)?[a-z]:[\\/]+${programData}`
+    + String.raw`|\/(?:mnt\/|cygdrive\/)?[a-z]\/+${programData}|%(?:programdata|allusersprofile)%`
+    + String.raw`|\$(?:env:|\{env:|\{|\(\$env:)?(?:programdata|allusersprofile)[})]?)[\\/]+(?:elevatedruns|elevat~\d)(?![\w.-])`;
 const runnerRoot = new RegExp(`^${rootPattern}`, 'i');
 const runnerRootAnywhere = new RegExp(`(?<!\\w)${rootPattern}`, 'i');
 const namesRunnerRoot = (word) => runnerRoot.test(word.replace(/^(?:-{1,2}[\w-]+[:=]|\w+=)/, ''));

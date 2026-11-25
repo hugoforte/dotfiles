@@ -420,6 +420,16 @@ assert_eq "a write into %ALLUSERSPROFILE%'s runner root is refused" "deny" \
     "$(decision Bash "cmd //c del %ALLUSERSPROFILE%\\\\ElevatedRuns\\\\inbox\\\\r.json")"
 assert_eq "a write into the runner's root by its long-path prefix is refused" "deny" \
     "$(decision PowerShell "Remove-Item '\\\\?\C:\ProgramData\ElevatedRuns\inbox\r.json'")"
+assert_eq "a write into the runner's root by its device prefix is refused" "deny" \
+    "$(decision PowerShell "Set-Content '\\\\.\C:\ProgramData\ElevatedRuns\inbox\r.json' x")"
+assert_eq "a write into the runner's root through All Users is refused" "deny" \
+    "$(decision PowerShell "Set-Content 'C:\Users\All Users\ElevatedRuns\inbox\r.json' x")"
+assert_eq "a write into the runner's root through Application Data is refused" "deny" \
+    "$(decision PowerShell "Set-Content 'C:\ProgramData\Application Data\ElevatedRuns\inbox\r.json' x")"
+assert_eq "a write into the runner's root by both short names is refused" "deny" \
+    "$(decision PowerShell "Set-Content C:\PROGRA~3\ELEVAT~1\inbox\r.json x")"
+assert_eq "a write into another short-named folder of ProgramData is allowed" "allow" \
+    "$(decision PowerShell "Set-Content C:\PROGRA~3\OTHER~1\x.txt y")"
 assert_eq "a write into the runner's root under /mnt/c is refused" "deny" \
     "$(decision Bash "touch /mnt/c/ProgramData/ElevatedRuns/inbox/r.json")"
 assert_eq "a write into the runner's root under /cygdrive/c is refused" "deny" \
@@ -439,13 +449,13 @@ assert_eq "icacls granting on the runner's root is refused" "deny" \
 
 # The hook sees only the shell tools, so the settings fragment keeps Claude Code's file tools out
 # of the runner's root with deny rules. An Edit rule covers Write and NotebookEdit too; Windows
-# paths match in POSIX form, and the docs do not say whether that is case-sensitive.
+# paths match in POSIX form, case-insensitively, and a `\\?\` path only matches a `//**/` rule.
 fragment="$REPO_ROOT/ai/claude/settings.json"
 denies() { jq -r --arg rule "$1" '[.permissions.deny // [] | .[] | select(. == $rule)] | length' "$fragment"; }
 assert_eq "the file tools are denied the runner's root" "1" \
     "$(denies 'Edit(//c/ProgramData/ElevatedRuns/**)')"
-assert_eq "the file tools are denied the runner's root in lower case" "1" \
-    "$(denies 'Edit(//c/programdata/elevatedruns/**)')"
+assert_eq "the file tools are denied the runner's root under any prefix or drive" "1" \
+    "$(denies 'Edit(//**/ProgramData/ElevatedRuns/**)')"
 
 assert_eq "a call with no command is allowed" "allow" \
     "$(echo '{"tool_name":"Read","tool_input":{"file_path":"a"}}' | node "$guard" | wc -c | tr -d ' ' | sed 's/^0$/allow/')"

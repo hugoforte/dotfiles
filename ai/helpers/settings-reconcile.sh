@@ -25,7 +25,9 @@
 #
 # Arrays union in both write directions and neither direction deletes, so an
 # entry only leaves a file when a human removes it - except a hook of ours,
-# which merge replaces as described above. `check` reports the two
+# which merge replaces as described above. permissions.deny is merged but never
+# exported, since a machine's own deny rules can name what the public fragment
+# must not. `check` reports the two
 # asymmetries separately: repo entries absent from the live file are drift,
 # live-only entries are informational (they are the accumulated "always allow"
 # answers, kept with `merge`'s counterpart, `export`).
@@ -49,6 +51,12 @@ def reconciled($base; $incoming):
 
 def hook_paths:
     managed_paths | map(select(.[0] == "hooks"));
+
+# Managed paths export never carries back: a machine adds its own deny rules
+# through /permissions, and they can name private paths and hosts that must not
+# reach the fragment, which is public.
+def push_only:
+    [["permissions", "deny"]];
 
 def names_program($programs):
     . as $s | any($programs[]; . as $n | $s == $n or ($s | endswith("/bin/" + $n)));
@@ -190,7 +198,7 @@ reconcile_export() {
     jq --slurpfile live "$reconcile_target" --argjson programs "$reconcile_programs" "$SETTINGS_SPEC_JQ"'
         hook_paths as $hp
         | ($live[0] | strip_ours($hp; $programs)) as $l
-        | reduce (managed_paths)[] as $p (.;
+        | reduce (managed_paths - push_only)[] as $p (.;
             setpath($p; reconciled(getpath($p); value_at($l; $p))))
     ' "$reconcile_fragment" | settings_write_json "$reconcile_fragment"
 }

@@ -73,6 +73,16 @@ assert_eq "permissions.ask NOT exported"  "null" "$(jq -c '.permissions.ask' "$w
 assert_eq "top-level secret NOT exported" "null" "$(jq -c '.secretToken' "$work/fragment.json")"
 assert_eq "managed array unioned"         '["Bash(ls:*)","Read"]' "$(jq -c '.permissions.allow' "$work/fragment.json")"
 
+printf '=== 5b. export: a declared permissions.deny goes out, never back ===\n'
+setup '{"permissions":{"allow":["Read"],"deny":["Edit(//c/x/**)"]}}' '{"permissions":{"allow":["Read","Bash(ls:*)"],"deny":["Edit(//c/x/**)","Read(//d/client-secrets/**)"]}}'
+reconcile_settings export "$work/live.json" "$work/fragment.json" > /dev/null 2>&1
+show "fragment after export: $(jq -c . "$work/fragment.json")"
+assert_eq "a live-only deny entry NOT exported" '["Edit(//c/x/**)"]' "$(jq -c '.permissions.deny' "$work/fragment.json")"
+assert_eq "allow still unioned beside it"      '["Bash(ls:*)","Read"]' "$(jq -c '.permissions.allow' "$work/fragment.json")"
+setup '{"permissions":{"deny":["Edit(//c/x/**)"]}}' '{"permissions":{"deny":["Read(//d/client-secrets/**)"]}}'
+reconcile_settings merge "$work/live.json" "$work/fragment.json" > /dev/null 2>&1
+assert_eq "merge still adds the fragment's deny" '["Edit(//c/x/**)","Read(//d/client-secrets/**)"]' "$(jq -c '.permissions.deny' "$work/live.json")"
+
 printf '=== 6. merge: fragment scalars win, arrays union, unmanaged live keys survive ===\n'
 setup '{"model":"sonnet","permissions":{"allow":["Read"]}}' '{"model":"opus","permissions":{"allow":["Bash(ls:*)"],"deny":["Bash(rm:*)"]},"machineLocal":{"token":"keepme"}}'
 reconcile_settings merge "$work/live.json" "$work/fragment.json" > /dev/null 2>&1
