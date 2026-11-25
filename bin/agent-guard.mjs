@@ -111,56 +111,76 @@ function thisMachine() {
     return { platform: process.platform, names, addresses };
 }
 
-// shellWords(text, tool): the commands in text, as pipelines of argument lists. A quoted string,
-// and in PowerShell a here-string, is one word with its quotes and escapes taken off; a `$(…)` inside double
-// quotes runs, so its commands are added at the end. Line continuations are joined first: a
-// backtick in PowerShell, a backslash elsewhere. Script blocks, groups and a lone `&`
-// (PowerShell's call operator, or a background job) end a pipeline, and what can stand before a
-// command word (an assignment, `env`, `command`, `exec`, `nohup`, `time`, `timeout`, `nice`, a
-// dot-source) is dropped. PowerShell takes typographic dashes and quotes as plain ones.
+// shellWords(text, tool): the commands in text, as pipelines of argument lists, read in the syntax
+// of tool: 'Bash', 'PowerShell', or 'Cmd' for code handed to cmd. A quoted string, and in
+// PowerShell a here-string, is one word with its quotes and escapes taken off; cmd quotes only
+// with double quotes and escapes with `^`. A space escaped with a backslash, or a backtick in
+// PowerShell, stays inside its word. A `$(…)` inside double quotes runs, so its commands are added
+// at the end. Line continuations are joined first: a backtick in PowerShell, a caret in cmd, a
+// backslash elsewhere. Script blocks, groups and a lone `&` (PowerShell's call operator, or a
+// background job) end a pipeline, and what can stand before a command word is dropped: a POSIX
+// assignment, `env`, `command`, `exec`, `nohup`, `time`, `timeout`, `nice`, `builtin`, cmd's
+// `call`, `if <condition>` and `@`, a shell keyword such as `then` or `do`, and a dot-source.
+// PowerShell takes typographic dashes and quotes as plain ones.
 const placeholder = /\u0001(\d+)\u0002/g;
 const powerShellQuoted = /@'[ \t]*\r?\n[\s\S]*?\r?\n'@|@"[ \t]*\r?\n[\s\S]*?\r?\n"@|'(?:[^']|'')*'|"(?:[^"`]|`[\s\S]|"")*"/g;
-const prefixCommands = new Set(['env', 'command', 'exec', 'nohup', 'time', 'timeout', 'nice', 'builtin', 'call']);
-// unquoted(q, powerShell): a quoted string's text, its escapes taken as the shell takes them.
-function unquoted(q, powerShell) {
+const cmdQuoted = /"[^"]*"/g;
+const prefixCommands = new Set(['env', 'command', 'exec', 'nohup', 'time', 'timeout', 'nice', 'builtin', 'call',
+    'if', 'then', 'do', 'else', 'elif', 'while', 'until', '!']);
+// unquoted(q, tool): a quoted string's text, its escapes taken as the shell takes them.
+function unquoted(q, tool) {
     if (q.startsWith('@')) return q.slice(2, -2);
     const inner = q.slice(1, -1);
-    if (q.startsWith('\'')) return powerShell ? inner.replace(/''/g, '\'') : inner;
-    return powerShell ? inner.replace(/`([\s\S])/g, '$1').replace(/""/g, '"') : inner.replace(/\\([\\"$`])/g, '$1');
+    if (tool === 'Cmd') return inner;
+    if (q.startsWith('\'')) return tool === 'PowerShell' ? inner.replace(/''/g, '\'') : inner;
+    return tool === 'PowerShell' ? inner.replace(/`([\s\S])/g, '$1').replace(/""/g, '"') : inner.replace(/\\([\\"$`])/g, '$1');
 }
+const uncareted = (text) => text.replace(/\^([\s\S])/g, '$1');
 function shellWords(text, tool) {
     const powerShell = tool === 'PowerShell';
+    const cmd = tool === 'Cmd';
     const source = powerShell
         ? text.replace(/[–—―]/g, '-').replace(/[‘’‚‛]/g, '\'')
             .replace(/[“”„]/g, '"').replace(/`\r?\n/g, ' ')
-        : text.replace(/\\\r?\n/g, ' ');
+        : text.replace(cmd ? /\^\r?\n/g : /\\\r?\n/g, ' ');
     const strings = [];
     const substituted = [];
-    const hidden = source
-        .replace(powerShell ? powerShellQuoted : quoted, (q) => {
-            if (/^@?"/.test(q)) substituted.push(...[...q.matchAll(/\$\(([^()]*)\)/g)].map((m) => m[1]));
-            return `\u0001${strings.push(unquoted(q, powerShell)) - 1}\u0002`;
+    const keep = (s) => `\u0001${strings.push(s) - 1}\u0002`;
+    let hidden = source
+        .replace(powerShell ? powerShellQuoted : cmd ? cmdQuoted : quoted, (q) => {
+            if (!cmd && /^@?"/.test(q)) substituted.push(...[...q.matchAll(/\$\(([^()]*)\)/g)].map((m) => m[1]));
+            return keep(unquoted(q, tool));
         })
-        .replace(/\$\{[^{}\s]*\}/g, (v) => `\u0001${strings.push(v) - 1}\u0002`);
-    const words = (c) => withoutPrefixes(c.split(/\s+/).filter(Boolean).map((w) => w.replace(placeholder, (_, i) => strings[i])), powerShell);
+        .replace(/\$\{[^{}\s]*\}/g, keep);
+    hidden = cmd ? uncareted(hidden) : hidden.replace(powerShell ? /`([ \t])/g : /\\([ \t])/g, (_, space) => keep(space));
+    const words = (c) => withoutPrefixes(c.split(/\s+/).filter(Boolean).map((w) => w.replace(placeholder, (_, i) => strings[i])), tool);
     return [
         ...pipelines(hidden.replace(/[{})]/g, '\n')).flatMap((p) => p.split('&'))
             .map((p) => commands(p).map(words).filter((argv) => argv.length)).filter((p) => p.length),
         ...substituted.flatMap((s) => shellWords(s, tool)),
     ];
 }
-// A POSIX assignment before a command is dropped, but not in PowerShell, which has none: there a
-// word such as `TaskName='x'` is a hashtable entry and is kept.
-function withoutPrefixes(argv, powerShell = false) {
+// A POSIX assignment before a command is dropped, but not in PowerShell or cmd, which have none:
+// there a word such as `TaskName='x'` is a hashtable entry and is kept, as data (see isData).
+const cmdCondition = /^(exist|defined|errorlevel|cmdextversion)$/i;
+const cmdComparison = /^(equ|neq|lss|leq|gtr|geq)$/i;
+function withoutPrefixes(argv, tool = 'Bash') {
     let words = argv;
     for (;;) {
         const [first = '', second = ''] = words;
         if (first === 'command' && /^-[vV]$/.test(second)) return [];
-        if (first === '.') words = words.slice(1);
+        if (tool === 'Cmd' && /^[@,;=]/.test(first)) words = [first.replace(/^[@,;=]+/, ''), ...words.slice(1)].filter(Boolean);
+        else if (tool === 'Cmd' && /^if$/i.test(first)) {
+            words = words.slice(1);
+            while (/^(\/i|not)$/i.test(words[0] ?? '')) words = words.slice(1);
+            if (cmdCondition.test(words[0] ?? '')) words = words.slice(2);
+            else if (cmdComparison.test(words[1] ?? '')) words = words.slice(3);
+            else words = words.slice(1);
+        } else if (first === '.') words = words.slice(1);
         else if (/^\$[\w:]+$/.test(first) && second === '=') words = words.slice(2);
         else if (/^\$[\w:]+=/.test(first)) words = [first.replace(/^\$[\w:]+=/, ''), ...words.slice(1)].filter(Boolean);
-        else if (!powerShell && /^[A-Za-z_]\w*=/.test(first)) words = words.slice(1);
-        else if (prefixCommands.has(first)) {
+        else if (tool === 'Bash' && /^[A-Za-z_]\w*=/.test(first)) words = words.slice(1);
+        else if (prefixCommands.has(first.toLowerCase())) {
             words = words.slice(1);
             while (words[0]?.startsWith('-')) words = words.slice(1);
             if (first === 'timeout' && /^\d/.test(words[0] ?? '')) words = words.slice(1);
@@ -178,10 +198,13 @@ const abbreviates = (word, name) => /^[-/]./.test(word) && name.startsWith(word.
 // word as -Command; these are the options that take a value before it. Code handed as several
 // words is read both ways: joined into one text, which is how a single quoted command arrives, and
 // as the words themselves, since joining them drops the quotes around a name such as `Elevated
-// runs` that the calling shell took off. cmd takes `/c` with the command glued to it as well.
+// runs` that the calling shell took off. cmd takes `/r` as `/c`, its switches run together
+// (`/q/c`), and the command glued to the last of them.
 const valuedPowerShellOption = /^[-/](ex\w*|ep|w\w*|v\w*|psc\w*|inp\w*|if|o\w*|con\w*|wd|cus\w*|set\w*)$/i;
+const cmdRuns = /^(?:\/{1,2}[a-z](?::\w*)?)*?\/{1,2}[ckr]/i;
 const code = (tool, texts, argvs = []) => ({ tool, texts, argvs });
-const asText = (tool, words) => code(tool, [words.join(' ')], [withoutPrefixes(words, tool === 'PowerShell')]);
+const asText = (tool, words) => code(tool, [words.join(' ')],
+    [withoutPrefixes(tool === 'Cmd' ? words.map(uncareted) : words, tool)]);
 function handedCode(argv) {
     const name = commandName(argv[0]);
     const rest = argv.slice(1);
@@ -203,10 +226,10 @@ function handedCode(argv) {
         return i < 0 ? null : code('Bash', [rest[i + 1] ?? '']);
     }
     if (name === 'cmd') {
-        const i = rest.findIndex((w) => /^\/{1,2}[ck]/i.test(w));
+        const i = rest.findIndex((w) => cmdRuns.test(w));
         if (i < 0) return null;
-        const glued = rest[i].replace(/^\/{1,2}[ck]/i, '');
-        return asText('Bash', [...(glued ? [glued] : []), ...rest.slice(i + 1)]);
+        const glued = rest[i].replace(cmdRuns, '');
+        return asText('Cmd', [...(glued ? [glued] : []), ...rest.slice(i + 1)]);
     }
     if (name === 'invoke-expression' || name === 'iex') {
         return code('PowerShell', [rest.filter((w) => !abbreviates(w, 'command')).join(' ')]);
@@ -214,11 +237,13 @@ function handedCode(argv) {
     return null;
 }
 
-// launched(argv): the command Start-Process, its aliases, or cmd's `start` runs, as an argv, or
-// null. Its program is -FilePath or the first word that is not an option; the rest of its words
-// are its arguments, an -ArgumentList string split as the program would split it and an array
-// split at its commas. A piece is kept whole as well, since PowerShell 7 quotes an array element
-// with a space in it.
+// launched(argv): the commands Start-Process, its aliases, or cmd's `start` may run, as argvs,
+// none for another command. Its program is -FilePath or the first word that is not an option; the
+// rest of its words are its arguments, an -ArgumentList string split as the program would split it
+// and an array split at its commas. A piece is kept whole as well, since PowerShell 7 quotes an
+// array element with a space in it. cmd's `start` takes its own /switches before the program, /d,
+// /node and /affinity with a value, and a first quoted word as the window's title; with the quotes
+// already gone, the words after the first are judged as a command too.
 const starters = ['start-process', 'saps', 'start'];
 const startOptions = {
     switches: ['wait', 'nonewwindow', 'passthru', 'usenewenvironment', 'loaduserprofile'],
@@ -231,7 +256,7 @@ const isOption = (name, names) => names.some((n) => n.startsWith(name));
 const argumentWords = (word) => word.split(',').flatMap((piece) => [piece,
     ...(/[\s"']/.test(piece) ? shellWords(piece.replace(/`([\s\S])/g, '$1'), 'Bash').flat(2) : [])]);
 function launched(argv) {
-    if (!starters.includes(commandName(argv[0]))) return null;
+    if (!starters.includes(commandName(argv[0]))) return [];
     let file = null;
     const args = [];
     for (let i = 1; i < argv.length; i++) {
@@ -244,10 +269,12 @@ function launched(argv) {
         else if (option && isOption(name, startOptions.args)) args.push(value());
         else if (option && isOption(name, startOptions.valued)) value();
         else if (file) args.push(word);
-        // cmd's `start` takes a quoted title and its own /switches before the program.
+        else if (/^\/(d|node|affinity)$/i.test(word)) i += 1;
         else if (word !== '' && !/^\/\w+$/.test(word)) file = word;
     }
-    return file ? [file, ...args.flatMap(argumentWords)] : null;
+    if (!file) return [];
+    const words = [file, ...args.flatMap(argumentWords)];
+    return commandName(argv[0]) === 'start' && words.length > 1 ? [words, words.slice(1)] : [words];
 }
 
 // startsElevated(argv): Start-Process, or its aliases, with -Verb RunAs or RunAsUser (another
@@ -366,37 +393,67 @@ function pipesOutOfRoot(argvs) {
 }
 
 // changesRunnerTask(argvs): a call that runs, changes, replaces or removes a scheduled task and
-// names the `Elevated runs` task anywhere in it: by name, path or wildcard to a task command, or
-// as the value of an assignment, so a task piped in or kept in a variable in the same call counts.
-// Reading it, and ending a run, are allowed. The objects' routes follow the task commands.
+// names the `Elevated runs` task anywhere in it: by name, path or wildcard to a task command, as
+// the value of an assignment, or as a word anywhere else in the call, so a task piped in, kept in a
+// variable or picked out by Where-Object in the same call counts. Reading it, and ending a run,
+// are allowed. The objects' routes follow the task commands.
 const taskCmdlet = /^(get|start|set|register|unregister|enable|disable)-scheduledtask$/;
 const changesTask = (argv) => {
     const name = commandName(argv[0]);
     if (name === 'schtasks') return argv.some((w) => /^(\/{1,2}|-)(run|change|delete|create)$/i.test(w));
     return taskCmdlet.test(name) && name !== 'get-scheduledtask';
 };
-const wildcard = (pattern) => new RegExp(`^${pattern.replace(/[.+^${}()|[\]]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`);
+// matchesWildcards(pattern, text, many, one): pattern, whose characters in many stand for any run
+// and in one for any single character, matches all of text. Linear in both, so a word made of
+// wildcards cannot hang the hook the way a backtracking RegExp would.
+function matchesWildcards(pattern, text, many, one) {
+    let row = [true, ...Array(text.length).fill(false)];
+    for (const c of pattern) {
+        const next = [many.includes(c) && row[0]];
+        for (let j = 1; j <= text.length; j++) {
+            next[j] = many.includes(c) ? next[j - 1] || row[j] : row[j - 1] && (one.includes(c) || c === text[j - 1]);
+        }
+        row = next;
+    }
+    return row[text.length];
+}
+// isRunnerTaskName(text, { wql, letter }): text, after its last backslash, is `Elevated runs` or
+// a wildcard for it: `*` and `?`, and WQL's `%` and `_` when wql. A wildcard needs a letter in it
+// when letter, so a bare `*` or `%` (ForEach-Object's alias) is not taken for the task.
+const isRunnerTaskName = (text, { wql = false, letter = false } = {}) => {
+    const task = text.trim().split('\\').pop().toLowerCase();
+    const [many, one] = wql ? ['*%', '?_'] : ['*', '?'];
+    if (![...task].some((c) => many.includes(c) || one.includes(c))) return task === 'elevated runs';
+    return task.length <= 260 && (!letter || /[a-z]/.test(task)) && matchesWildcards(task, 'elevated runs', many, one);
+};
 const namesRunnerTask = (argv) => {
     const name = commandName(argv[0]);
-    if (argv.length === 1 && argv[0].split('\\').pop().toLowerCase() === 'elevated runs') return true;
-    return (name === 'schtasks' || taskCmdlet.test(name)) && argv.slice(1).some((word) => {
-        const task = word.replace(/^-[\w-]+:/, '').split('\\').pop().toLowerCase();
-        return /[*?]/.test(task) ? wildcard(task).test('elevated runs') : task === 'elevated runs';
-    });
+    if (argv.length === 1 && isRunnerTaskName(argv[0])) return true;
+    return (name === 'schtasks' || taskCmdlet.test(name))
+        && argv.slice(1).some((word) => isRunnerTaskName(word.replace(/^-[\w-]+:/, '')));
 };
+// mentionsRunnerTask(word): any word naming the task, its comma-separated pieces included, and a
+// quoted value inside it or an assignment's value, read with WQL's wildcards as a filter's are.
+const mentionsRunnerTask = (word) => [word, ...word.split(',')].some((w) => isRunnerTaskName(w, { letter: true }))
+    || [word.replace(/^[^=]*=+/, ''), ...[...word.matchAll(/'([^']*)'|"([^"]*)"/g)].map((m) => m[1] ?? m[2])]
+        .some((w) => isRunnerTaskName(w, { wql: true, letter: true }));
+const namesRunnerTaskAnywhere = (argvs) => argvs.some(namesRunnerTask) || argvs.some((argv) => argv.some(mentionsRunnerTask));
 
 // The same through Task Scheduler's objects. COM: Schedule.Service, by ProgID or CLSID, in the call
 // with a method that runs, registers or deletes a task, or sets its Enabled, called on an object
-// (`.Run(`, `| % RunEx`). CIM and WMI: a command that invokes a method other than a Stop or a Get,
-// or sets, creates or removes an instance, in the call with MSFT_ScheduledTask or PS_ScheduledTask
-// or a *-ScheduledTask cmdlet, whose instances are of that class. Either way the call must name
-// the task: by the words the task commands take, or in any word, a quoted value inside one (a WQL
-// filter) or an assignment's value included, `%` and `_` read as WQL's wildcards.
+// (`.Run(`, `.Run.Invoke(`, `.PSObject.Methods['Run'].Invoke(`, `| % RunEx`) or by InvokeMember.
+// CIM and WMI: a command that invokes a method other than a Stop or a Get, or sets, creates or
+// removes an instance, or a method that starts, enables, disables, registers, deletes or puts
+// called on an object, in the call with MSFT_ScheduledTask or PS_ScheduledTask or a
+// *-ScheduledTask cmdlet, whose instances are of that class. Either way the call must name the
+// task, as changesRunnerTask says.
 const scheduleService = /^(schedule\.service(\.\d+)?|\{?0f87369f-a4e5-4cfc-bd3e-73e6154572dd\}?)$/i;
-const comChange = /^(run|runex|registertask|registertaskdefinition|deletetask|setsecuritydescriptor)$/i;
-const usesScheduleService = (argv) => argv.some((w) => scheduleService.test(w.replace(/^-[\w-]+:/, '')));
+const comChange = /^(run|runex|registertask|registertaskdefinition|deletetask|setsecuritydescriptor|invokemember)$/i;
+const usesScheduleService = (argv) => argv.some((w) => w.replace(/^-[\w-]+:/, '').replace(/^\[[^\]]*\]/, '')
+    .split(',').some((piece) => scheduleService.test(piece.trim())));
+const memberCalled = (word) => (/\[(\w+)\]\.invoke$/i.exec(word) ?? /\.(\w+)(\.invoke)?$/i.exec(word))?.[1] ?? '';
 const changesThroughCom = (argv) => {
-    const member = /\.(\w+)(\.invoke)?$/i.exec(argv[0])?.[1] ?? '';
+    const member = memberCalled(argv[0]);
     if (comChange.test(member)) return true;
     if (/\.enabled\s*=|\.enabled$/i.test(argv[0]) && (argv[0].includes('=') || argv[1]?.startsWith('='))) return true;
     return ['foreach-object', '%', 'foreach'].includes(commandName(argv[0])) && argv.slice(1).some((w) => comChange.test(w));
@@ -405,9 +462,10 @@ const cimInvokers = new Set(['invoke-cimmethod', 'icim', 'invoke-wmimethod', 'iw
 const cimChangers = new Set(['set-ciminstance', 'scim', 'new-ciminstance', 'ncim', 'remove-ciminstance', 'rcim',
     'set-wmiinstance', 'swmi', 'remove-wmiobject', 'rwmi']);
 const readsOrStops = /^(stop|get)/i;
+const cimMemberChange = /^(start\w*|enable\w*|disable\w*|register\w*|delete|put|invokemethod)$/i;
 function changesThroughCim(argv) {
     const name = commandName(argv[0]);
-    if (cimChangers.has(name)) return true;
+    if (cimChangers.has(name) || cimMemberChange.test(memberCalled(argv[0]))) return true;
     if (name === 'wmic') {
         const call = argv.findIndex((w) => /^call$/i.test(w));
         return call >= 0 ? !readsOrStops.test(argv[call + 1] ?? '') : argv.some((w) => /^(delete|set|create)$/i.test(w));
@@ -423,18 +481,16 @@ function changesThroughCim(argv) {
 }
 const taskClass = /(?<![a-z])(msft|ps)_scheduledtask(?![\w])/i;
 const namesTaskClass = (argv) => taskCmdlet.test(commandName(argv[0])) || argv.some((w) => taskClass.test(w));
-const isRunnerTaskName = (text) => {
-    const task = text.trim().split('\\').pop().toLowerCase();
-    if (!/[*?%_]/.test(task)) return task === 'elevated runs';
-    const pattern = task.replace(/[.+^${}()|[\]]/g, '\\$&').replace(/[*%]/g, '.*').replace(/[?_]/g, '.');
-    return new RegExp(`^${pattern}$`).test('elevated runs');
-};
-const mentionsRunnerTask = (word) => [word, ...word.split(','), word.replace(/^[^=]*=+/, ''),
-    ...[...word.matchAll(/'([^']*)'|"([^"]*)"/g)].map((m) => m[1] ?? m[2])].some(isRunnerTaskName);
-const namesRunnerTaskAnywhere = (argvs) => argvs.some(namesRunnerTask) || argvs.some((argv) => argv.some(mentionsRunnerTask));
-const changesRunnerTask = (argvs) => (argvs.some(changesTask) && argvs.some(namesRunnerTask))
-    || (((argvs.some(usesScheduleService) && argvs.some(changesThroughCom))
-        || (argvs.some(changesThroughCim) && argvs.some(namesTaskClass))) && namesRunnerTaskAnywhere(argvs));
+const changesRunnerTask = (argvs) => (argvs.some(changesTask)
+    || (argvs.some(usesScheduleService) && argvs.some(changesThroughCom))
+    || (argvs.some(changesThroughCim) && argvs.some(namesTaskClass))) && namesRunnerTaskAnywhere(argvs);
+
+// isData(argv): a PowerShell hashtable entry (`Path='…'`), which runs nothing; only the shells
+// with POSIX assignments drop such a word (withoutPrefixes). splatsRunnerRoot(argvs): an entry
+// naming the runner's root in the call with a command, not a reader, splatted (`Set-Content @p`).
+const isData = (argv) => /^[A-Za-z_]\w*=/.test(argv[0]);
+const splatsRunnerRoot = (argvs) => argvs.some((argv) => isData(argv) && argv.some(namesRunnerRoot))
+    && argvs.some((argv) => !isData(argv) && !readsOnly.has(commandName(argv[0])) && argv.some((w) => /^@\w+$/.test(w)));
 
 // enablesRunner(argv): elevate, with enable among its words.
 const enablesRunner = (argv) => commandName(argv[0]) === 'elevate'
@@ -446,18 +502,19 @@ const enablesRunner = (argv) => commandName(argv[0]) === 'elevate'
 function elevation(pipes, machine, depth = 0) {
     const argvs = pipes.flat();
     const answers = argvs.map((argv) => {
+        if (isData(argv)) return null;
         const handed = depth < 4 && handedCode(argv);
         if (handed) {
             if (redirectsIntoRoot(argv)) return 'deny';
             return elevation([...handed.texts.flatMap((t) => shellWords(t, handed.tool)), ...handed.argvs.map((a) => [a])],
                 machine, depth + 1);
         }
-        const program = depth < 4 && launched(argv);
-        if (program && elevation([[program]], machine, depth + 1) === 'deny') return 'deny';
+        const programs = depth < 4 ? launched(argv) : [];
+        if (programs.some((program) => elevation([[program]], machine, depth + 1) === 'deny')) return 'deny';
         if (startsElevated(argv) || runsAsAdmin(argv, machine) || sshToSelf(argv, machine) || writesRunnerRoot(argv)) return 'deny';
         return enablesRunner(argv) ? 'ask' : null;
     });
-    if (changesRunnerTask(argvs) || pipesOutOfRoot(argvs) || answers.includes('deny')) return 'deny';
+    if (changesRunnerTask(argvs) || pipesOutOfRoot(argvs) || splatsRunnerRoot(argvs) || answers.includes('deny')) return 'deny';
     return answers.includes('ask') ? 'ask' : null;
 }
 
