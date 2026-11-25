@@ -67,6 +67,10 @@
       "Bash(ls:*)",
       "Bash(rg:*)",
       "Bash(tail:*)"
+    ],
+    "deny": [
+      "Edit(//c/ProgramData/ElevatedRuns/**)",
+      "Edit(//**/ProgramData/ElevatedRuns/**)"
     ]
   }
 }
