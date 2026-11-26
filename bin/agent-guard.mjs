@@ -17,8 +17,10 @@
 //     or its CIM classes; `ssh` to this machine's own names or addresses on Windows, where an admin
 //     signing in over ssh gets a full token without a UAC prompt; and writes into
 //     `C:\ProgramData\ElevatedRuns`. Commands handed to `powershell`, `pwsh`, `cmd /c`, `bash -c`
-//     and `Invoke-Expression`, encoded ones included, those `Start-Process` launches, and those in
-//     script blocks, groups and double-quoted `$(…)`, are judged as well.
+//     and `Invoke-Expression`, encoded ones included, those `Start-Process` and `xargs` launch,
+//     those a PowerShell call launches through .NET's Process.Start, WScript.Shell's Run or Exec
+//     or Shell.Application's ShellExecute, and those in script blocks, groups and double-quoted
+//     `$(…)`, are judged as well.
 //   - asks before `elevate enable`, which turns a disabled runner back on.
 //
 // Only commands are judged, never what they carry: heredoc bodies and quoted strings are taken
@@ -121,7 +123,9 @@ function thisMachine() {
 // background job) end a pipeline, and what can stand before a command word is dropped: a POSIX
 // assignment, `env`, `command`, `exec`, `nohup`, `time`, `timeout`, `nice`, `builtin`, cmd's
 // `call`, `if <condition>` and `@`, a shell keyword such as `then` or `do`, and a dot-source.
-// PowerShell takes typographic dashes and quotes as plain ones.
+// PowerShell takes typographic dashes and quotes as plain ones. In PowerShell, a call that
+// launches a program by a method (callsLauncher) has its quoted strings read as the commands it
+// may launch too, also added at the end (launchedReadings).
 const placeholder = /\u0001(\d+)\u0002/g;
 const powerShellQuoted = /@'[ \t]*\r?\n[\s\S]*?\r?\n'@|@"[ \t]*\r?\n[\s\S]*?\r?\n"@|'(?:[^']|'')*'|"(?:[^"`]|`[\s\S]|"")*"/g;
 const cmdQuoted = /"[^"]*"/g;
@@ -144,21 +148,44 @@ function shellWords(text, tool) {
             .replace(/[“”„]/g, '"').replace(/`\r?\n/g, ' ')
         : text.replace(cmd ? /\^\r?\n/g : /\\\r?\n/g, ' ');
     const strings = [];
+    const literals = [];
     const substituted = [];
     const keep = (s) => `\u0001${strings.push(s) - 1}\u0002`;
     let hidden = source
         .replace(powerShell ? powerShellQuoted : cmd ? cmdQuoted : quoted, (q) => {
             if (!cmd && /^@?"/.test(q)) substituted.push(...[...q.matchAll(/\$\(([^()]*)\)/g)].map((m) => m[1]));
-            return keep(unquoted(q, tool));
+            literals.push(unquoted(q, tool));
+            return keep(literals.at(-1));
         })
         .replace(/\$\{[^{}\s]*\}/g, keep);
     hidden = cmd ? uncareted(hidden) : hidden.replace(powerShell ? /`([ \t])/g : /\\([ \t])/g, (_, space) => keep(space));
     const words = (c) => withoutPrefixes(c.split(/\s+/).filter(Boolean).map((w) => w.replace(placeholder, (_, i) => strings[i])), tool);
-    return [
+    const pipes = [
         ...pipelines(hidden.replace(/[{})]/g, '\n')).flatMap((p) => p.split('&'))
             .map((p) => commands(p).map(words).filter((argv) => argv.length)).filter((p) => p.length),
         ...substituted.flatMap((s) => shellWords(s, tool)),
     ];
+    return powerShell && pipes.flat().some(callsLauncher) ? [...pipes, ...launchedReadings(literals)] : pipes;
+}
+
+// callsLauncher(argv): a method call that launches a program: .NET's Process.Start, static or on
+// a Process object, WScript.Shell's Run or Exec, or Shell.Application's ShellExecute, called
+// directly, through `.Invoke`, `PSObject.Methods[…]`, InvokeMember or ForEach-Object.
+const launcherMethod = /^(start|run|exec|shellexecute|invokemember)$/i;
+const callsLauncher = (argv) => launcherMethod.test(memberCalled(argv[0]))
+    || (['foreach-object', '%', 'foreach'].includes(commandName(argv[0])) && argv.slice(1).some((w) => launcherMethod.test(w)));
+// launchedReadings(strings): the commands a launching call's quoted strings may make, as
+// pipelines, since its program and arguments may be given in any of them, or kept in variables or
+// a ProcessStartInfo's properties: each string as a command line, and from each one-word string on
+// (the first 32), the strings after it, joined into one command line and as words of their own.
+// The joined line is read in Bash's syntax, as launched() reads an -ArgumentList. A `runas` verb
+// (ShellExecute's, or a ProcessStartInfo's Verb) is a one-word string, so it reads as runas.
+function launchedReadings(strings) {
+    const starts = strings.flatMap((s, i) => (/^\S+$/.test(s) ? [i] : [])).slice(0, 32);
+    return [
+        ...strings.flatMap((s) => shellWords(s, 'Bash')),
+        ...starts.flatMap((i) => [...shellWords(strings.slice(i).join(' '), 'Bash'), [withoutPrefixes(strings.slice(i))]]),
+    ].filter((pipe) => pipe.every((argv) => argv.length));
 }
 // A POSIX assignment before a command is dropped, but not in PowerShell or cmd, which have none:
 // there a word such as `TaskName='x'` is a hashtable entry and is kept, as data (see isData).
@@ -277,6 +304,36 @@ function launched(argv, titled = true) {
     const words = [file, ...args.flatMap(argumentWords)];
     return titled && commandName(argv[0]) === 'start' && args.length ? [words, ...launched(['start', ...args], false)] : [words];
 }
+
+// xargsRuns(argv): the command xargs runs, its prefixes dropped, or null for another command. It
+// follows xargs's options, and `--`; a short option that takes a value (-a -d -E -I -J -L -n -P -R
+// -s -S) takes the rest of its word or the next word, -e, -i and -l only one glued on, and a long
+// one the next word unless it has `=`.
+const xargsValued = 'adEIJLnPRsS';
+const xargsShort = new RegExp(`^-([^${xargsValued}eil]*)([${xargsValued}]?)`);
+const xargsLongValued = /^--(arg-file|delimiter|max-args|max-chars|max-procs|process-slot-var)$/;
+function xargsRuns(argv) {
+    if (commandName(argv[0]) !== 'xargs') return null;
+    let i = 1;
+    for (; i < argv.length; i++) {
+        const word = argv[i];
+        if (word === '--') {
+            i += 1;
+            break;
+        }
+        if (!word.startsWith('-') || word === '-') break;
+        const short = xargsShort.exec(word);
+        if (word.startsWith('--') ? xargsLongValued.test(word) : short[2] && short[0] === word) i += 1;
+    }
+    return withoutPrefixes(argv.slice(i));
+}
+// withXargsRuns(argvs): argvs, each followed by the commands its xargs runs, so they are judged
+// as the call's own: with the rest of the call, which may name the task it is handed.
+const withXargsRuns = (argvs) => argvs.flatMap((argv) => {
+    const runs = [];
+    for (let run = argv; run?.length; run = xargsRuns(run)) runs.push(run);
+    return runs;
+});
 
 // startsElevated(argv): Start-Process, or its aliases, with -Verb RunAs or RunAsUser (another
 // user, such as an admin, given a credential prompt).
@@ -452,7 +509,9 @@ const scheduleService = /^(schedule\.service(\.\d+)?|\{?0f87369f-a4e5-4cfc-bd3e-
 const comChange = /^(run|runex|registertask|registertaskdefinition|deletetask|setsecuritydescriptor|invokemember)$/i;
 const usesScheduleService = (argv) => argv.some((w) => w.replace(/^-[\w-]+:/, '').replace(/^\[[^\]]*\]/, '')
     .split(',').some((piece) => scheduleService.test(piece.trim())));
-const memberCalled = (word) => (/\[(\w+)\]\.invoke$/i.exec(word) ?? /\.(\w+)(\.invoke)?$/i.exec(word))?.[1] ?? '';
+// memberCalled(word): the method a word calls, as `.Name`, a static `::Name`, `.Name.Invoke` or
+// `.Methods['Name'].Invoke`, or '' for none.
+const memberCalled = (word = '') => (/\[(\w+)\]\.invoke$/i.exec(word) ?? /(?:\.|::)(\w+)(\.invoke)?$/i.exec(word))?.[1] ?? '';
 const changesThroughCom = (argv) => {
     const member = memberCalled(argv[0]);
     if (comChange.test(member)) return true;
@@ -499,9 +558,9 @@ const enablesRunner = (argv) => commandName(argv[0]) === 'elevate'
 
 // elevation(pipes, machine): 'deny', 'ask' or null for these pipelines and the code their commands
 // hand to another shell, which is judged in their place, the wrapper's own redirect included. A
-// command Start-Process or `start` launches is judged as well as the launcher.
+// command Start-Process, `start` or xargs launches is judged as well as the launcher.
 function elevation(pipes, machine, depth = 0) {
-    const argvs = pipes.flat();
+    const argvs = withXargsRuns(pipes.flat());
     const answers = argvs.map((argv) => {
         if (isData(argv)) return null;
         const handed = depth < 4 && handedCode(argv);
