@@ -101,8 +101,8 @@ const url = /\b[a-z][a-z0-9+.-]*:\/\/[^\s<>`"]*/gi;
 const fenceOpener = /^ {0,3}(`{3,}|~{3,})/;
 const codeSpan = /(`+)[\s\S]*?(?<!`)\1(?!`)/g;
 const inlineLink = /\[([^\]]*)\]\(\s*<?([^)\s>]*)>?(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g;
-const referenceLink = /\[[^\]]*\]\[[^\]]*\]/g;
-const linkDefinition = /^ {0,3}\[[^\]]+\]:.*$/gm;
+const referenceLink = /\[([^\]]*)\]\[([^\]]*)\]/g;
+const linkDefinition = /^ {0,3}\[([^\]]+)\]:.*$/gm;
 // A commit trailer, in the present tense; `[ \t]`, since a `\s` would run across blank lines.
 const closingLine = /^[ \t]*(fixes|closes|resolves)[ \t]+([\w.-]+\/[\w.-]+)?#\d+[ \t]*$/gim;
 
@@ -138,10 +138,12 @@ function linked(reference, match, urls) {
 export function bareReferences(text, config) {
     if (typeof text !== 'string' || !text) return [];
     const urls = text.match(url) ?? [];
-    let prose = withoutFences(text)
-        .replace(codeSpan, ' ')
+    const fenced = withoutFences(text).replace(codeSpan, ' ');
+    // A reference-style link counts as a link only when its label is defined; [x][] uses x.
+    const defined = new Set([...fenced.matchAll(linkDefinition)].map((m) => m[1].trim().toLowerCase()));
+    let prose = fenced
         .replace(inlineLink, (_, label, target) => (/^[a-z][a-z0-9+.-]*:\/\//i.test(target) ? ' ' : ` ${label} `))
-        .replace(referenceLink, ' ')
+        .replace(referenceLink, (_, label, ref) => (defined.has((ref || label).trim().toLowerCase()) ? ' ' : ` ${label} `))
         .replace(linkDefinition, ' ')
         .replace(url, ' ')
         .replace(closingLine, ' ');
@@ -161,7 +163,8 @@ export function bareReferences(text, config) {
 const strings = (value) => (typeof value === 'string' ? [value]
     : value && typeof value === 'object' ? Object.values(value).flatMap(strings) : []);
 
-// fieldTexts(input, field): the strings at a dot path in input, where `name[]` reads each item.
+// fieldTexts(input, field): the text of each value at a dot path in input, where `name[]` reads
+// each item; an object's strings (an ADF document's text and link targets) are one text.
 function fieldTexts(input, field) {
     let values = [input];
     for (const part of field.split('.')) {
@@ -172,7 +175,7 @@ function fieldTexts(input, field) {
             return each ? (Array.isArray(next) ? next : []) : [next];
         });
     }
-    return values.flatMap(strings);
+    return values.map((v) => strings(v).join('\n')).filter(Boolean);
 }
 
 // A shell command that sends a body to GitHub, and the ways it can carry one.
@@ -223,7 +226,12 @@ export function shellBodies(command, cwd) {
     return [
         ...heredocBodies(command),
         ...[...command.matchAll(hereString)].map((m) => m[2]),
-        ...[...command.matchAll(bodyFlag), ...command.matchAll(bodyField)].map((m) => unquote(m[1])),
+        ...[...command.matchAll(bodyFlag)].map((m) => unquote(m[1])),
+        // gh api reads a field given as @path from that file.
+        ...[...command.matchAll(bodyField)].flatMap((m) => {
+            const value = unquote(m[1]);
+            return value.startsWith('@') ? readBodyFile(value.slice(1), cwd) : [value];
+        }),
         ...[...command.matchAll(bodyFile)].flatMap((m) => readBodyFile(unquote(m[1]), cwd)),
     ];
 }
@@ -285,7 +293,8 @@ export function answer(input, config) {
         const tool = input.tool_name;
         const texts = config.shellTools.includes(tool) ? shellBodies(input.tool_input?.command, input.cwd)
             : (config.tools[tool] ?? []).flatMap((field) => fieldTexts(input.tool_input, field));
-        const refs = bareReferences(texts.join('\n\n'), config);
+        // Each text is its own document for its reader, so a link in one covers nothing in another.
+        const refs = [...new Set(texts.flatMap((t) => bareReferences(t, config)))];
         if (!refs.length) return null;
         return {
             hookSpecificOutput: {

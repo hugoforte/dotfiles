@@ -112,6 +112,9 @@ assert_eq "an owner/repo number as a link's text is not bare" "none" \
     "$(bare "[hugoforte/dotfiles#119](https://github.com/hugoforte/dotfiles/issues/119)")"
 assert_eq "a reference-style link is not bare" "none" \
     "$(bare "[KTLO-8][jira]${nl}${nl}[jira]: https://example.atlassian.net/browse/KTLO-8")"
+assert_eq "a collapsed reference-style link is not bare" "none" \
+    "$(bare "[KTLO-8][]${nl}${nl}[ktlo-8]: https://example.atlassian.net/browse/KTLO-8")"
+assert_eq "a reference-style link with no definition is bare" "KTLO-8" "$(bare "[KTLO-8][missing]")"
 assert_eq "an autolink is not bare" "none" \
     "$(bare "<https://github.com/hugoforte/dotfiles/issues/119>")"
 assert_eq "a number in a URL fragment is not bare" "none" "$(bare "https://example.com/page#10")"
@@ -273,6 +276,10 @@ assert_eq "a gh heredoc body with a bare key is refused" "0 deny" \
 printf 'Picks up KTLO-4.\n' > "$work/body.md"
 assert_eq "a gh body file with a bare key is refused" "0 deny" \
     "$(hook "$(tool_input Bash '{"command":"gh pr edit 3 --body-file body.md"}' "$work")" "$all")"
+assert_eq "a gh api body read from a file with a bare key is refused" "0 deny" \
+    "$(hook "$(tool_input Bash '{"command":"gh api repos/o/r/issues/1/comments -F body=@body.md"}' "$work")" "$all")"
+assert_eq "a link in one field does not cover a bare reference in another" "0 deny" \
+    "$(hook "$(tool_input mcp__t3-code__pull_request_review '{"verdict":"comment","body":"see https://github.com/o/r/issues/12","comments":[{"path":"a","line":1,"body":"as in #12"}]}')" "$all")"
 assert_eq "a gh body file that is missing goes" "0 allow" \
     "$(hook "$(tool_input Bash '{"command":"gh pr edit 3 --body-file gone.md"}' "$work")" "$all")"
 assert_eq "a PowerShell here-string body with a bare key is refused" "0 deny" \
