@@ -56,6 +56,10 @@ said() {
     " "$work/out"
 }
 
+# says <text> <part>: y when text holds part, else n. A case inside $( ) does not parse in the
+# Mac's /bin/sh, bash 3.2, so the suite asks through this.
+says() { case "$1" in *"$2"*) echo y ;; *) echo n ;; esac; }
+
 # tool_input <tool> <tool_input JSON> [cwd]: a PreToolUse hook's input for that call.
 tool_input() {
     GUARD_TOOL="$1" GUARD_INPUT="$2" GUARD_CWD="${3:-.}" node -e "
@@ -182,7 +186,7 @@ cat > "$work/own.jsonc" <<'EOF'
 EOF
 assert_eq "a config of one's own finds its own references" "0 deny" \
     "$(hook "$(tool_input mcp__t3-code__send_to_user "$(message "DOC12 and KTLO-1 and DOC0")")" "$work/own.jsonc")"
-assert_eq "and lists only those" "y" "$(case "$(said)" in *DOC12*KTLO*|*KTLO*|*DOC0*) echo n ;; *DOC12*) echo y ;; *) echo n ;; esac)"
+assert_eq "and lists only those" "ynn" "$(says "$(said)" DOC12)$(says "$(said)" KTLO)$(says "$(said)" DOC0)"
 assert_eq "and its linkedBy finds a link" "0 allow" \
     "$(hook "$(tool_input mcp__t3-code__send_to_user "$(message "DOC12: https://example.com/docs/12")")" "$work/own.jsonc")"
 printf '{ "references": [{ "name": "broken", "pattern": "(" }], "allow": [], "tools": {} }' > "$work/broken.jsonc"
@@ -196,10 +200,9 @@ assert_eq "a config that is missing lets the call through" "0 allow" \
 # PreToolUse, with the shipped config: the two tools whose text reaches a reader.
 assert_eq "a message to the user with a bare key is refused" "0 deny" \
     "$(hook "$(tool_input mcp__t3-code__send_to_user "$(message "Done: KTLO-123.")")")"
-assert_eq "the reason lists each reference" "y" \
-    "$(hook "$(tool_input mcp__t3-code__send_to_user "$(message "KTLO-1 and #22 are done.")")" > /dev/null
-       case "$(said)" in *'KTLO-1, #22'*) echo y ;; *) echo n ;; esac)"
-assert_eq "the reason asks for full URLs" "y" "$(case "$(said)" in *'full URL'*) echo y ;; *) echo n ;; esac)"
+hook "$(tool_input mcp__t3-code__send_to_user "$(message "KTLO-1 and #22 are done.")")" > /dev/null
+assert_eq "the reason lists each reference" "y" "$(says "$(said)" 'KTLO-1, #22')"
+assert_eq "the reason asks for full URLs" "y" "$(says "$(said)" 'full URL')"
 assert_eq "a message to the user with only links goes" "0 allow" \
     "$(hook "$(tool_input mcp__t3-code__send_to_user "$(message "Done: [KTLO-123](https://example.atlassian.net/browse/KTLO-123).")")")"
 assert_eq "a message to another thread with a bare number is refused" "0 deny" \
@@ -232,8 +235,7 @@ assert_eq "a review's line comment with a bare number is refused" "0 deny" \
     "$(hook "$(tool_input mcp__t3-code__pull_request_review '{"verdict":"comment","comments":[{"path":"a","line":1,"body":"as in #12"}]}')" "$all")"
 assert_eq "a gh body with a bare number is refused, and its title is not read" "0 deny" \
     "$(hook "$(tool_input Bash '{"command":"gh pr create --title \"KTLO-1 fix\" --body \"see #12\""}')" "$all")"
-assert_eq "and only the body's reference is listed" "y" \
-    "$(case "$(said)" in *KTLO-1*) echo n ;; *'#12'*) echo y ;; *) echo n ;; esac)"
+assert_eq "and only the body's reference is listed" "yn" "$(says "$(said)" '#12')$(says "$(said)" KTLO-1)"
 assert_eq "a gh body with only links goes" "0 allow" \
     "$(hook "$(tool_input Bash '{"command":"gh pr comment 5 --body \"see https://github.com/o/r/issues/12\""}')" "$all")"
 assert_eq "a gh body's Fixes line goes" "0 allow" \
