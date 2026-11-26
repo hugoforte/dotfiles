@@ -15,6 +15,33 @@
             "onFailure": "block"
           }
         ]
+      },
+      {
+        "matcher": "mcp__t3-code__send_to_user|mcp__t3-code__t3_thread_send",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "ticket-link-guard.mjs"
+            ],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "ticket-link-guard.mjs"
+            ],
+            "timeout": 10
+          }
+        ]
       }
     ]
   },
