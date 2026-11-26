@@ -228,11 +228,18 @@ export function shellBodies(command, cwd) {
     ];
 }
 
-// lastReply(path): Claude's last reply in the transcript at path: the assistant's text after the
-// last user entry, a tool result included, read from the transcript's last 2 MiB and passing
-// over the prompt being sent. Null when the last turn ended in a tool call or there is no reply.
+// promptText(content): a user entry's text, whether a string or a list of text blocks.
+const promptText = (content) => (typeof content === 'string' ? content
+    : Array.isArray(content) ? content.filter((c) => c?.type === 'text').map((c) => c.text).join('\n') : '');
+
+// lastReply(path, prompt): Claude's last reply in the transcript at path: the assistant's text
+// after the last user entry, a tool result included, read from the transcript's last 2 MiB. It
+// passes over the prompt being sent, when the transcript already holds it, and entries the
+// harness adds (isMeta). Null when the last turn ended in a tool call, when another prompt or a
+// compaction comes first (that reply was answered, or is gone from the context), or when there
+// is no reply.
 const transcriptTail = 2 * 1024 * 1024;
-export function lastReply(path) {
+export function lastReply(path, prompt) {
     if (typeof path !== 'string' || !path || !existsSync(path)) return null;
     const fd = openSync(path, 'r');
     let tail;
@@ -254,10 +261,13 @@ export function lastReply(path) {
             continue;
         }
         if (!entry || typeof entry !== 'object' || entry.isSidechain) continue;
+        if (entry.type === 'system' && entry.subtype === 'compact_boundary') break;
         const content = entry.message?.content;
         if (entry.type === 'user') {
+            if (texts.length || entry.isCompactSummary) break;
+            if (entry.isMeta) continue;
             const toolResult = Array.isArray(content) && content.some((c) => c?.type === 'tool_result');
-            if (texts.length || toolResult) break;
+            if (toolResult || typeof prompt !== 'string' || promptText(content).trim() !== prompt.trim()) break;
             continue;
         }
         if (entry.type !== 'assistant' || !Array.isArray(content)) continue;
@@ -287,7 +297,7 @@ export function answer(input, config) {
         };
     }
     if (input.hook_event_name === 'UserPromptSubmit') {
-        const refs = bareReferences(lastReply(input.transcript_path), config);
+        const refs = bareReferences(lastReply(input.transcript_path, input.prompt), config);
         if (!refs.length) return null;
         return {
             hookSpecificOutput: {

@@ -285,6 +285,9 @@ line() {
             side: { type: 'assistant', isSidechain: true, message: { role: 'assistant', content: [{ type: 'text', text: t }] } },
             tool: { type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 't', name: 'Bash', input: {} }] } },
             result: { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: t }] } },
+            meta: { type: 'user', isMeta: true, message: { role: 'user', content: t } },
+            compact: { type: 'system', subtype: 'compact_boundary', content: 'Conversation compacted' },
+            summary: { type: 'user', isCompactSummary: true, message: { role: 'user', content: t } },
         }[k];
         console.log(JSON.stringify(entry));
     "
@@ -308,6 +311,18 @@ assert_eq "a turn that ended in a tool call gets nothing" "0 allow" "$(hook "$(p
 { line prompt go; line text "Done."; line side "Subagent: VEC-1."; } > "$t"
 assert_eq "a subagent's text is not the last reply" "0 allow" "$(hook "$(prompt_input "$t")")"
 assert_eq "a missing transcript gets nothing" "0 allow" "$(hook "$(prompt_input "$work/gone.jsonl")")"
+{ line prompt go; line text "Done: VEC-1."; line prompt "stop there"; } > "$t"
+assert_eq "a reply from before an unanswered prompt is not the last reply" "0 allow" "$(hook "$(prompt_input "$t")")"
+{ line prompt go; line text "Done: VEC-1."; line compact; line summary "Earlier: VEC-1 was done."; } > "$t"
+assert_eq "a reply from before a compaction is not the last reply" "0 allow" "$(hook "$(prompt_input "$t")")"
+{ line prompt go; line text "Done: VEC-1."; line meta "a reminder"; line prompt next; } > "$t"
+assert_eq "an entry the harness added after the reply is passed over" "0 context" "$(hook "$(prompt_input "$t")")"
+node -e "
+    const fs = require('node:fs');
+    const lines = fs.readFileSync(process.argv[1], 'utf8').trim().split('\n');
+    fs.writeFileSync(process.argv[1], '﻿' + lines.join('\r\n') + '\r\n');
+" "$t"
+assert_eq "a transcript with CRLF line ends and a byte-order mark is read" "0 context" "$(hook "$(prompt_input "$t")")"
 
 # Input it cannot use lets everything through.
 assert_eq "input that is not JSON lets it through" "0 allow" "$(hook "not json")"
