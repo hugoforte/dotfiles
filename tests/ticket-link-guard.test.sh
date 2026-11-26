@@ -129,6 +129,7 @@ assert_eq "an unclosed fence runs to the end of the text" "none" \
 assert_eq "a Fixes line is not bare" "none" "$(bare "Commit message:${nl}${nl}Fixes #123${nl}")"
 assert_eq "a Fixes owner/repo line is not bare" "none" "$(bare "  Fixes hugoforte/dotfiles#119")"
 assert_eq "a Closes line is not bare" "none" "$(bare "Closes #7")"
+assert_eq "a status line in the past tense is bare" "#12 #45" "$(bare "Fixed #12${nl}Resolved #45")"
 
 # A reference whose URL the text gives anywhere is not bare.
 assert_eq "a key named next to its URL is not bare" "none" \
@@ -162,6 +163,19 @@ assert_eq "a key in a path is not a ticket" "none" \
 assert_eq "a key followed by a decimal is not a ticket" "none" "$(bare "ABC-1.2")"
 assert_eq "an HTML entity is not a ticket" "none" "$(bare "&#123; is a brace")"
 assert_eq "a number inside a path is not a ticket" "none" "$(bare "src/a/b#33")"
+
+# Cost: a long reply, with runs of whitespace that blanking makes longer, is read well inside the
+# 10-second timeout.
+assert_eq "a 40,000-line code block and 5,000 references are read in under a second" "y" \
+    "$(GUARD_MODULE="$guard" node --input-type=module -e "
+        import { pathToFileURL } from 'node:url';
+        const { bareReferences, loadConfig } = await import(pathToFileURL(process.env.GUARD_MODULE).href);
+        const config = loadConfig();
+        const text = '\`\`\`\n' + 'x\n'.repeat(40000) + '\`\`\`\n' + 'KTLO-1 '.repeat(5000) + ' PR #3';
+        const start = Date.now();
+        const refs = bareReferences(text, config);
+        console.log(Date.now() - start < 1000 && refs.join(' ') === 'KTLO-1 #3' ? 'y' : 'n');
+    ")"
 
 # The config: JSON with comments and trailing commas, and patterns of one's own.
 assert_eq "comments and trailing commas go, and strings keep theirs" '{"a":"x//y /* z */","b":[1],"c":"\\d{2,}"}' \

@@ -103,7 +103,8 @@ const codeSpan = /(`+)[\s\S]*?(?<!`)\1(?!`)/g;
 const inlineLink = /\[([^\]]*)\]\(\s*<?([^)\s>]*)>?(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g;
 const referenceLink = /\[[^\]]*\]\[[^\]]*\]/g;
 const linkDefinition = /^ {0,3}\[[^\]]+\]:.*$/gm;
-const closingLine = /^\s*(fix(e[sd])?|close[sd]?|resolve[sd]?)\s+([\w.-]+\/[\w.-]+)?#\d+\s*$/gim;
+// A commit trailer, in the present tense; `[ \t]`, since a `\s` would run across blank lines.
+const closingLine = /^[ \t]*(fixes|closes|resolves)[ \t]+([\w.-]+\/[\w.-]+)?#\d+[ \t]*$/gim;
 
 // withoutFences(text): text with every fenced code block blanked; an unclosed fence runs to the end.
 function withoutFences(text) {

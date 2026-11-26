@@ -10,7 +10,8 @@
 // ai/claude/settings.json, which tests/ticket-link-guard.test.sh checks agree.
 {
   // Each reference is a JavaScript regular expression, run over the text with the g flag (plus
-  // `flags`) in this order; what one finds is blanked before the next runs. A match is not bare
+  // `flags`) in this order; what one finds is blanked before the next runs, so the text holds long
+  // runs of spaces: keep a lookbehind bounded, and behind a lookahead that fails fast. A match is not bare
   // when `linkedBy`, with {match} and each {group} replaced by the matched text, matches one of the
   // URLs in the text, case-insensitively.
   "references": [
@@ -35,7 +36,7 @@
     {
       "name": "GitHub number after a word naming a ticket or PR",
       "description": "PR #3, issue #4, see #5, PR#12. A single digit counts only here, so an ordinal such as 'the #1 cause' is not one.",
-      "pattern": "(?<=\\b(?:PRs?|pull requests?|pulls?|issues?|tickets?|fix(?:e[sd])?|close[sd]?|resolve[sd]?|see)\\s*)#(?<number>\\d+)(?![A-Za-z0-9])",
+      "pattern": "(?=#)(?<=\\b(?:PRs?|pull requests?|pulls?|issues?|tickets?|fix(?:e[sd])?|close[sd]?|resolve[sd]?|see)\\s{0,3})#(?<number>\\d+)(?![A-Za-z0-9])",
       "flags": "i",
       "linkedBy": "/(issues|pull)/{number}(?!\\d)"
     }
