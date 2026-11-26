@@ -302,7 +302,8 @@ export function answer(input, config) {
         return {
             hookSpecificOutput: {
                 hookEventName: 'UserPromptSubmit',
-                additionalContext: `Your last reply left these bare: ${refs.join(', ')}. Link every ticket and PR reference in full in this reply.`,
+                additionalContext: `Your last reply left these bare: ${refs.join(', ')}. Link every ticket and PR reference in full in this reply. `
+                    + 'One that is not a ticket or a PR goes in backticks.',
             },
         };
     }

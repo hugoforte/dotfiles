@@ -301,7 +301,7 @@ t="$work/transcript.jsonl"
 { line prompt go; line text "Looking at KTLO-2 first."; line tool; line result KTLO-3; line text "All done: VEC-1."; line text "And #44."; } > "$t"
 assert_eq "a last reply with bare references gets a reminder" "0 context" "$(hook "$(prompt_input "$t")")"
 assert_eq "which names them, from the final reply alone" \
-    "Your last reply left these bare: VEC-1, #44. Link every ticket and PR reference in full in this reply." "$(said)"
+    "Your last reply left these bare: VEC-1, #44. Link every ticket and PR reference in full in this reply. One that is not a ticket or a PR goes in backticks." "$(said)"
 line prompt next >> "$t"
 assert_eq "the prompt being sent, already in the transcript, is passed over" "0 context" "$(hook "$(prompt_input "$t")")"
 { line prompt go; line text "Done: [VEC-1](https://linear.app/x/issue/VEC-1)."; line prompt next; } > "$t"
