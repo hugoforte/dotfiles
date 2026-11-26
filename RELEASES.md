@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- What an agent writes to Hugo links every ticket and pull request it names (#119). The rule was in `CLAUDE.md`, the working rules and memory, and agents still named `KTLO-123`, `VEC-42` or `#123` bare. `bin/ticket-link-guard.mjs` enforces it with two hooks, registered in `ai/claude/settings.json` in exec form as `agent-guard` is, neither of which puts anything extra on the screen:
+  - `PreToolUse` on `send_to_user` and `t3_thread_send` refuses a message that names a Jira or Linear key (any project's), a GitHub `#123` or an `owner/repo#123` without its URL, before it is sent, listing each one; only the tool call is made again.
+  - `UserPromptSubmit` reads Claude's last reply from the transcript and, when it left references bare, adds one line of context to the next prompt: "Your last reply left these bare: X, Y. Link every ticket and PR reference in full in this reply."
+  - Not bare: part of a URL; the text of a markdown link to a full URL (inline, reference-style or an autolink); in a code span or a fenced code block; on a commit message's own `Fixes #123`, `Closes` or `Resolves` line; or named where the text also gives its URL.
+  - The patterns, an allowlist of tokens shaped like keys that are not tickets (`SHA-256`, `UTF-8`, `ISO-8601`, `CVE-2024-1234`, `UTC-5` and more), and the tools and fields read are in `ai/claude/ticket-links.jsonc`, which documents each. A key needs two letters (`Q3-2026` passes) and stands alone (one in a path, a branch or a work id such as `ABC-12-some-branch` passes); a single-digit `#1` counts only after a word naming a ticket or PR (`PR #3`), so "the #1 cause" passes.
+  - GitHub, Jira and Linear link a bare key in their own bodies, so their tools and `gh pr`/`gh issue` bodies are in the config commented out; turning one on is a change to the config and the fragment's matcher, for every machine.
+  - It reads no network, has a 10-second timeout and no `onFailure`, and fails open: input or a config it cannot use, or any error, lets everything through. `tests/ticket-link-guard.test.sh` covers each pattern and allowlist entry, each case let through, both hooks, the config's own format, and that the fragment's matcher names exactly the config's tools.
+
 - `agent-guard` sends elevated steps to the elevated-runs runner. From either shell tool it refuses, with "Elevated steps go through the hf-elevate skill (`elevate request`)":
   - `Start-Process`, `saps` or `start` with `-Verb RunAs` or `RunAsUser`, in any case and as `-Verb:RunAs`;
   - `runas`, `gsudo` and `sudo.exe`, and `sudo` on Windows only, since on macOS and Linux it is the ordinary way to an admin step and there is no runner to send it to;

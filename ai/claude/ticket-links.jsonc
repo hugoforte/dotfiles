@@ -1,0 +1,119 @@
+// What bin/ticket-link-guard.mjs calls a bare ticket or pull request reference, and where it looks.
+// JSON with // and /* */ comments and trailing commas. TICKET_LINK_GUARD_CONFIG names another file
+// in its place.
+//
+// The rule it backs is about what agents write to Hugo: every ticket and PR named in a chat reply
+// or a message to another thread carries its full URL. So by default it reads two tools' text
+// (`tools` below) and, on each prompt, the last chat reply. GitHub, Jira and Linear link a bare key
+// in their own bodies themselves, so the tools that write there are listed, commented out. Turning
+// one on is a change to this repo, for every machine: uncomment the entry here and add the tool
+// to the PreToolUse matcher in ai/claude/settings.json (tests/ticket-link-guard.test.sh fails until
+// the two agree). The fragment owns that matcher, so a machine cannot widen it on its own; a
+// TICKET_LINK_GUARD_CONFIG file can change the patterns and the allowlist, and narrow the tools.
+{
+  // Each reference is a JavaScript regular expression, run over the text with the g flag (plus
+  // `flags`) in this order; what one finds is blanked before the next runs, so the text holds long
+  // runs of spaces: keep a lookbehind bounded, and behind a lookahead that fails fast. A match is not bare
+  // when `linkedBy`, with {match} and each {group} replaced by the matched text, matches one of the
+  // URLs in the text, case-insensitively.
+  "references": [
+    {
+      "name": "GitHub owner/repo number",
+      "description": "hugoforte/dotfiles#119. Runs first, so its #<n> is not found again as a bare number.",
+      "pattern": "(?<![A-Za-z0-9./\\\\@-])(?<owner>[A-Za-z0-9-]+)/(?<repo>[\\w.-]+)#(?<number>\\d+)(?![A-Za-z0-9])",
+      "linkedBy": "github\\.com/{owner}/{repo}/(issues|pull)/{number}(?!\\d)"
+    },
+    {
+      "name": "Jira or Linear key",
+      "description": "KTLO-123, CR-7, VEC-42: any project's prefix, so a new project needs no entry, with two letters at least (not Q3-2026), standing alone rather than inside a path, a branch or a work id (ABC-12-some-branch). Linked by the issue's own page: Jira's /browse/KEY or a board's selectedIssue=KEY, Linear's /issue/KEY; a branch or compare URL that holds the key is not its link.",
+      "pattern": "(?<![A-Za-z0-9./\\\\@-])[A-Z][A-Z0-9]*[A-Z][A-Z0-9]*-\\d+(?![A-Za-z0-9-]|\\.\\d)",
+      "linkedBy": "(/browse/|/issues?/|[?&]selectedIssue=){match}(?![A-Za-z0-9-])"
+    },
+    {
+      "name": "GitHub number",
+      "description": "#123, two digits or more. Not an HTML entity (&#123;), a URL fragment, or part of a word or a path.",
+      "pattern": "(?<![A-Za-z0-9&/#\\\\-])#(?<number>\\d{2,})(?![A-Za-z0-9])",
+      "linkedBy": "/(issues|pull)/{number}(?!\\d)"
+    },
+    {
+      "name": "GitHub number after a word naming a ticket or PR",
+      "description": "PR #3, issue #4, see #5, PR#12. A single digit counts only here, so an ordinal such as 'the #1 cause' is not one.",
+      "pattern": "(?=#)(?<=\\b(?:PRs?|pull requests?|pulls?|issues?|tickets?|fix(?:e[sd])?|close[sd]?|resolve[sd]?|see)\\s{0,3})#(?<number>\\d+)(?![A-Za-z0-9])",
+      "flags": "i",
+      "linkedBy": "/(issues|pull)/{number}(?!\\d)"
+    }
+  ],
+
+  // Tokens shaped like a reference that are not tickets. Each pattern is matched against the whole
+  // reference found, so anchor it.
+  "allow": [
+    {
+      "description": "Hashes, ciphers and checksums: SHA-256, SHA3-256, MD-5, AES-256, RSA-2048, CRC-32.",
+      "pattern": "^(SHA|SHA3|MD|AES|RSA|CRC)-\\d+$"
+    },
+    {
+      "description": "Encodings and code pages: UTF-8, UTF-16, BASE-64, WINDOWS-1252, CP-1252, LATIN-1.",
+      "pattern": "^(UTF|BASE|WINDOWS|CP|LATIN)-\\d+$"
+    },
+    {
+      "description": "Standards and their bodies: ISO-8601, RFC-7231, IEEE-754, ECMA-262, ES-2015, PEP-8, FIPS-140, NIST-800, PKCS-11, WCAG-2.",
+      "pattern": "^(ISO|RFC|IEEE|ECMA|ES|PEP|FIPS|NIST|PKCS|WCAG)-\\d+$"
+    },
+    {
+      "description": "Vulnerability and weakness ids: CVE-2024 (the first half of CVE-2024-1234) and CWE-79.",
+      "pattern": "^(CVE|CWE)-\\d+$"
+    },
+    {
+      "description": "Time zone offsets: UTC-5, GMT-8, EST-5, PST-8, CET-1, AEST-10.",
+      "pattern": "^(UTC|GMT|EST|EDT|CST|CDT|MST|MDT|PST|PDT|AKST|HST|BST|CET|CEST|EET|IST|JST|AEST|AEDT)-\\d+$"
+    },
+    {
+      "description": "Protocols and hardware: HTTP-2, TLS-1, SSL-3, IPV-6, USB-3, DDR-5, PCI-3, PCIE-4, WPA-2, WIFI-6, ARM-64, RJ-45, CAT-6.",
+      "pattern": "^(HTTP|TLS|SSL|IPV|USB|DDR|PCI|PCIE|WPA|WIFI|ARM|RJ|CAT)-\\d+$"
+    },
+    {
+      "description": "Platforms and formats: WSL-2, HTML-5, CSS-3.",
+      "pattern": "^(WSL|HTML|CSS)-\\d+$"
+    },
+    {
+      "description": "Fiscal years and audits: FY-2026, FY-26, SOC-2.",
+      "pattern": "^(FY|SOC)-\\d+$"
+    },
+    {
+      "description": "Database error codes: ORA-00942.",
+      "pattern": "^ORA-\\d+$"
+    },
+    {
+      "description": "Names with a number: GPT-4, COVID-19, IE-11.",
+      "pattern": "^(GPT|COVID|IE)-\\d+$"
+    }
+  ],
+
+  // Shell tools whose `gh pr` and `gh issue` create, edit, comment and review bodies, and `gh api`
+  // body fields, are read: --body, -b, --body-file, -F, heredocs and here-strings.
+  "shellTools": [
+    // "Bash",
+    // "PowerShell",
+  ],
+
+  // Tools whose text goes to a reader, each with the fields read. A field is a dot path; `[]` reads
+  // each item of an array; a field holding an object (Jira's ADF) is read for every string in it.
+  "tools": {
+    "mcp__t3-code__send_to_user": ["message"],
+    "mcp__t3-code__t3_thread_send": ["message"],
+    // GitHub links a bare #123 and owner/repo#123 in its bodies:
+    // "mcp__t3-code__pull_request_create": ["body"],
+    // "mcp__t3-code__pull_request_update": ["body"],
+    // "mcp__t3-code__pull_request_respond": ["body"],
+    // "mcp__t3-code__pull_request_review": ["body", "comments[].body"],
+    // "mcp__t3-code__comment_on_issue": ["body"],
+    // "mcp__t3-code__create_issue": ["body"],
+    // Jira links a bare key in its comments and descriptions:
+    // "mcp__claude_ai_Atlassian_Rovo__addCommentToJiraIssue": ["commentBody"],
+    // "mcp__claude_ai_Atlassian_Rovo__createJiraIssue": ["description"],
+    // "mcp__claude_ai_Atlassian_Rovo__editJiraIssue": ["fields.description", "fields.comment"],
+    // Linear links a bare key in its comments and descriptions:
+    // "mcp__claude_ai_Linear__save_comment": ["body"],
+    // "mcp__claude_ai_Linear__save_issue": ["description"],
+  }
+}
