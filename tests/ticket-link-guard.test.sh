@@ -171,9 +171,9 @@ assert_eq "a version is not a ticket" "none" "$(bare "v1.2-3 and node-22")"
 assert_eq "a lowercase model id is not a ticket" "none" "$(bare "claude-opus-5-5")"
 assert_eq "a key with one letter is not a ticket" "none" "$(bare "Q3-2026 and P-256")"
 assert_eq "a key that starts a work id is not a ticket" "none" \
-    "$(bare "work KTLO-1521-im-payments-sync-tenant closed")"
+    "$(bare "work ABC-12-some-branch closed")"
 assert_eq "a key in a path is not a ticket" "none" \
-    "$(bare 'D:\\rig-data\\work\\KTLO-1521 and feat/KTLO-12')"
+    "$(bare 'D:\\data\\work\\ABC-12 and feat/ABC-13')"
 assert_eq "a key followed by a decimal is not a ticket" "none" "$(bare "ABC-1.2")"
 assert_eq "an HTML entity is not a ticket" "none" "$(bare "&#123; is a brace")"
 assert_eq "a number inside a path is not a ticket" "none" "$(bare "src/a/b#33")"
@@ -244,7 +244,7 @@ assert_eq "a Jira comment is not read by default" "0 allow" \
 assert_eq "a call with no input goes" "0 allow" \
     "$(hook '{"hook_event_name":"PreToolUse","tool_name":"mcp__t3-code__send_to_user"}')"
 
-# PreToolUse, with the commented-out entries turned on, as a machine may.
+# PreToolUse, with the config's commented-out entries turned on.
 node -e "
     const fs = require('node:fs');
     const text = fs.readFileSync(process.argv[1], 'utf8').replace(/^(\s*)\/\/ (\"(mcp__|Bash|PowerShell))/gm, '\$1\$2');
