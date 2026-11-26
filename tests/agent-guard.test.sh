@@ -593,6 +593,10 @@ assert_eq "a hashtable naming the runner's root, splatted into a read, is allowe
     "$(decision PowerShell "\$p = @{Path='C:\ProgramData\ElevatedRuns\outbox'}; Get-ChildItem @p")"
 assert_eq "a hashtable naming the runner's root, splatted into a write, is refused" "deny" \
     "$(decision PowerShell "\$p = @{Path='C:\ProgramData\ElevatedRuns\inbox\r.json'}; Set-Content @p -Value x")"
+assert_eq "Start-Process launching elevate enable asks first" "ask" \
+    "$(decision PowerShell "Start-Process -FilePath elevate -ArgumentList enable")"
+assert_eq "Invoke-CimMethod Start on another task inside ForEach-Object is allowed" "allow" \
+    "$(decision PowerShell "Get-ScheduledTask -TaskName 'Backup' | % { \$_ | Invoke-CimMethod -MethodName Start }")"
 assert_eq "many wildcards in a call that starts a task answer at once" "allow" \
     "$(decision PowerShell "Get-ScheduledTask x | Invoke-CimMethod -MethodName Start; echo '%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%z'; echo '****************************************z'")"
 

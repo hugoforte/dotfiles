@@ -509,10 +509,10 @@ function elevation(pipes, machine, depth = 0) {
             return elevation([...handed.texts.flatMap((t) => shellWords(t, handed.tool)), ...handed.argvs.map((a) => [a])],
                 machine, depth + 1);
         }
-        const programs = depth < 4 ? launched(argv) : [];
-        if (programs.some((program) => elevation([[program]], machine, depth + 1) === 'deny')) return 'deny';
+        const launches = (depth < 4 ? launched(argv) : []).map((program) => elevation([[program]], machine, depth + 1));
+        if (launches.includes('deny')) return 'deny';
         if (startsElevated(argv) || runsAsAdmin(argv, machine) || sshToSelf(argv, machine) || writesRunnerRoot(argv)) return 'deny';
-        return enablesRunner(argv) ? 'ask' : null;
+        return enablesRunner(argv) || launches.includes('ask') ? 'ask' : null;
     });
     if (changesRunnerTask(argvs) || pipesOutOfRoot(argvs) || splatsRunnerRoot(argvs) || answers.includes('deny')) return 'deny';
     return answers.includes('ask') ? 'ask' : null;
