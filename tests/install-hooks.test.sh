@@ -2,8 +2,9 @@
 
 # Fixture suite for the hooks ai/install.sh writes into settings.json: the guard is written in
 # exec form with the checkout's absolute path to bin/agent-guard.mjs, so it runs with a PATH
-# that lacks bin/, as an app started from the Dock has; and --check fails when such a hook does
-# not run, or points at another checkout.
+# that lacks bin/, as an app started from the Dock has, and so is bin/ticket-link-guard.mjs for
+# each of its events; and --check fails when such a hook does not run, or points at another
+# checkout.
 #
 # HOME has a space in it, as a Windows user name can, and so does the checkout.
 
@@ -29,7 +30,7 @@ mkdir -p "$repo/ai/helpers" "$repo/ai/claude" "$repo/ai/secrets" "$repo/bin" "$h
 
 cp "$REPO_ROOT/ai/install.sh" "$repo/ai/install.sh"
 cp "$REPO_ROOT"/ai/helpers/*.sh "$repo/ai/helpers/"
-cp "$REPO_ROOT/bin/agent-guard.mjs" "$repo/bin/"
+cp "$REPO_ROOT/bin/agent-guard.mjs" "$REPO_ROOT/bin/ticket-link-guard.mjs" "$repo/bin/"
 printf 'exit 0\n' > "$repo/ai/secrets/check-encrypted.sh"
 cp "$REPO_ROOT/ai/claude/settings.json" "$repo/ai/claude/settings.json"
 
@@ -53,6 +54,13 @@ case "$script" in
 esac
 assert_eq "absolute path to bin/agent-guard.mjs: $script" "y" "$absolute"
 assert_eq "it blocks the call when it cannot run" "block" "$(printf '%s' "$hook" | jq -r '.[0].onFailure')"
+
+printf '=== the ticket-link guard is merged for both its events, pointing at this checkout ===\n'
+link_guard="$(dirname "$script")/ticket-link-guard.mjs"
+assert_eq "its PreToolUse hook is this checkout's script" "$link_guard" \
+    "$(jq -r '[.hooks.PreToolUse[].hooks[] | .args[0]? | select(endswith("ticket-link-guard.mjs"))] | join(" ")' "$live")"
+assert_eq "its UserPromptSubmit hook is this checkout's script" "$link_guard" \
+    "$(jq -r '[.hooks.UserPromptSubmit[].hooks[] | .args[0]? | select(endswith("ticket-link-guard.mjs"))] | join(" ")' "$live")"
 
 printf '=== it runs with a PATH that lacks bin/ ===\n'
 node_dir="$(dirname "$(command -v node)")"
