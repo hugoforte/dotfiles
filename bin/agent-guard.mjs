@@ -17,14 +17,20 @@
 //     or its CIM classes; `ssh` to this machine's own names or addresses on Windows, where an admin
 //     signing in over ssh gets a full token without a UAC prompt; and writes into
 //     `C:\ProgramData\ElevatedRuns`. Commands handed to `powershell`, `pwsh`, `cmd /c`, `bash -c`
-//     and `Invoke-Expression`, encoded ones included, those `Start-Process` launches, and those in
-//     script blocks, groups and double-quoted `$(…)`, are judged as well.
+//     and `Invoke-Expression`, encoded ones included, those `Start-Process`, `xargs`, `find -exec`,
+//     `rundll32`'s ShellExec_RunDLL and `wmic process call create` launch, those a PowerShell call
+//     launches or runs through .NET's Process.Start, WScript.Shell's Run or Exec,
+//     Shell.Application's ShellExecute, Win32_Process's Create, VisualBasic's Interaction.Shell or
+//     a script block made from a string, and those in script blocks, groups and double-quoted
+//     `$(…)`, are judged as well.
 //   - asks before `elevate enable`, which turns a disabled runner back on.
 //
 // Only commands are judged, never what they carry: heredoc bodies and quoted strings are taken
 // out first, so a commit message or a PR body that mentions `sed -i` passes. The elevation rules
 // read a quoted string, or a PowerShell here-string, as one word, so a quoted path or task name
-// still counts as an argument and a message never reads as a command.
+// still counts as an argument and a message never reads as a command. The one exception is a
+// PowerShell call that launches a program or runs code by a method: there its strings are read as
+// what it may launch, so a message in the same call that quotes a refused command is refused too.
 //
 // It is a soft control. It sees only the commands Claude Code's Bash and PowerShell tools are
 // given: not the Write and Edit tools, not what a script they run does, nor a path or a host name
@@ -119,14 +125,20 @@ function thisMachine() {
 // at the end. Line continuations are joined first: a backtick in PowerShell, a caret in cmd, a
 // backslash elsewhere. Script blocks, groups and a lone `&` (PowerShell's call operator, or a
 // background job) end a pipeline, and what can stand before a command word is dropped: a POSIX
-// assignment, `env`, `command`, `exec`, `nohup`, `time`, `timeout`, `nice`, `builtin`, cmd's
-// `call`, `if <condition>` and `@`, a shell keyword such as `then` or `do`, and a dot-source.
-// PowerShell takes typographic dashes and quotes as plain ones.
+// assignment, `env`, `command`, `exec`, `nohup`, `time`, `timeout`, `nice`, `builtin`, `busybox`
+// (with their options, and the values prefixValued names), cmd's `call`, `if <condition>` and `@`,
+// a shell keyword such as `then` or `do`, and a dot-source.
+// PowerShell takes typographic dashes and quotes as plain ones, and quoted strings joined by `+`
+// as one string as well as each. In Bash and PowerShell `{}` is a word, as find and xargs take
+// it. In PowerShell, a call that launches a program or runs code by a method (launches) has its
+// quoted strings read as the commands it may run too, also added at the end (launchedReadings).
 const placeholder = /\u0001(\d+)\u0002/g;
 const powerShellQuoted = /@'[ \t]*\r?\n[\s\S]*?\r?\n'@|@"[ \t]*\r?\n[\s\S]*?\r?\n"@|'(?:[^']|'')*'|"(?:[^"`]|`[\s\S]|"")*"/g;
 const cmdQuoted = /"[^"]*"/g;
 const prefixCommands = new Set(['env', 'command', 'exec', 'nohup', 'time', 'timeout', 'nice', 'builtin', 'call',
-    'if', 'then', 'do', 'else', 'elif', 'while', 'until', '!']);
+    'busybox', 'if', 'then', 'do', 'else', 'elif', 'while', 'until', '!']);
+// The options of a prefix command that take the next word as their value.
+const prefixValued = { nice: /^-n$/, timeout: /^(-s|-k|--signal|--kill-after)$/, env: /^(-u|--unset|-C|--chdir)$/ };
 // unquoted(q, tool): a quoted string's text, its escapes taken as the shell takes them.
 function unquoted(q, tool) {
     if (q.startsWith('@')) return q.slice(2, -2);
@@ -144,21 +156,108 @@ function shellWords(text, tool) {
             .replace(/[“”„]/g, '"').replace(/`\r?\n/g, ' ')
         : text.replace(cmd ? /\^\r?\n/g : /\\\r?\n/g, ' ');
     const strings = [];
+    const literals = [];
     const substituted = [];
     const keep = (s) => `\u0001${strings.push(s) - 1}\u0002`;
     let hidden = source
         .replace(powerShell ? powerShellQuoted : cmd ? cmdQuoted : quoted, (q) => {
-            if (!cmd && /^@?"/.test(q)) substituted.push(...[...q.matchAll(/\$\(([^()]*)\)/g)].map((m) => m[1]));
-            return keep(unquoted(q, tool));
+            if (!cmd && /^@?"/.test(q)) substituted.push(...subexpressions(q));
+            literals.push(unquoted(q, tool));
+            return keep(literals.at(-1));
         })
         .replace(/\$\{[^{}\s]*\}/g, keep);
+    const joined = /\u0001(\d+)\u0002\s*\+\s*\u0001(\d+)\u0002/;
+    while (powerShell && joined.test(hidden)) {
+        hidden = hidden.replace(joined, (_, a, b) => {
+            literals.push(strings[a] + strings[b]);
+            return keep(literals.at(-1));
+        });
+    }
+    if (!cmd) hidden = hidden.replace(/\{\}/g, keep);
     hidden = cmd ? uncareted(hidden) : hidden.replace(powerShell ? /`([ \t])/g : /\\([ \t])/g, (_, space) => keep(space));
     const words = (c) => withoutPrefixes(c.split(/\s+/).filter(Boolean).map((w) => w.replace(placeholder, (_, i) => strings[i])), tool);
-    return [
+    const pipes = [
         ...pipelines(hidden.replace(/[{})]/g, '\n')).flatMap((p) => p.split('&'))
             .map((p) => commands(p).map(words).filter((argv) => argv.length)).filter((p) => p.length),
         ...substituted.flatMap((s) => shellWords(s, tool)),
     ];
+    const kinds = powerShell ? launches(pipes.flat()) : {};
+    return Object.values(kinds).some(Boolean) ? [...pipes, ...launchedReadings(kinds, literals, pipes.flat())] : pipes;
+}
+
+// subexpressions(q): the code of each `$(…)` in a double-quoted string, its parentheses balanced.
+function subexpressions(q) {
+    const found = [];
+    for (let i = q.indexOf('$('); i >= 0;) {
+        let depth = 0;
+        let j = i + 1;
+        for (; j < q.length; j++) {
+            if (q[j] === '(') depth += 1;
+            else if (q[j] === ')' && --depth === 0) break;
+        }
+        found.push(q.slice(i + 2, j));
+        i = q.indexOf('$(', j);
+    }
+    return found;
+}
+
+// launches(argvs): how a PowerShell call launches a program or runs code by a method, each kind
+// with the object or type it belongs to in the call. `programs`: .NET's Process.Start, static or a
+// Process object's `.Start()`, and Shell.Application's ShellExecute, which take a program and its
+// arguments apart. `commandLines`: WScript.Shell's Run and Exec, Win32_Process's Create (a WMI
+// class's, or Invoke-CimMethod's or Invoke-WmiMethod's), and VisualBasic's Interaction.Shell,
+// which take one command line. `code`: a script block made from a string ([scriptblock]::Create,
+// NewScriptBlock), PowerShell's AddScript and InvokeScript. A method may be called directly,
+// statically, through `.Invoke`, `PSObject.Methods[…]`, ForEach-Object, or InvokeMember naming it.
+const launchMember = (word = '') => (/\[(\w+)\]\.invoke$/i.exec(word) ?? /(?:\.|::)(\w+)(\.invoke)?$/i.exec(word))?.[1].toLowerCase() ?? '';
+function launches(argvs) {
+    const words = argvs.flat();
+    const names = new Set(argvs.flatMap((argv) => [launchMember(argv[0]),
+        ...(['foreach-object', '%', 'foreach'].includes(commandName(argv[0])) ? argv.slice(1).map((w) => w.toLowerCase()) : [])]));
+    if (names.has('invokemember')) words.forEach((w) => w.split(',').forEach((piece) => names.add(piece.trim().toLowerCase())));
+    const mentions = (pattern) => words.some((w) => pattern.test(w));
+    const statically = (pattern) => argvs.some((argv) => pattern.test(argv[0]));
+    return {
+        programs: (names.has('start') && mentions(/(diagnostics\.|\[)process(startinfo)?\b/i)) || names.has('shellexecute'),
+        commandLines: ((names.has('run') || names.has('exec')) && mentions(/wscript\.shell/i))
+            || (mentions(/win32_process/i) && (names.has('create') || mentions(/^create$/i)))
+            || statically(/interaction\]::shell$/i),
+        code: names.has('addscript') || names.has('invokescript') || names.has('newscriptblock')
+            || statically(/scriptblock\]::create$/i),
+    };
+}
+// launchedReadings(kinds, strings, argvs): the commands a launching call's quoted strings may make,
+// as pipelines, since its program and arguments may be given in any of them, or kept in variables
+// or a ProcessStartInfo's properties, in any order. For command lines, each string. For programs,
+// each string (up to 32, the programs agent-guard has rules for first) followed by all the others,
+// joined into one command line and as words of their own; `$env:ComSpec` counts as the string
+// `cmd`, and a string that is only a path in the runner's root is left out, since in a call of
+// several commands it is more likely another command's (a listing) than the program's. In a
+// command line `%COMSPEC%` reads as cmd. For code, each string as PowerShell. Command lines are read in Bash's syntax, as
+// launched() reads an -ArgumentList. A `runas` or `runasuser` string is read as that verb given to
+// Start-Process, since it is ShellExecute's verb or a ProcessStartInfo's.
+const ruledPrograms = new Set(['schtasks', 'cmd', 'powershell', 'pwsh', 'bash', 'sh', 'runas', 'gsudo', 'sudo', 'ssh',
+    'scp', 'sftp', 'wmic', 'xargs', 'find', 'busybox', 'elevate', 'env', 'timeout', 'nice', 'node', 'python', 'python3',
+    'py', 'perl', 'ruby', 'deno']);
+const comSpec = /^\$\{?env:comspec\}?,?$/i;
+function launchedReadings(kinds, literals, argvs) {
+    const strings = [...literals, ...(argvs.flat().some((w) => comSpec.test(w)) ? ['cmd'] : [])]
+        .map((s) => (comSpec.test(s) ? 'cmd' : s));
+    const rootPath = (s) => /^\S+$/.test(s) && namesRunnerRoot(s);
+    const programs = kinds.programs
+        ? [...strings.keys()].filter((i) => !rootPath(strings[i]))
+            .sort((a, b) => ruledPrograms.has(commandName(strings[b])) - ruledPrograms.has(commandName(strings[a]))).slice(0, 32)
+        : [];
+    return [
+        ...(kinds.commandLines ? strings.flatMap((s) => shellWords(s.replace(/%comspec%/gi, 'cmd'), 'Bash')) : []),
+        ...programs.flatMap((i) => {
+            const rest = strings.filter((s, j) => j !== i && !rootPath(s));
+            const program = /\s/.test(strings[i]) && !strings[i].includes('\'') ? `'${strings[i]}'` : strings[i];
+            return [...shellWords([program, ...rest].join(' '), 'Bash'), [withoutPrefixes([strings[i], ...rest])]];
+        }),
+        ...(kinds.code ? strings.flatMap((s) => shellWords(s, 'PowerShell')) : []),
+        ...strings.filter((s) => /^runas(user)?$/i.test(s)).map((verb) => [['Start-Process', '-Verb', verb]]),
+    ].filter((pipe) => pipe.every((argv) => argv.length));
 }
 // A POSIX assignment before a command is dropped, but not in PowerShell or cmd, which have none:
 // there a word such as `TaskName='x'` is a hashtable entry and is kept, as data (see isData).
@@ -181,8 +280,9 @@ function withoutPrefixes(argv, tool = 'Bash') {
         else if (/^\$[\w:]+=/.test(first)) words = [first.replace(/^\$[\w:]+=/, ''), ...words.slice(1)].filter(Boolean);
         else if (tool === 'Bash' && /^[A-Za-z_]\w*=/.test(first)) words = words.slice(1);
         else if (prefixCommands.has(first.toLowerCase())) {
+            const valued = prefixValued[first.toLowerCase()];
             words = words.slice(1);
-            while (words[0]?.startsWith('-')) words = words.slice(1);
+            while (words[0]?.startsWith('-')) words = words.slice(valued?.test(words[0]) ? 2 : 1);
             if (first === 'timeout' && /^\d/.test(words[0] ?? '')) words = words.slice(1);
         } else return words;
     }
@@ -277,6 +377,72 @@ function launched(argv, titled = true) {
     const words = [file, ...args.flatMap(argumentWords)];
     return titled && commandName(argv[0]) === 'start' && args.length ? [words, ...launched(['start', ...args], false)] : [words];
 }
+
+// xargsCommandAt(argv, at): where the command of the xargs at argv[at] starts. It follows xargs's
+// options, and `--`; a short option that takes a value (-a -d -E -I -J -L -n -P -R -s -S) takes the
+// rest of its word or the next word, -e, -i and -l only one glued on, and a long one, named in
+// full or by a prefix of one name as GNU's xargs takes it, the next word unless it has `=`.
+const xargsValued = 'adEIJLnPRsS';
+const xargsShort = new RegExp(`^-([^${xargsValued}eil]*)([${xargsValued}]?)`);
+const xargsLong = ['arg-file=', 'delimiter=', 'eof', 'exit', 'interactive', 'max-args=', 'max-chars=', 'max-lines',
+    'max-procs=', 'no-run-if-empty', 'null', 'open-tty', 'process-slot-var=', 'replace', 'show-limits', 'verbose',
+    'help', 'version'];
+function longTakesNext(word) {
+    if (word.includes('=')) return false;
+    const name = word.slice(2);
+    const named = xargsLong.filter((o) => o.replace('=', '') === name);
+    const matches = named.length ? named : xargsLong.filter((o) => o.startsWith(name));
+    return matches.length === 1 && matches[0].endsWith('=');
+}
+function xargsCommandAt(argv, at) {
+    let i = at + 1;
+    for (; i < argv.length; i++) {
+        const word = argv[i];
+        if (word === '--') return i + 1;
+        if (!word.startsWith('-') || word === '-') break;
+        const short = xargsShort.exec(word);
+        if (word.startsWith('--') ? longTakesNext(word) : short[2] && short[0] === word) i += 1;
+    }
+    return i;
+}
+// xargsRun(argv): the command an xargs, or a chain of them, runs, its prefixes dropped. A command
+// word `{}` is a replace string, whose command comes through the pipe, so the words after it are
+// read as the command. A schtasks with no verb of its own may be handed one through the pipe, so
+// it is read as a /run.
+const schtasksVerb = /^(\/{1,2}|-)(run|change|delete|create|query|end|showsid)$/i;
+function xargsRun(argv) {
+    let words = argv;
+    let i = 0;
+    for (;;) {
+        i = xargsCommandAt(words, i);
+        if (commandName(words[i]) === 'xargs') continue;
+        words = withoutPrefixes(words.slice(words[i] === '{}' ? i + 1 : i));
+        if (commandName(words[0]) !== 'xargs') break;
+        i = 0;
+    }
+    return commandName(words[0]) === 'schtasks' && !words.some((w) => schtasksVerb.test(w)) ? [...words, '/run'] : words;
+}
+// runs(argv): the commands argv runs in its place: xargs's, find's -exec, -execdir, -ok or -okdir
+// (up to its `;` or `+`), rundll32's ShellExec_RunDLL, and wmic's `process call create` command line.
+function runs(argv, depth = 0) {
+    const name = commandName(argv[0]);
+    const shellExec = argv.findIndex((w) => /,shellexec_rundll[aw]?$/i.test(w));
+    let run = [];
+    if (name === 'xargs') run = xargsRun(argv);
+    else if (name === 'rundll32' && shellExec > 0) run = argv.slice(shellExec + 1);
+    else if (name === 'find') {
+        const at = argv.findIndex((w) => /^-(exec|execdir|ok|okdir)$/.test(w));
+        const end = argv.findIndex((w, j) => j > at && /^(\\|\\?;|\+)$/.test(w));
+        if (at >= 0) run = withoutPrefixes(argv.slice(at + 1, end < 0 ? undefined : end));
+    } else if (name === 'wmic' && argv.some((w) => /^(process|win32_process)$/i.test(w))) {
+        const at = argv.findIndex((w, j) => /^create$/i.test(w) && /^call$/i.test(argv[j - 1] ?? ''));
+        return at < 0 ? [] : shellWords(argv.slice(at + 1).join(' '), 'Bash').flat();
+    }
+    return run.length && depth < 8 ? [run, ...runs(run, depth + 1)] : [];
+}
+// withRuns(argvs): argvs, each followed by the commands it runs in its place, so they are judged
+// as the call's own: with the rest of the call, which may name the task they are handed.
+const withRuns = (argvs) => argvs.flatMap((argv) => [argv, ...runs(argv)]);
 
 // startsElevated(argv): Start-Process, or its aliases, with -Verb RunAs or RunAsUser (another
 // user, such as an admin, given a credential prompt).
@@ -499,9 +665,9 @@ const enablesRunner = (argv) => commandName(argv[0]) === 'elevate'
 
 // elevation(pipes, machine): 'deny', 'ask' or null for these pipelines and the code their commands
 // hand to another shell, which is judged in their place, the wrapper's own redirect included. A
-// command Start-Process or `start` launches is judged as well as the launcher.
+// command Start-Process, `start`, xargs, find or wmic launches is judged as well as the launcher.
 function elevation(pipes, machine, depth = 0) {
-    const argvs = pipes.flat();
+    const argvs = withRuns(pipes.flat());
     const answers = argvs.map((argv) => {
         if (isData(argv)) return null;
         const handed = depth < 4 && handedCode(argv);
