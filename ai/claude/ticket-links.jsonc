@@ -46,12 +46,12 @@
   // reference found, so anchor it.
   "allow": [
     {
-      "description": "Hashes, ciphers and checksums: SHA-256, MD-5, AES-256, RSA-2048, CRC-32.",
-      "pattern": "^(SHA|MD|AES|RSA|CRC)-\\d+$"
+      "description": "Hashes, ciphers and checksums: SHA-256, SHA3-256, MD-5, AES-256, RSA-2048, CRC-32.",
+      "pattern": "^(SHA|SHA3|MD|AES|RSA|CRC)-\\d+$"
     },
     {
-      "description": "Encodings: UTF-8, UTF-16, BASE-64.",
-      "pattern": "^(UTF|BASE)-\\d+$"
+      "description": "Encodings and code pages: UTF-8, UTF-16, BASE-64, WINDOWS-1252, CP-1252, LATIN-1.",
+      "pattern": "^(UTF|BASE|WINDOWS|CP|LATIN)-\\d+$"
     },
     {
       "description": "Standards and their bodies: ISO-8601, RFC-7231, IEEE-754, ECMA-262, ES-2015, PEP-8, FIPS-140, NIST-800, PKCS-11, WCAG-2.",
@@ -62,12 +62,24 @@
       "pattern": "^(CVE|CWE)-\\d+$"
     },
     {
-      "description": "Time zone offsets: UTC-5, GMT-8.",
-      "pattern": "^(UTC|GMT)-\\d+$"
+      "description": "Time zone offsets: UTC-5, GMT-8, EST-5, PST-8, CET-1, AEST-10.",
+      "pattern": "^(UTC|GMT|EST|EDT|CST|CDT|MST|MDT|PST|PDT|AKST|HST|BST|CET|CEST|EET|IST|JST|AEST|AEDT)-\\d+$"
     },
     {
-      "description": "Protocols and hardware: HTTP-2, TLS-1, SSL-3, IPV-6, USB-3, DDR-5, PCI-3, WPA-2, ARM-64.",
-      "pattern": "^(HTTP|TLS|SSL|IPV|USB|DDR|PCI|WPA|ARM)-\\d+$"
+      "description": "Protocols and hardware: HTTP-2, TLS-1, SSL-3, IPV-6, USB-3, DDR-5, PCI-3, PCIE-4, WPA-2, WIFI-6, ARM-64, RJ-45, CAT-6.",
+      "pattern": "^(HTTP|TLS|SSL|IPV|USB|DDR|PCI|PCIE|WPA|WIFI|ARM|RJ|CAT)-\\d+$"
+    },
+    {
+      "description": "Platforms and formats: WSL-2, HTML-5, CSS-3.",
+      "pattern": "^(WSL|HTML|CSS)-\\d+$"
+    },
+    {
+      "description": "Fiscal years and audits: FY-2026, FY-26, SOC-2.",
+      "pattern": "^(FY|SOC)-\\d+$"
+    },
+    {
+      "description": "Database error codes: ORA-00942.",
+      "pattern": "^ORA-\\d+$"
     },
     {
       "description": "Names with a number: GPT-4, COVID-19, IE-11.",
