@@ -729,6 +729,109 @@ assert_eq "xargs grep for Elevated runs is allowed" "allow" \
 assert_eq "a commit message naming xargs schtasks //run is allowed" "allow" \
     "$(decision Bash "git commit -m \"xargs schtasks //run //tn 'Elevated runs' is refused\"")"
 
+# The launching calls' other shapes: arguments before the program, a program path with a space,
+# cmd by %ComSpec%, a launcher inside "$(…)", padding, the RunAsUser verb, concatenation.
+assert_eq "a ProcessStartInfo given its Arguments before its FileName is refused" "deny" \
+    "$(decision PowerShell "\$i = New-Object Diagnostics.ProcessStartInfo; \$i.Arguments = '/run /tn \"Elevated runs\"'; \$i.FileName = 'schtasks'; [Diagnostics.Process]::Start(\$i)")"
+assert_eq "a hashtable ProcessStartInfo with Arguments first is refused" "deny" \
+    "$(decision PowerShell "[Diagnostics.Process]::Start([Diagnostics.ProcessStartInfo]@{Arguments='/run /tn \"Elevated runs\"'; FileName='schtasks'})")"
+assert_eq "Process.Start of a program path with a space in it is refused" "deny" \
+    "$(decision PowerShell "[Diagnostics.Process]::Start('C:\Program Files\PowerShell\7\pwsh.exe', '-NoProfile -Command Start-ScheduledTask \"Elevated runs\"')")"
+assert_eq "Process.Start of \$env:ComSpec /c schtasks /run is refused" "deny" \
+    "$(decision PowerShell "[Diagnostics.Process]::Start(\$env:ComSpec, '/c schtasks /run /tn \"Elevated runs\"')")"
+assert_eq "Process.Start inside a double-quoted subexpression is refused" "deny" \
+    "$(decision PowerShell "\$null = \"\$([Diagnostics.Process]::Start('runas', '/user:admin cmd'))\"")"
+assert_eq "WScript.Shell Run inside a double-quoted subexpression is refused" "deny" \
+    "$(decision PowerShell "Write-Host \"\$((New-Object -ComObject WScript.Shell).Run('runas /user:admin cmd'))\"")"
+padding="$(i=0; while [ $i -lt 40 ]; do printf "'w%s'," "$i"; i=$((i + 1)); done)"
+assert_eq "Process.Start after forty one-word strings is refused" "deny" \
+    "$(decision PowerShell "\$x = ${padding}'end'; [Diagnostics.Process]::Start('schtasks', '/run /tn \"Elevated runs\"')")"
+assert_eq "Shell.Application ShellExecute with the RunAsUser verb is refused" "deny" \
+    "$(decision PowerShell "(New-Object -ComObject Shell.Application).ShellExecute('pwsh', '', '', 'runasuser')")"
+assert_eq "WScript.Shell Run of a task name split across a concatenation is refused" "deny" \
+    "$(decision PowerShell "\$sh = New-Object -ComObject WScript.Shell; \$sh.Run('schtasks /run /tn \"Elevated r' + 'uns\"')")"
+assert_eq "a Stopwatch started beside a read of Elevated runs is allowed" "allow" \
+    "$(decision PowerShell "\$sw = [Diagnostics.Stopwatch]::StartNew(); while ((Get-ScheduledTask -TaskName 'Elevated runs').State -eq 'Running' -and \$sw.Elapsed.TotalSeconds -lt 60) { Start-Sleep 2 }")"
+assert_eq "a static File.Delete beside a read of Elevated runs is allowed" "allow" \
+    "$(decision PowerShell "[IO.File]::Delete(\"\$env:TEMP\x.txt\"); Get-ScheduledTask -TaskName 'Elevated runs' | Select-Object State")"
+assert_eq "a Stopwatch's Start beside a read of the runner's log is allowed" "allow" \
+    "$(decision PowerShell "\$sw = New-Object Diagnostics.Stopwatch; \$sw.Start(); Get-Content 'C:\ProgramData\ElevatedRuns\logs\runner.log' -Tail 20")"
+assert_eq "a Stopwatch's Start beside a PR body naming schtasks /run is allowed" "allow" \
+    "$(decision PowerShell "\$sw = New-Object Diagnostics.Stopwatch; \$sw.Start(); gh pr create --title x --body 'schtasks /run /tn \"Elevated runs\"'")"
+assert_eq "Process.Start wsl with sudo in its arguments is allowed on Windows" "allow" \
+    "$(decision_on win32 PowerShell "[Diagnostics.Process]::Start('wsl', 'sudo apt-get update')")"
+assert_eq "WScript.Shell Exec schtasks /query on Elevated runs is allowed" "allow" \
+    "$(decision PowerShell "(New-Object -ComObject WScript.Shell).Exec('schtasks /query /tn \"Elevated runs\"').StdOut.ReadAll()")"
+assert_eq "Shell.Application ShellExecute schtasks /query on Elevated runs is allowed" "allow" \
+    "$(decision PowerShell "(New-Object -ComObject Shell.Application).ShellExecute('schtasks', '/query /tn \"Elevated runs\"')")"
+assert_eq "a commit message naming ShellExecute schtasks /run is allowed" "allow" \
+    "$(decision Bash "git commit -m \"(New-Object -ComObject Shell.Application).ShellExecute('schtasks', '/run /tn Elevated runs') is refused\"")"
+
+# Other ways a command line is launched or handed over: Win32_Process Create, VB's Shell, a
+# script block made from a string, find -exec, busybox.
+assert_eq "Invoke-CimMethod Win32_Process Create schtasks /run is refused" "deny" \
+    "$(decision PowerShell "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='schtasks /run /tn \"Elevated runs\"'}")"
+assert_eq "Invoke-WmiMethod Win32_Process Create schtasks /run is refused" "deny" \
+    "$(decision PowerShell "Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'schtasks /run /tn \"Elevated runs\"'")"
+assert_eq "a Win32_Process class's Create schtasks /run is refused" "deny" \
+    "$(decision PowerShell "([wmiclass]'Win32_Process').Create('schtasks /run /tn \"Elevated runs\"')")"
+assert_eq "wmic process call create schtasks /run from Git Bash is refused" "deny" \
+    "$(decision Bash "wmic process call create \"schtasks /run /tn \\\"Elevated runs\\\"\"")"
+assert_eq "VisualBasic Interaction.Shell schtasks /run is refused" "deny" \
+    "$(decision PowerShell "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.Interaction]::Shell('schtasks /run /tn \"Elevated runs\"', 0)")"
+assert_eq "a script block created from a string that starts Elevated runs is refused" "deny" \
+    "$(decision PowerShell "[scriptblock]::Create('Start-ScheduledTask \"Elevated runs\"').Invoke()")"
+assert_eq "PowerShell.AddScript starting Elevated runs is refused" "deny" \
+    "$(decision PowerShell "[PowerShell]::Create().AddScript('Start-ScheduledTask \"Elevated runs\"').Invoke()")"
+assert_eq "InvokeScript starting Elevated runs is refused" "deny" \
+    "$(decision PowerShell "\$ExecutionContext.InvokeCommand.InvokeScript('Start-ScheduledTask \"Elevated runs\"')")"
+assert_eq "find -exec schtasks //run on Elevated runs is refused" "deny" \
+    "$(decision Bash "find . -maxdepth 0 -exec schtasks //run //tn \"Elevated runs\" \\;")"
+assert_eq "busybox xargs schtasks //run on Elevated runs is refused" "deny" \
+    "$(decision Bash "echo x | busybox xargs schtasks //run //tn \"Elevated runs\"")"
+assert_eq "Invoke-CimMethod Win32_Process Create of an ordinary program is allowed" "allow" \
+    "$(decision PowerShell "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='notepad'}")"
+assert_eq "reading Win32_Process for schtasks is allowed" "allow" \
+    "$(decision PowerShell "Get-CimInstance Win32_Process -Filter \"Name='schtasks.exe'\" | Select-Object CommandLine")"
+assert_eq "a script block created from a string that reads Elevated runs is allowed" "allow" \
+    "$(decision PowerShell "[scriptblock]::Create('Get-ScheduledTask \"Elevated runs\"').Invoke()")"
+assert_eq "find -exec grep for Elevated runs is allowed" "allow" \
+    "$(decision Bash "find . -name '*.md' -exec grep -l \"Elevated runs\" {} +")"
+
+# xargs: abbreviated long options, a verb handed through the pipe, prefixes' own values, a long chain.
+assert_eq "xargs with an abbreviated long option and its value is refused" "deny" \
+    "$(decision Bash "echo x | xargs --max-p 2 --del '\\n' schtasks //run //tn \"Elevated runs\"")"
+assert_eq "xargs schtasks given its verb through the pipe is refused" "deny" \
+    "$(decision Bash "echo //run | xargs -I% schtasks % //tn \"Elevated runs\"")"
+assert_eq "xargs -I{} schtasks given its verb through the pipe is refused" "deny" \
+    "$(decision Bash "echo //run | xargs -I{} schtasks {} //tn \"Elevated runs\"")"
+assert_eq "xargs schtasks given its verb through the pipe from PowerShell is refused" "deny" \
+    "$(decision PowerShell "'/run' | xargs -I{} schtasks {} /tn 'Elevated runs'")"
+assert_eq "xargs schtasks given its verb through the pipe on another task is allowed" "allow" \
+    "$(decision Bash "echo //run | xargs -I% schtasks % //tn \"dotfiles sync\"")"
+assert_eq "nice -n 5 schtasks //run on Elevated runs is refused" "deny" \
+    "$(decision Bash "nice -n 5 schtasks //run //tn \"Elevated runs\"")"
+assert_eq "timeout -s KILL 5 schtasks //run on Elevated runs is refused" "deny" \
+    "$(decision Bash "timeout -s KILL 5 schtasks //run //tn \"Elevated runs\"")"
+assert_eq "xargs timeout -k 1 5 schtasks //run on Elevated runs is refused" "deny" \
+    "$(decision Bash "echo x | xargs timeout -k 1 5 schtasks //run //tn \"Elevated runs\"")"
+assert_eq "xargs --replace with {} as its command word, schtasks after it, is refused" "deny" \
+    "$(decision Bash "echo x | xargs --replace {} schtasks //run //tn \"Elevated runs\"")"
+assert_eq "WScript.Shell Run %COMSPEC% /c schtasks /run is refused" "deny" \
+    "$(decision PowerShell "\$sh = New-Object -ComObject WScript.Shell; \$sh.Run('%COMSPEC% /c schtasks /run /tn \"Elevated runs\"')")"
+assert_eq "rundll32 ShellExec_RunDLL schtasks /run is refused" "deny" \
+    "$(decision Bash "rundll32 shell32.dll,ShellExec_RunDLL schtasks /run /tn \"Elevated runs\"")"
+assert_eq "rundll32 ShellExec_RunDLL of an ordinary program is allowed" "allow" \
+    "$(decision Bash "rundll32 shell32.dll,ShellExec_RunDLL notepad")"
+assert_eq "Process.Start of git beside a listing of the runner's outbox is allowed" "allow" \
+    "$(decision PowerShell "\$p = [Diagnostics.Process]::Start('git', 'log -1'); \$p.WaitForExit(); Get-ChildItem 'C:\ProgramData\ElevatedRuns\outbox'")"
+chain="$(i=0; while [ $i -lt 8000 ]; do printf 'xargs '; i=$((i + 1)); done)"
+started=$(date +%s)
+long_chain="$(decision Bash "echo x | ${chain}schtasks //run //tn \"Elevated runs\"")"
+took=$(( $(date +%s) - started ))
+assert_eq "a chain of 8000 xargs before schtasks //run is refused" "deny" "$long_chain"
+assert_eq "and answers within 5 seconds" "y" "$([ "$took" -lt 5 ] && echo y || echo "n ($took s)")"
+
 # The runner's root spelled every way the shells spell it, and the reads around it.
 assert_eq "a write into the runner's root by its short name is refused" "deny" \
     "$(decision PowerShell "Set-Content C:\PROGRA~3\ElevatedRuns\inbox\r.json x")"
