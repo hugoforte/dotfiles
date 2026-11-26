@@ -523,6 +523,8 @@ assert_eq "cmd /q/c schtasks /run on Elevated runs is refused" "deny" \
     "$(decision PowerShell "cmd /q/c schtasks /run /tn \"Elevated runs\"")"
 assert_eq "cmd /c start with a title before schtasks is refused" "deny" \
     "$(decision PowerShell "cmd /c start \"x\" schtasks /run /tn \"Elevated runs\"")"
+assert_eq "cmd /c start with a title and a switch before schtasks is refused" "deny" \
+    "$(decision PowerShell "cmd /c 'start \"runner\" /wait schtasks /run /tn \"Elevated runs\"'")"
 assert_eq "cmd /c start /d before schtasks is refused" "deny" \
     "$(decision PowerShell "cmd /c start /d C:\ schtasks /run /tn \"Elevated runs\"")"
 assert_eq "cmd /c with an apostrophe in an ordinary command is allowed" "allow" \

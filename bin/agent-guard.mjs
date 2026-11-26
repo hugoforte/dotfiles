@@ -243,7 +243,8 @@ function handedCode(argv) {
 // and an array split at its commas. A piece is kept whole as well, since PowerShell 7 quotes an
 // array element with a space in it. cmd's `start` takes its own /switches before the program, /d,
 // /node and /affinity with a value, and a first quoted word as the window's title; with the quotes
-// already gone, the words after the first are judged as a command too.
+// already gone, the words after the first are read as a `start` of their own too, its /switches
+// and all.
 const starters = ['start-process', 'saps', 'start'];
 const startOptions = {
     switches: ['wait', 'nonewwindow', 'passthru', 'usenewenvironment', 'loaduserprofile'],
@@ -255,7 +256,7 @@ const startOptions = {
 const isOption = (name, names) => names.some((n) => n.startsWith(name));
 const argumentWords = (word) => word.split(',').flatMap((piece) => [piece,
     ...(/[\s"']/.test(piece) ? shellWords(piece.replace(/`([\s\S])/g, '$1'), 'Bash').flat(2) : [])]);
-function launched(argv) {
+function launched(argv, titled = true) {
     if (!starters.includes(commandName(argv[0]))) return [];
     let file = null;
     const args = [];
@@ -274,7 +275,7 @@ function launched(argv) {
     }
     if (!file) return [];
     const words = [file, ...args.flatMap(argumentWords)];
-    return commandName(argv[0]) === 'start' && words.length > 1 ? [words, words.slice(1)] : [words];
+    return titled && commandName(argv[0]) === 'start' && args.length ? [words, ...launched(['start', ...args], false)] : [words];
 }
 
 // startsElevated(argv): Start-Process, or its aliases, with -Verb RunAs or RunAsUser (another
