@@ -5,9 +5,11 @@
 // The rule it backs is about what agents write to Hugo: every ticket and PR named in a chat reply
 // or a message to another thread carries its full URL. So by default it reads two tools' text
 // (`tools` below) and, on each prompt, the last chat reply. GitHub, Jira and Linear link a bare key
-// in their own bodies themselves, so the tools that write there are listed, commented out, for a
-// machine that wants them; uncomment an entry here and add the tool to the PreToolUse matcher in
-// ai/claude/settings.json, which tests/ticket-link-guard.test.sh checks agree.
+// in their own bodies themselves, so the tools that write there are listed, commented out. Turning
+// one on is a change to this repo, for every machine: uncomment the entry here and add the tool
+// to the PreToolUse matcher in ai/claude/settings.json (tests/ticket-link-guard.test.sh fails until
+// the two agree). The fragment owns that matcher, so a machine cannot widen it on its own; a
+// TICKET_LINK_GUARD_CONFIG file can change the patterns and the allowlist, and narrow the tools.
 {
   // Each reference is a JavaScript regular expression, run over the text with the g flag (plus
   // `flags`) in this order; what one finds is blanked before the next runs, so the text holds long
