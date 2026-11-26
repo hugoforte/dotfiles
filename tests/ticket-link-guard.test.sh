@@ -140,6 +140,14 @@ assert_eq "an owner/repo number with its pull request URL is not bare" "none" \
     "$(bare "hugoforte/dotfiles#119, https://github.com/hugoforte/dotfiles/pull/119")"
 assert_eq "an owner/repo number with another repo's URL is bare" "hugoforte/dotfiles#119" \
     "$(bare "hugoforte/dotfiles#119, https://github.com/hugoforte/rig/pull/119")"
+assert_eq "a key named next to its Linear URL is not bare" "none" \
+    "$(bare "VEC-9: https://linear.app/acme/issue/VEC-9/fix-the-thing")"
+assert_eq "a key named next to a board URL selecting it is not bare" "none" \
+    "$(bare "KTLO-9: https://example.atlassian.net/jira/software/projects/KTLO/boards/1?selectedIssue=KTLO-9")"
+assert_eq "a key whose only URL is a branch named after it is bare" "KTLO-5" \
+    "$(bare "KTLO-5 is on https://github.com/hugoforte/rig/tree/KTLO-5-foo")"
+assert_eq "a key whose only URL is a compare view is bare" "KTLO-12" \
+    "$(bare "KTLO-12, see https://github.com/o/r/compare/main...KTLO-12")"
 assert_eq "a key whose URL names a longer number is bare" "KTLO-9" \
     "$(bare "KTLO-9: https://example.atlassian.net/browse/KTLO-99")"
 

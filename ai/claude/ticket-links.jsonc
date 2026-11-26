@@ -23,9 +23,9 @@
     },
     {
       "name": "Jira or Linear key",
-      "description": "KTLO-123, CR-7, VEC-42: any project's prefix, so a new project needs no entry, with two letters at least (not Q3-2026), standing alone rather than inside a path, a branch or a work id (KTLO-1521-im-payments).",
+      "description": "KTLO-123, CR-7, VEC-42: any project's prefix, so a new project needs no entry, with two letters at least (not Q3-2026), standing alone rather than inside a path, a branch or a work id (ABC-12-some-branch). Linked by the issue's own page: Jira's /browse/KEY or a board's selectedIssue=KEY, Linear's /issue/KEY; a branch or compare URL that holds the key is not its link.",
       "pattern": "(?<![A-Za-z0-9./\\\\@-])[A-Z][A-Z0-9]*[A-Z][A-Z0-9]*-\\d+(?![A-Za-z0-9-]|\\.\\d)",
-      "linkedBy": "(^|[^A-Za-z0-9]){match}(?!\\d)"
+      "linkedBy": "(/browse/|/issues?/|[?&]selectedIssue=){match}(?![A-Za-z0-9-])"
     },
     {
       "name": "GitHub number",
