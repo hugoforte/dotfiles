@@ -1,6 +1,6 @@
 # Development Guidelines
 
-<!-- Every line here loads in every session, so each one must change behaviour against the model's and Claude Code's defaults. Guidance for one kind of file goes in ai/rules/ with a `paths:` filter; guidance for one repo goes in that repo. An overlay's ai/rules/*.md are linked into ~/.claude/rules/ beside this repo's. -->
+<!-- Every line here loads in every session, so each one must change behavior against the model's and Claude Code's defaults. Guidance for one kind of file goes in ai/rules/ with a `paths:` filter; guidance for one repo goes in that repo. An overlay's ai/rules/*.md are linked into ~/.claude/rules/ beside this repo's. -->
 
 ## Environment
 
@@ -37,7 +37,7 @@
 
 ## Git and GitHub
 
-- Every commit compiles, passes the existing tests, includes tests for new behaviour, and is formatted with the project's formatter.
+- Every commit compiles, passes the existing tests, includes tests for new behavior, and is formatted with the project's formatter.
 - A commit that fixes an issue carries `Fixes #123` on its own line.
 - Post a PR review comment only with the user's explicit approval, except in an automated reviewer's thread (CodeRabbit and the like) while the work is to address a PR's review feedback or make it mergeable: there, act on the finding, reply in the thread, resolve it, and tell the user what you did. Reply to an existing review thread in that thread, not at the root.
 - A person's review thread is theirs to resolve: reply in it and leave it open, even with approval. Only an automated reviewer's thread gets resolved, or one the user wrote and tells you to.
@@ -46,6 +46,7 @@
 
 - Comment on the code as it is: say what it does now, not the change that produced it.
 - Comment only what the code cannot say itself.
-- Update the documentation a behaviour change affects, in the same change.
+- Update the documentation a behavior change affects, in the same change.
 - Use a real ellipsis (…) rather than three dots in human-facing text.
 - Never put an em dash (—) in prose you write (chat replies, docs, commits, PR bodies, comments), because it reads as machine-written; use a colon, comma, parentheses or a new sentence instead. Exact data and quotations keep theirs.
+- Write American English spelling (behavior, authorize, color, catalog) in prose you write: chat replies, docs, commits, PR bodies, comments and drafts for others. Exact quotations, identifiers and system status names keep their spelling.
