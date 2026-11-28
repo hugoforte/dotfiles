@@ -10,6 +10,8 @@
 // to the PreToolUse matcher in ai/claude/settings.json (tests/ticket-link-guard.test.sh fails until
 // the two agree). The fragment owns that matcher, so a machine cannot widen it on its own; a
 // TICKET_LINK_GUARD_CONFIG file can change the patterns and the allowlist, and narrow the tools.
+// Such a file replaces this one whole, `verbatim` (below) included: copy its entries, or the
+// relays they let through are refused again.
 {
   // Each reference is a JavaScript regular expression, run over the text with the g flag (plus
   // `flags`) in this order; what one finds is blanked before the next runs, so the text holds long
@@ -117,15 +119,24 @@
     // "mcp__claude_ai_Linear__save_issue": ["description"],
   },
 
-  // Texts a relay must send exactly as it got them, so they are not read: the tool's field, when
-  // it starts with `startsWith` (at its very first character). A relay that checks a text against
-  // its hash before sending cannot add a link to it, and a refusal loses the text.
+  // Texts a relay must send exactly as it got them, so they are not read. A relay that checks a
+  // text against its hash before sending cannot add a link to it, and a refusal loses the text.
+  // Each entry names a tool, one of the fields `tools` reads for it, and a pattern anchored with ^
+  // that the field's whole text is tested against; the config fails (and the guard lets
+  // everything through, with a note) when an entry breaks any of that. A string field only: an
+  // object field's text starts with its first string, such as an ADF document's "doc".
   "verbatim": [
     {
-      "description": "The work overview's batch dispatcher: a scheduled task that hands each batch, checked against its SHA-256, to one thread unchanged.",
+      "description": "The work overview's batch dispatcher, live: a scheduled task that hands each batch, checked against its SHA-256, to one thread unchanged. The header is the batch's own: its event id, then ' | '.",
       "tool": "mcp__t3-code__t3_thread_send",
       "field": "message",
-      "startsWith": "WORK OVERVIEW BATCH "
+      "pattern": "^WORK OVERVIEW BATCH [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} \\| "
+    },
+    {
+      "description": "The same dispatcher in shadow mode, to its drill thread: the drill frame with its delivery id on one line, a blank line, then the batch header.",
+      "tool": "mcp__t3-code__t3_thread_send",
+      "field": "message",
+      "pattern": "^Work overview dispatcher shadow drill [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\. [^\\n]*\\n\\nWORK OVERVIEW BATCH [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} \\| "
     }
   ]
 }

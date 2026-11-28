@@ -15,8 +15,8 @@
 // not bare when it is part of a URL, the text of a markdown link to a full URL (inline,
 // reference-style or an autolink), in a code span or a fenced code block, on a commit message's
 // own `Fixes #123` line (or Closes, Resolves), or when the text gives its URL anywhere. A tool's
-// text that the config's `verbatim` names, by the header it starts with, is not read at all: a
-// relay must send it unchanged.
+// text that one of the config's `verbatim` patterns matches, by the header it starts with, is not
+// read at all: a relay must send it unchanged.
 //
 // It reads no network and fails open: input it cannot use, a config it cannot read, or any other
 // error lets the call or the prompt through, with a note on stderr.
@@ -91,10 +91,15 @@ export function compileConfig(raw, source = 'config') {
         if (!Array.isArray(fields) || !fields.every((f) => typeof f === 'string')) fail(`tools.${tool} is not a list of fields`);
     }
     const verbatim = list('verbatim').map((v, i) => {
-        for (const key of ['tool', 'field', 'startsWith']) {
-            if (typeof v?.[key] !== 'string' || !v[key]) fail(`verbatim[${i}] has no ${key}`);
+        const where = `verbatim[${i}]`;
+        if (!v || typeof v !== 'object') fail(`${where} is not an object`);
+        for (const key of ['tool', 'field']) {
+            if (typeof v[key] !== 'string' || !v[key]) fail(`${where} has no string ${key}`);
         }
-        return { tool: v.tool, field: v.field, startsWith: v.startsWith };
+        // An entry that names a field no tool reads would never apply, and would say nothing.
+        if (!(tools[v.tool] ?? []).includes(v.field)) fail(`${where}: tools.${v.tool} does not read ${v.field}`);
+        if (typeof v.pattern !== 'string' || !v.pattern.startsWith('^')) fail(`${where}: pattern is not a string anchored with ^`);
+        return { tool: v.tool, field: v.field, regex: regex(where, v.pattern) };
     });
     return { references, allow, shellTools, tools, verbatim };
 }
@@ -102,7 +107,7 @@ export function compileConfig(raw, source = 'config') {
 // verbatim(config, tool, field, text): whether text is one a relay must send unchanged, so it is
 // not read.
 const verbatim = (config, tool, field, text) => (config.verbatim ?? [])
-    .some((v) => v.tool === tool && v.field === field && text.startsWith(v.startsWith));
+    .some((v) => v.tool === tool && v.field === field && v.regex.test(text));
 
 // loadConfig(path): the config at path, the environment's TICKET_LINK_GUARD_CONFIG, or the
 // shipped one, compiled.

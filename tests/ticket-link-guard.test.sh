@@ -249,20 +249,43 @@ assert_eq "a call with no input goes" "0 allow" \
 
 # PreToolUse, verbatim texts: a relay that delivers a batch exactly as it came, checked against its
 # hash, cannot add links, so its message is not read; everything else still is.
-batch="WORK OVERVIEW BATCH 0b7c | from a paired device | 1 item${nl}${nl}> item 1 of 1 | 0b7c${nl}> work: \"VEC-284\""
-assert_eq "a relayed batch with a bare key goes" "0 allow" \
+event="7d1c9a64-1b2e-4f3a-8c5d-6e7f8091a2b3"
+delivery="0c2f8e1a-5b3d-4e6f-9a7b-1c2d3e4f5a6b"
+batch="WORK OVERVIEW BATCH $event | from Hugo, paired device \"Laptop Edge\" | 1 item${nl}Hugo's words from the work overview.${nl}${nl}> item 1 of 1 | $event | chief | instruct | card sha256:ab12${nl}> work: \"VEC-284\"${nl}> note: \"see KTLO-9 and PR #12\""
+drill="Work overview dispatcher shadow drill $delivery. This is a test delivery to a dedicated drill thread. Reply with exactly: ACK $delivery${nl}${nl}$batch"
+assert_eq "a relayed batch with bare references goes" "0 allow" \
     "$(hook "$(tool_input mcp__t3-code__t3_thread_send "$(message "$batch")")")"
+assert_eq "a batch inside its shadow drill frame goes" "0 allow" \
+    "$(hook "$(tool_input mcp__t3-code__t3_thread_send "$(message "$drill")")")"
 assert_eq "a thread message that names the batch header later is still refused" "0 deny" \
     "$(hook "$(tool_input mcp__t3-code__t3_thread_send "$(message "Relaying it: $batch")")")"
 assert_eq "a batch header after a leading space is still refused" "0 deny" \
     "$(hook "$(tool_input mcp__t3-code__t3_thread_send "$(message " $batch")")")"
+assert_eq "a batch header without its event id is still refused" "0 deny" \
+    "$(hook "$(tool_input mcp__t3-code__t3_thread_send "$(message "WORK OVERVIEW BATCH x${nl}picked up KTLO-9")")")"
+assert_eq "a drill frame without a batch after it is still refused" "0 deny" \
+    "$(hook "$(tool_input mcp__t3-code__t3_thread_send "$(message "Work overview dispatcher shadow drill $delivery. Reply.${nl}${nl}picked up KTLO-9")")")"
 assert_eq "a message to the user that starts with the batch header is still refused" "0 deny" \
     "$(hook "$(tool_input mcp__t3-code__send_to_user "$(message "$batch")")")"
-printf '{ "references": [], "allow": [], "tools": {}, "verbatim": [{ "tool": "t", "field": "message" }] }' > "$work/verbatim.jsonc"
-assert_eq "a verbatim entry with no startsWith lets the call through" "0 allow" \
-    "$(hook "$(tool_input mcp__t3-code__send_to_user "$(message "KTLO-1")")" "$work/verbatim.jsonc")"
-assert_eq "and says why on stderr" "y" \
-    "$(grep -q 'ticket-link-guard: .*verbatim\[0\]' "$work/stderr" && echo y || echo n)"
+
+# A verbatim entry that could never apply, or would let every text through, fails the config.
+verbatim_config() {
+    printf '{ "references": [], "allow": [], "tools": { "mcp__t3-code__send_to_user": ["message"] }, "verbatim": [%s] }' "$1" > "$work/verbatim.jsonc"
+    hook "$(tool_input mcp__t3-code__send_to_user "$(message "KTLO-1")")" "$work/verbatim.jsonc"
+    grep -q "ticket-link-guard: .*verbatim\[0\]:\{0,1\} $2" "$work/stderr" && echo "said" || echo "silent"
+}
+assert_eq "a verbatim entry with no pattern fails the config" "0 allow${nl}said" \
+    "$(verbatim_config '{ "tool": "mcp__t3-code__send_to_user", "field": "message" }' 'pattern is not')"
+assert_eq "an empty verbatim pattern fails the config" "0 allow${nl}said" \
+    "$(verbatim_config '{ "tool": "mcp__t3-code__send_to_user", "field": "message", "pattern": "" }' 'pattern is not')"
+assert_eq "an unanchored verbatim pattern fails the config" "0 allow${nl}said" \
+    "$(verbatim_config '{ "tool": "mcp__t3-code__send_to_user", "field": "message", "pattern": "BATCH" }' 'pattern is not')"
+assert_eq "a verbatim field the tool does not read fails the config" "0 allow${nl}said" \
+    "$(verbatim_config '{ "tool": "mcp__t3-code__send_to_user", "field": "mesage", "pattern": "^x" }' 'tools.mcp__t3-code__send_to_user does not read mesage')"
+assert_eq "a verbatim entry for a shell tool fails the config" "0 allow${nl}said" \
+    "$(verbatim_config '{ "tool": "Bash", "field": "command", "pattern": "^gh" }' 'tools.Bash does not read command')"
+assert_eq "a verbatim entry that is not an object fails the config" "0 allow${nl}said" \
+    "$(verbatim_config 'null' 'is not an object')"
 
 # PreToolUse, with the config's commented-out entries turned on.
 node -e "
