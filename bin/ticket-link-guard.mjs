@@ -14,7 +14,9 @@
 // TICKET_LINK_GUARD_CONFIG names another file in its place. Whatever the patterns, a reference is
 // not bare when it is part of a URL, the text of a markdown link to a full URL (inline,
 // reference-style or an autolink), in a code span or a fenced code block, on a commit message's
-// own `Fixes #123` line (or Closes, Resolves), or when the text gives its URL anywhere.
+// own `Fixes #123` line (or Closes, Resolves), or when the text gives its URL anywhere. A tool's
+// text that the config's `verbatim` names, by the header it starts with, is not read at all: a
+// relay must send it unchanged.
 //
 // It reads no network and fails open: input it cannot use, a config it cannot read, or any other
 // error lets the call or the prompt through, with a note on stderr.
@@ -88,8 +90,19 @@ export function compileConfig(raw, source = 'config') {
     for (const [tool, fields] of Object.entries(tools)) {
         if (!Array.isArray(fields) || !fields.every((f) => typeof f === 'string')) fail(`tools.${tool} is not a list of fields`);
     }
-    return { references, allow, shellTools, tools };
+    const verbatim = list('verbatim').map((v, i) => {
+        for (const key of ['tool', 'field', 'startsWith']) {
+            if (typeof v?.[key] !== 'string' || !v[key]) fail(`verbatim[${i}] has no ${key}`);
+        }
+        return { tool: v.tool, field: v.field, startsWith: v.startsWith };
+    });
+    return { references, allow, shellTools, tools, verbatim };
 }
+
+// verbatim(config, tool, field, text): whether text is one a relay must send unchanged, so it is
+// not read.
+const verbatim = (config, tool, field, text) => (config.verbatim ?? [])
+    .some((v) => v.tool === tool && v.field === field && text.startsWith(v.startsWith));
 
 // loadConfig(path): the config at path, the environment's TICKET_LINK_GUARD_CONFIG, or the
 // shipped one, compiled.
@@ -292,7 +305,8 @@ export function answer(input, config) {
     if (input.hook_event_name === 'PreToolUse') {
         const tool = input.tool_name;
         const texts = config.shellTools.includes(tool) ? shellBodies(input.tool_input?.command, input.cwd)
-            : (config.tools[tool] ?? []).flatMap((field) => fieldTexts(input.tool_input, field));
+            : (config.tools[tool] ?? []).flatMap((field) => fieldTexts(input.tool_input, field)
+                .filter((text) => !verbatim(config, tool, field, text)));
         // Each text is its own document for its reader, so a link in one covers nothing in another.
         const refs = [...new Set(texts.flatMap((t) => bareReferences(t, config)))];
         if (!refs.length) return null;

@@ -115,5 +115,17 @@
     // Linear links a bare key in its comments and descriptions:
     // "mcp__claude_ai_Linear__save_comment": ["body"],
     // "mcp__claude_ai_Linear__save_issue": ["description"],
-  }
+  },
+
+  // Texts a relay must send exactly as it got them, so they are not read: the tool's field, when
+  // it starts with `startsWith` (at its very first character). A relay that checks a text against
+  // its hash before sending cannot add a link to it, and a refusal loses the text.
+  "verbatim": [
+    {
+      "description": "The work overview's batch dispatcher: a scheduled task that hands each batch, checked against its SHA-256, to one thread unchanged.",
+      "tool": "mcp__t3-code__t3_thread_send",
+      "field": "message",
+      "startsWith": "WORK OVERVIEW BATCH "
+    }
+  ]
 }

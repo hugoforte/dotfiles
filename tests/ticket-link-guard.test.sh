@@ -247,6 +247,23 @@ assert_eq "a Jira comment is not read by default" "0 allow" \
 assert_eq "a call with no input goes" "0 allow" \
     "$(hook '{"hook_event_name":"PreToolUse","tool_name":"mcp__t3-code__send_to_user"}')"
 
+# PreToolUse, verbatim texts: a relay that delivers a batch exactly as it came, checked against its
+# hash, cannot add links, so its message is not read; everything else still is.
+batch="WORK OVERVIEW BATCH 0b7c | from a paired device | 1 item${nl}${nl}> item 1 of 1 | 0b7c${nl}> work: \"VEC-284\""
+assert_eq "a relayed batch with a bare key goes" "0 allow" \
+    "$(hook "$(tool_input mcp__t3-code__t3_thread_send "$(message "$batch")")")"
+assert_eq "a thread message that names the batch header later is still refused" "0 deny" \
+    "$(hook "$(tool_input mcp__t3-code__t3_thread_send "$(message "Relaying it: $batch")")")"
+assert_eq "a batch header after a leading space is still refused" "0 deny" \
+    "$(hook "$(tool_input mcp__t3-code__t3_thread_send "$(message " $batch")")")"
+assert_eq "a message to the user that starts with the batch header is still refused" "0 deny" \
+    "$(hook "$(tool_input mcp__t3-code__send_to_user "$(message "$batch")")")"
+printf '{ "references": [], "allow": [], "tools": {}, "verbatim": [{ "tool": "t", "field": "message" }] }' > "$work/verbatim.jsonc"
+assert_eq "a verbatim entry with no startsWith lets the call through" "0 allow" \
+    "$(hook "$(tool_input mcp__t3-code__send_to_user "$(message "KTLO-1")")" "$work/verbatim.jsonc")"
+assert_eq "and says why on stderr" "y" \
+    "$(grep -q 'ticket-link-guard: .*verbatim\[0\]' "$work/stderr" && echo y || echo n)"
+
 # PreToolUse, with the config's commented-out entries turned on.
 node -e "
     const fs = require('node:fs');
