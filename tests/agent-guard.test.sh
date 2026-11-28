@@ -413,6 +413,195 @@ assert_eq "runas in an -ec encoded command is refused" "deny" \
 assert_eq "Start-Process -Verb RunAs through cmd /k is refused" "deny" \
     "$(decision Bash "cmd //k powershell -c Start-Process pwsh -Verb RunAs")"
 
+# The Elevated runs task started or changed through Task Scheduler's COM object, its CIM classes,
+# or a wrapper around schtasks, and the reads and other tasks around those.
+assert_eq "COM Schedule.Service Run on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "\$s = New-Object -ComObject Schedule.Service; \$s.Connect(); \$s.GetFolder('\').GetTask('Elevated runs').Run(\$null)")"
+assert_eq "COM Schedule.Service RunEx on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "\$s = New-Object -ComObject Schedule.Service; \$s.Connect(); \$s.GetFolder('\').GetTask('Elevated runs').RunEx(\$null, 0, 0, '')")"
+assert_eq "COM Run on Elevated runs kept in a variable is refused" "deny" \
+    "$(decision PowerShell "\$svc = New-Object -com 'Schedule.Service'; \$svc.Connect(); \$t = \$svc.GetFolder('\').GetTask('\Elevated runs'); [void]\$t.Run(\$null)")"
+assert_eq "COM Run on Elevated runs in upper case is refused" "deny" \
+    "$(decision PowerShell "(NEW-OBJECT -COMOBJECT SCHEDULE.SERVICE).GETFOLDER('\').GETTASK('ELEVATED RUNS').RUN(\$NULL)")"
+assert_eq "COM Run on Elevated runs through a ProgID activator is refused" "deny" \
+    "$(decision PowerShell "\$s = [Activator]::CreateInstance([Type]::GetTypeFromProgID('Schedule.Service')); \$s.Connect(); \$s.GetFolder('\').GetTask('Elevated runs').Run(\$null)")"
+assert_eq "COM RunEx on Elevated runs through ForEach-Object is refused" "deny" \
+    "$(decision PowerShell "\$s = New-Object -ComObject:Schedule.Service; \$s.Connect(); \$s.GetFolder('\').GetTask('Elevated runs') | % RunEx \$null 0 0 ''")"
+assert_eq "COM DeleteTask on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "\$s = New-Object -ComObject Schedule.Service; \$s.Connect(); \$s.GetFolder('\').DeleteTask('Elevated runs', 0)")"
+assert_eq "COM enabling Elevated runs is refused" "deny" \
+    "$(decision PowerShell "\$t = (New-Object -ComObject Schedule.Service).GetFolder('\').GetTask('Elevated runs'); \$t.Enabled = \$true")"
+assert_eq "COM Run on Elevated runs through powershell -Command from Git Bash is refused" "deny" \
+    "$(decision Bash "powershell -NoProfile -Command \"\\\$s = New-Object -ComObject Schedule.Service; \\\$s.Connect(); \\\$s.GetFolder('\\').GetTask('Elevated runs').Run(\\\$null)\"")"
+assert_eq "COM reading Elevated runs is allowed" "allow" \
+    "$(decision PowerShell "\$s = New-Object -ComObject Schedule.Service; \$s.Connect(); \$s.GetFolder('\').GetTask('Elevated runs').LastRunTime")"
+assert_eq "COM stopping Elevated runs is allowed" "allow" \
+    "$(decision PowerShell "\$s = New-Object -ComObject Schedule.Service; \$s.Connect(); \$s.GetFolder('\').GetTask('Elevated runs').Stop(0)")"
+assert_eq "COM Run on another task is allowed" "allow" \
+    "$(decision PowerShell "\$s = New-Object -ComObject Schedule.Service; \$s.Connect(); \$s.GetFolder('\').GetTask('dotfiles sync').Run(\$null)")"
+assert_eq "a commit message naming COM Run on Elevated runs is allowed" "allow" \
+    "$(decision Bash "git commit -m \"Schedule.Service .Run on 'Elevated runs' is refused\"")"
+assert_eq "Invoke-CimMethod Start on MSFT_ScheduledTask Elevated runs is refused" "deny" \
+    "$(decision PowerShell "Get-CimInstance -Namespace Root/Microsoft/Windows/TaskScheduler -ClassName MSFT_ScheduledTask -Filter \"TaskName='Elevated runs'\" | Invoke-CimMethod -MethodName Start")"
+assert_eq "icim Start on msft_scheduledtask Elevated runs is refused" "deny" \
+    "$(decision PowerShell "gcim -Namespace root/microsoft/windows/taskscheduler -ClassName msft_scheduledtask -Filter \"TaskName = 'Elevated runs'\" | icim -MethodName start")"
+assert_eq "Invoke-CimMethod Start on a WQL query for Elevated* is refused" "deny" \
+    "$(decision PowerShell "Get-CimInstance -Namespace Root/Microsoft/Windows/TaskScheduler -Query \"SELECT * FROM MSFT_ScheduledTask WHERE TaskName LIKE 'Elevated%'\" | Invoke-CimMethod -MethodName:Start")"
+assert_eq "Get-ScheduledTask Elevated runs piped into Invoke-CimMethod Start is refused" "deny" \
+    "$(decision PowerShell "Get-ScheduledTask -TaskName 'Elevated runs' | Invoke-CimMethod -MethodName Start")"
+assert_eq "Invoke-CimMethod StartByPath on PS_ScheduledTask Elevated runs is refused" "deny" \
+    "$(decision PowerShell "Invoke-CimMethod -Namespace Root/Microsoft/Windows/TaskScheduler -ClassName PS_ScheduledTask -MethodName StartByPath -Arguments @{TaskName='Elevated runs'; TaskPath='\'}")"
+assert_eq "Remove-CimInstance on MSFT_ScheduledTask Elevated runs is refused" "deny" \
+    "$(decision PowerShell "Get-CimInstance -Namespace Root/Microsoft/Windows/TaskScheduler -ClassName MSFT_ScheduledTask -Filter \"TaskName='Elevated runs'\" | Remove-CimInstance")"
+assert_eq "Invoke-WmiMethod Start on MSFT_ScheduledTask Elevated runs is refused" "deny" \
+    "$(decision PowerShell "Get-WmiObject -Namespace root\Microsoft\Windows\TaskScheduler -Class MSFT_ScheduledTask -Filter \"TaskName='Elevated runs'\" | Invoke-WmiMethod -Name Start")"
+assert_eq "wmic call Start on MSFT_ScheduledTask Elevated runs is refused" "deny" \
+    "$(decision PowerShell "wmic /namespace:\\\\root\Microsoft\Windows\TaskScheduler path MSFT_ScheduledTask where \"TaskName='Elevated runs'\" call Start")"
+assert_eq "Get-CimInstance reading MSFT_ScheduledTask Elevated runs is allowed" "allow" \
+    "$(decision PowerShell "Get-CimInstance -Namespace Root/Microsoft/Windows/TaskScheduler -ClassName MSFT_ScheduledTask -Filter \"TaskName='Elevated runs'\"")"
+assert_eq "Invoke-CimMethod Stop on MSFT_ScheduledTask Elevated runs is allowed" "allow" \
+    "$(decision PowerShell "Get-CimInstance -Namespace Root/Microsoft/Windows/TaskScheduler -ClassName MSFT_ScheduledTask -Filter \"TaskName='Elevated runs'\" | Invoke-CimMethod -MethodName Stop")"
+assert_eq "Invoke-CimMethod Start on another task is allowed" "allow" \
+    "$(decision PowerShell "Get-CimInstance -Namespace Root/Microsoft/Windows/TaskScheduler -ClassName MSFT_ScheduledTask -Filter \"TaskName='dotfiles sync'\" | Invoke-CimMethod -MethodName Start")"
+assert_eq "cmd /c schtasks /run on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "cmd /c schtasks /run /tn \"Elevated runs\"")"
+assert_eq "cmd.exe /C schtasks /Run on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "cmd.exe /C schtasks /Run /TN 'Elevated runs'")"
+assert_eq "cmd /k schtasks /run on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "cmd /k schtasks /run /tn 'Elevated runs'")"
+assert_eq "cmd /c with /c glued to schtasks on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "cmd /cschtasks /run /tn \"Elevated runs\"")"
+assert_eq "cmd //c schtasks //run on Elevated runs from Git Bash is refused" "deny" \
+    "$(decision Bash "cmd //c schtasks //run //tn \"Elevated runs\"")"
+assert_eq "cmd //c with the whole command quoted from Git Bash is refused" "deny" \
+    "$(decision Bash "cmd //s //c \"schtasks //run //tn \\\"Elevated runs\\\"\"")"
+assert_eq "cmd /c chaining schtasks /run on Elevated runs after & is refused" "deny" \
+    "$(decision PowerShell "cmd /c 'echo hi & schtasks /run /tn \"Elevated runs\"'")"
+assert_eq "cmd /c chaining schtasks /run with backtick-escaped quotes is refused" "deny" \
+    "$(decision PowerShell "cmd /c \"echo hi && schtasks /run /tn \`\"Elevated runs\`\"\"")"
+assert_eq "cmd /c call schtasks /run on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "cmd /c call schtasks /run /tn \"Elevated runs\"")"
+assert_eq "cmd /c start schtasks /run on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "cmd /c start \"\" /b schtasks /run /tn \"Elevated runs\"")"
+assert_eq "Start-Process schtasks /run on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "Start-Process schtasks -ArgumentList '/run /tn \"Elevated runs\"' -NoNewWindow")"
+assert_eq "saps schtasks.exe with an argument array on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "saps -FilePath schtasks.exe '/run','/tn','Elevated runs'")"
+assert_eq "powershell -Command Start-ScheduledTask with the name quoted outside is refused" "deny" \
+    "$(decision PowerShell "powershell -NoProfile -Command Start-ScheduledTask -TaskName 'Elevated runs'")"
+assert_eq "cmd /c schtasks /query on Elevated runs is allowed" "allow" \
+    "$(decision PowerShell "cmd /c schtasks /query /tn \"Elevated runs\" /v")"
+assert_eq "cmd /c schtasks /run on another task is allowed" "allow" \
+    "$(decision PowerShell "cmd /c schtasks /run /tn \"dotfiles sync\"")"
+assert_eq "cmd /c echo naming schtasks /run on Elevated runs is allowed" "allow" \
+    "$(decision PowerShell "cmd /c echo schtasks /run /tn \"Elevated runs\"")"
+assert_eq "Start-Process schtasks /query on Elevated runs is allowed" "allow" \
+    "$(decision PowerShell "Start-Process schtasks -ArgumentList '/query /tn \"Elevated runs\"' -Wait")"
+
+# cmd's own syntax: only double quotes quote, ^ escapes, and @ , ; = if and for may stand before a command.
+assert_eq "cmd /c with apostrophes around schtasks /run on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "cmd /c 'echo don''t & schtasks /run /tn \"Elevated runs\" & echo won''t'")"
+assert_eq "cmd //c with apostrophes from Git Bash is refused" "deny" \
+    "$(decision Bash "cmd //c \"echo ' & schtasks //run //tn \\\"Elevated runs\\\" & echo '\"")"
+assert_eq "cmd /c with doubled quotes and an apostrophe is refused" "deny" \
+    "$(decision PowerShell "cmd /c \"echo it's & schtasks /run /tn \"\"Elevated runs\"\" & echo it's\"")"
+assert_eq "cmd /c with a caret inside schtasks is refused" "deny" \
+    "$(decision PowerShell "cmd /c sch^tasks /run /tn \"Elevated runs\"")"
+assert_eq "cmd /c with @ before schtasks is refused" "deny" \
+    "$(decision PowerShell "cmd /c @schtasks /run /tn \"Elevated runs\"")"
+assert_eq "cmd /c with a comma before schtasks is refused" "deny" \
+    "$(decision PowerShell "cmd /c ,schtasks /run /tn \"Elevated runs\"")"
+assert_eq "cmd /c if before schtasks is refused" "deny" \
+    "$(decision PowerShell "cmd /c if 1==1 schtasks /run /tn \"Elevated runs\"")"
+assert_eq "cmd /c if not exist before schtasks is refused" "deny" \
+    "$(decision PowerShell "cmd /c if not exist x schtasks /run /tn \"Elevated runs\"")"
+assert_eq "cmd /c for ... do schtasks is refused" "deny" \
+    "$(decision PowerShell "cmd /c for /l %i in (1,1,1) do schtasks /run /tn \"Elevated runs\"")"
+assert_eq "cmd /r schtasks /run on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "cmd /r schtasks /run /tn \"Elevated runs\"")"
+assert_eq "cmd /q/c schtasks /run on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "cmd /q/c schtasks /run /tn \"Elevated runs\"")"
+assert_eq "cmd /c start with a title before schtasks is refused" "deny" \
+    "$(decision PowerShell "cmd /c start \"x\" schtasks /run /tn \"Elevated runs\"")"
+assert_eq "cmd /c start with a title and a switch before schtasks is refused" "deny" \
+    "$(decision PowerShell "cmd /c 'start \"runner\" /wait schtasks /run /tn \"Elevated runs\"'")"
+assert_eq "cmd /c start /d before schtasks is refused" "deny" \
+    "$(decision PowerShell "cmd /c start /d C:\ schtasks /run /tn \"Elevated runs\"")"
+assert_eq "cmd /c with an apostrophe in an ordinary command is allowed" "allow" \
+    "$(decision PowerShell "cmd /c 'echo it''s fine & dir'")"
+
+# A task name escaped rather than quoted, and named only in a filter.
+assert_eq "schtasks //run on Elevated\\ runs from Git Bash is refused" "deny" \
+    "$(decision Bash "schtasks //run //tn Elevated\\ runs")"
+assert_eq "Start-ScheduledTask on Elevated\` runs is refused" "deny" \
+    "$(decision PowerShell "Start-ScheduledTask -TaskName Elevated\` runs")"
+assert_eq "Get-ScheduledTask filtered by Where-Object into Start-ScheduledTask is refused" "deny" \
+    "$(decision PowerShell "Get-ScheduledTask | ? TaskName -eq 'Elevated runs' | Start-ScheduledTask")"
+assert_eq "Get-ScheduledTask filtered by a -like script block into Start-ScheduledTask is refused" "deny" \
+    "$(decision PowerShell "Get-ScheduledTask | Where-Object { \$_.TaskName -like 'Elev*' } | Start-ScheduledTask")"
+assert_eq "schtasks //run after if ... then from Git Bash is refused" "deny" \
+    "$(decision Bash "if true; then schtasks //run //tn \"Elevated runs\"; fi")"
+assert_eq "schtasks //run in a for loop from Git Bash is refused" "deny" \
+    "$(decision Bash "for i in 1; do schtasks //run //tn \"Elevated runs\"; done")"
+assert_eq "schtasks //run after ! from Git Bash is refused" "deny" \
+    "$(decision Bash "! schtasks //run //tn \"Elevated runs\"")"
+
+# More of Task Scheduler's object routes.
+assert_eq "COM Run with Schedule.Service from GetTypeFromProgID with a server is refused" "deny" \
+    "$(decision PowerShell "\$s = [Activator]::CreateInstance([Type]::GetTypeFromProgID(\"Schedule.Service\", \$null)); \$s.Connect(); \$s.GetFolder('\').GetTask('Elevated runs').Run(\$null)")"
+assert_eq "COM Run with Schedule.Service by a [guid] CLSID is refused" "deny" \
+    "$(decision PowerShell "\$s = [Activator]::CreateInstance([Type]::GetTypeFromCLSID([guid]'0f87369f-a4e5-4cfc-bd3e-73e6154572dd')); \$s.Connect(); \$s.GetFolder('\').GetTask('Elevated runs').Run(\$null)")"
+assert_eq "COM Run with Schedule.Service.1 is refused" "deny" \
+    "$(decision PowerShell "\$s = New-Object -ComObject Schedule.Service.1; \$s.Connect(); \$s.GetFolder('\').GetTask('Elevated runs').Run(\$null)")"
+assert_eq "COM RegisterTaskDefinition over Elevated runs is refused" "deny" \
+    "$(decision PowerShell "\$s = New-Object -ComObject Schedule.Service; \$s.Connect(); \$d = \$s.NewTask(0); \$s.GetFolder('\').RegisterTaskDefinition('Elevated runs', \$d, 6, \$null, \$null, 3)")"
+assert_eq "COM SetSecurityDescriptor on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "\$s = New-Object -ComObject Schedule.Service; \$s.Connect(); \$s.GetFolder('\').GetTask('Elevated runs').SetSecurityDescriptor(\$sd, 0)")"
+assert_eq "COM Run through .Invoke on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "\$s = New-Object -ComObject Schedule.Service; \$s.Connect(); \$t = \$s.GetFolder('\').GetTask('Elevated runs'); \$t.Run.Invoke(\$null)")"
+assert_eq "COM Run through PSObject.Methods on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "\$s = New-Object -ComObject Schedule.Service; \$s.Connect(); \$t = \$s.GetFolder('\').GetTask('Elevated runs'); \$t.PSObject.Methods['Run'].Invoke(\$null)")"
+assert_eq "COM Run through InvokeMember on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "\$s = New-Object -ComObject Schedule.Service; \$s.Connect(); \$t = \$s.GetFolder('\').GetTask('Elevated runs'); [System.__ComObject].InvokeMember('Run', 'InvokeMethod', \$null, \$t, @(\$null))")"
+assert_eq "a WMI class's StartByPath on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "([wmiclass]'root\Microsoft\Windows\TaskScheduler:PS_ScheduledTask').StartByPath('\', 'Elevated runs')")"
+assert_eq "a WMI object's Start on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "\$t = Get-WmiObject -Namespace root\Microsoft\Windows\TaskScheduler -Class MSFT_ScheduledTask -Filter \"TaskName='Elevated runs'\"; \$t.Start()")"
+assert_eq "Set-CimInstance on MSFT_ScheduledTask Elevated runs is refused" "deny" \
+    "$(decision PowerShell "Get-CimInstance -Namespace Root/Microsoft/Windows/TaskScheduler -ClassName MSFT_ScheduledTask -Filter \"TaskName='Elevated runs'\" | Set-CimInstance -Property @{Description='x'}")"
+assert_eq "New-CimInstance of MSFT_ScheduledTask Elevated runs is refused" "deny" \
+    "$(decision PowerShell "New-CimInstance -Namespace Root/Microsoft/Windows/TaskScheduler -ClassName MSFT_ScheduledTask -Property @{TaskName='Elevated runs'}")"
+assert_eq "iwmi Start on MSFT_ScheduledTask Elevated runs is refused" "deny" \
+    "$(decision PowerShell "gwmi -Namespace root\Microsoft\Windows\TaskScheduler -Class MSFT_ScheduledTask -Filter \"TaskName='Elevated runs'\" | iwmi -Name Start")"
+assert_eq "Remove-WmiObject on MSFT_ScheduledTask Elevated runs is refused" "deny" \
+    "$(decision PowerShell "gwmi -Namespace root\Microsoft\Windows\TaskScheduler -Class MSFT_ScheduledTask -Filter \"TaskName='Elevated runs'\" | Remove-WmiObject")"
+assert_eq "wmic delete on MSFT_ScheduledTask Elevated runs is refused" "deny" \
+    "$(decision PowerShell "wmic /namespace:\\\\root\Microsoft\Windows\TaskScheduler path MSFT_ScheduledTask where \"TaskName='Elevated runs'\" delete")"
+assert_eq "Invoke-CimMethod Start on a WQL _ wildcard for Elevated runs is refused" "deny" \
+    "$(decision PowerShell "Get-CimInstance -Namespace Root/Microsoft/Windows/TaskScheduler -ClassName MSFT_ScheduledTask -Filter \"TaskName LIKE 'Elevated_runs'\" | Invoke-CimMethod -MethodName Start")"
+assert_eq "Start-Process cmd /c schtasks /run on Elevated runs is refused" "deny" \
+    "$(decision PowerShell "Start-Process -FilePath cmd -ArgumentList '/c schtasks /run /tn \"Elevated runs\"'")"
+assert_eq "Invoke-CimMethod Start on another task with ForEach-Object after it is allowed" "allow" \
+    "$(decision PowerShell "Get-ScheduledTask -TaskName 'dotfiles sync' | Invoke-CimMethod -MethodName Start | % ReturnValue")"
+assert_eq "COM Run on every task in another folder through ForEach-Object is allowed" "allow" \
+    "$(decision PowerShell "\$s = New-Object -ComObject Schedule.Service; \$s.Connect(); \$s.GetFolder('\dotfiles').GetTasks(0) | % { \$_.Run(\$null) }")"
+assert_eq "COM Run on another task with Select-Object * after it is allowed" "allow" \
+    "$(decision PowerShell "\$s = New-Object -ComObject Schedule.Service; \$s.Connect(); \$s.GetFolder('\').GetTask('dotfiles sync').Run(\$null) | Select-Object *")"
+assert_eq "a commit message naming Invoke-CimMethod Start on MSFT_ScheduledTask is allowed" "allow" \
+    "$(decision Bash "git commit -m \"Invoke-CimMethod -MethodName Start on MSFT_ScheduledTask 'Elevated runs' is refused\"")"
+assert_eq "a commit message naming Start-Process schtasks /run is allowed" "allow" \
+    "$(decision PowerShell "git commit -m 'Start-Process schtasks -ArgumentList /run /tn Elevated runs is refused'")"
+assert_eq "a hashtable naming the runner's root, splatted into a read, is allowed" "allow" \
+    "$(decision PowerShell "\$p = @{Path='C:\ProgramData\ElevatedRuns\outbox'}; Get-ChildItem @p")"
+assert_eq "a hashtable naming the runner's root, splatted into a write, is refused" "deny" \
+    "$(decision PowerShell "\$p = @{Path='C:\ProgramData\ElevatedRuns\inbox\r.json'}; Set-Content @p -Value x")"
+assert_eq "Start-Process launching elevate enable asks first" "ask" \
+    "$(decision PowerShell "Start-Process -FilePath elevate -ArgumentList enable")"
+assert_eq "Invoke-CimMethod Start on another task inside ForEach-Object is allowed" "allow" \
+    "$(decision PowerShell "Get-ScheduledTask -TaskName 'Backup' | % { \$_ | Invoke-CimMethod -MethodName Start }")"
+assert_eq "many wildcards in a call that starts a task answer at once" "allow" \
+    "$(decision PowerShell "Get-ScheduledTask x | Invoke-CimMethod -MethodName Start; echo '%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%z'; echo '****************************************z'")"
+
 # The runner's root spelled every way the shells spell it, and the reads around it.
 assert_eq "a write into the runner's root by its short name is refused" "deny" \
     "$(decision PowerShell "Set-Content C:\PROGRA~3\ElevatedRuns\inbox\r.json x")"
