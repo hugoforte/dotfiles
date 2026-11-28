@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- An agent writes American English. The global `ai/CLAUDE.md` says to spell prose the American way (behavior, authorize, color, catalog) in chat replies, docs, commits, PR bodies, comments and drafts for others, while exact quotations, identifiers and system status names keep their spelling. The file's own "behaviour" is now "behavior", so it no longer contradicts the rule.
+
 - What an agent writes to Hugo links every ticket and pull request it names (#119). The rule was in `CLAUDE.md`, the working rules and memory, and agents still named `KTLO-123`, `VEC-42` or `#123` bare. `bin/ticket-link-guard.mjs` enforces it with two hooks, registered in `ai/claude/settings.json` in exec form as `agent-guard` is, neither of which puts anything extra on the screen:
   - `PreToolUse` on `send_to_user` and `t3_thread_send` refuses a message that names a Jira or Linear key (any project's), a GitHub `#123` or an `owner/repo#123` without its URL, before it is sent, listing each one; only the tool call is made again.
   - `UserPromptSubmit` reads Claude's last reply from the transcript and, when it left references bare, adds one line of context to the next prompt: "Your last reply left these bare: X, Y. Link every ticket and PR reference in full in this reply."
